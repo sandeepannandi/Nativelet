@@ -298,3 +298,9 @@
 .miniWheel em { left: 82px; }
 
 .miniTimeline{position:relative;width:230px;height:130px;border-radius:10px;background:#141618;overflow:hidden}.miniTimeline:before{content:"";position:absolute;left:20px;right:20px;top:47px;height:42px;background:repeating-linear-gradient(90deg,#b8c6b0 0 2px,transparent 2px 5px);clip-path:polygon(0 40%,10% 15%,20% 38%,30% 0,40% 35%,50% 10%,60% 32%,70% 5%,80% 30%,90% 15%,100% 40%,100% 60%,90% 85%,80% 70%,70% 95%,60% 68%,50% 90%,40% 65%,30% 100%,20% 62%,10% 85%,0 60%)}.miniTimeline i,.miniTimeline b{position:absolute;top:42px;width:8px;height:52px;background:#e2eadb;border-radius:3px;left:53px}.miniTimeline b{left:177px}.miniTimeline em{position:absolute;left:115px;top:25px;height:75px;width:2px;background:white}
+.miniPlayer { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 72%; }
+.miniPlayer i { width: 54%; aspect-ratio: 1; border-radius: 18%; background: linear-gradient(135deg, #2f6b4f, #8fd0a8); box-shadow: 0 10px 22px rgba(13,31,22,0.2); }
+.miniPlayer b { display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; padding: 0 8px; border-radius: 9px; background: #fdfef9; border: 1px solid rgba(25,63,48,0.14); box-shadow: 0 4px 10px rgba(13,31,22,0.14); }
+.miniPlayer b::before { content: ""; width: 14px; height: 14px; border-radius: 5px; background: linear-gradient(135deg, #2f6b4f, #8fd0a8); }
+.miniPlayer b::after { content: ""; flex: 1; height: 5px; border-radius: 3px; background: rgba(25,63,48,0.18); }
+.miniPlayer em { width: 8px; height: 8px; margin-top: -32px; margin-left: auto; margin-right: 10px; border-left: 7px solid #193f30; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }

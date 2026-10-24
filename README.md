@@ -20,10 +20,11 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 
 ## Components
 
+- Mini Player: drag a mini player bar into a full now-playing screen - artwork morphs, waveform scrubs, release velocity decides.
 - Timeline Trim: pinch-zoomable waveform ruler, trim handles and a source-time playhead.
 
 
-Preview Rail · Morph Capsule · Toast Stack · Liquid Tabs · Swipe Row · Expanding Card · Drag to Sort · Stacked Carousel · Gooey Menu · Theme Reveal · Glass Lens · Scrub Chart · Pinch Gallery · Page Curl · Orbit QR · Blossom QR · Light on Painting · Text Morph · Genie Dismiss · Folded Pass · GL Transitions · Bubble Picker · Mosaic Gallery · Split-Flap Board · Cloth Banner · Fogged Glass · Chaos Pendulum · Black Hole Lens · Coin · Code Reveal · Prism · Sand Hourglass · Plucked Strings
+Preview Rail · Morph Capsule · Toast Stack · Liquid Tabs · Swipe Row · Expanding Card · Drag to Sort · Stacked Carousel · Gooey Menu · Theme Reveal · Glass Lens · Scrub Chart · Pinch Gallery · Page Curl · Orbit QR · Blossom QR · Light on Painting · Text Morph · Genie Dismiss · Folded Pass · GL Transitions · Bubble Picker · Mosaic Gallery · Split-Flap Board · Cloth Banner · Fogged Glass · Chaos Pendulum · Black Hole Lens · Coin · Code Reveal · Prism · Sand Hourglass · Plucked Strings · Range Stack · Wheel Time Picker · Signature Ink
 
 
 ## Use a component

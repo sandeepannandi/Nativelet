@@ -1,0 +1,38 @@
+.stage { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; }
+.phone { position: relative; width: min(380px, 100%); height: 600px; max-height: 72vh; border-radius: 32px; border: 1px solid #d5e1d2; background: #f6f8f4; overflow: hidden; }
+.content { position: absolute; inset: 0; overflow-y: auto; padding: 22px 18px 110px; scrollbar-width: none; transform-origin: 50% 40%; }
+.content::-webkit-scrollbar { display: none; }
+.eyebrow { color: #456345; font-size: 10px; letter-spacing: 1.5px; font-weight: 700; margin: 0 0 4px; }
+.heading { color: #193f30; font-size: 26px; font-weight: 700; letter-spacing: -0.9px; margin: 0 0 14px; }
+.track { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 16px; background: transparent; cursor: pointer; text-align: left; font: inherit; }
+.trackActive { background: #e6edde; }
+.thumb { width: 36px; height: 36px; border-radius: 10px; flex: none; }
+.trackName { color: #193f30; font-size: 14px; font-weight: 600; margin: 0; }
+.trackArtist { color: #4b6053; font-size: 12px; margin: 1px 0 0; }
+.trackTime { color: #4b6053; font-size: 12px; margin-left: auto; }
+.note { color: #4b6053; font-size: 12px; line-height: 20px; margin: 16px 4px 0; }
+.backdrop { position: absolute; inset: 0; background: #0d1f16; pointer-events: none; }
+.surface { position: absolute; background: #fdfef9; overflow: hidden; border: 1px solid rgba(25,63,48,0.14); box-shadow: 0 8px 18px rgba(13,31,22,0.18); cursor: grab; touch-action: none; }
+.surface:active { cursor: grabbing; }
+.tapzone { position: absolute; inset: 0; background: none; border: 0; padding: 0; cursor: pointer; }
+.art { position: absolute; overflow: hidden; pointer-events: none; }
+.artInner { position: absolute; left: 0; top: 0; transform-origin: top left; }
+.artBlob { position: absolute; border-radius: 999px; pointer-events: none; }
+.barRow { position: absolute; left: 0; right: 0; top: 0; height: 64px; pointer-events: none; }
+.hairline { position: absolute; left: 0; top: 0; height: 2px; background: #193f30; }
+.barInner { display: flex; align-items: center; height: 64px; padding-left: 64px; padding-right: 10px; }
+.barText { flex: 1; min-width: 0; }
+.barTitle { color: #193f30; font-size: 14px; font-weight: 700; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barArtist { color: #4b6053; font-size: 12px; margin: 1px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iconBtn { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: none; border: 0; cursor: pointer; pointer-events: auto; border-radius: 999px; }
+.full { position: absolute; inset: 0; pointer-events: none; }
+.fullInner { position: absolute; left: 36px; right: 36px; }
+.fullTitle { color: #193f30; font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fullArtist { color: #4b6053; font-size: 14px; margin: 3px 0 0; }
+.wave { display: flex; align-items: center; gap: 2px; height: 72px; margin-top: 18px; cursor: ew-resize; touch-action: none; pointer-events: auto; width: 100%; }
+.waveBar { flex: 1; border-radius: 999px; min-width: 2px; }
+.times { display: flex; justify-content: space-between; margin-top: 6px; color: #4b6053; font-size: 11px; }
+.controls { display: flex; align-items: center; justify-content: center; gap: 34px; margin-top: 16px; pointer-events: auto; }
+.skip { display: flex; align-items: center; justify-content: center; padding: 8px; background: none; border: 0; cursor: pointer; }
+.playBig { width: 68px; height: 68px; border-radius: 34px; background: #193f30; display: flex; align-items: center; justify-content: center; border: 0; cursor: pointer; }
+.hint { color: #4b6053; font-size: 12.5px; line-height: 20px; margin: 0; text-align: center; }

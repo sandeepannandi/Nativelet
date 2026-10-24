@@ -81,6 +81,11 @@ adb shell uiautomator dump /sdcard/pinch-before.xml >/dev/null 2>&1
 adb shell cat /sdcard/pinch-before.xml > "$OUT/pinch-before.xml"
 adb exec-out screencap -p > "$OUT/pinch-before.png"
 # Separate supported AndroidX instrumentation APK, never framework/JUnit3 shims.
+# The dedicated Timeline workflow builds these ahead of time; the smoke
+# workflow has no such job, so build them here when the outputs are absent.
+if [ ! -f scripts/pinch-instrumentation/app/build/outputs/apk/debug/app-debug.apk ]; then
+  (cd scripts/pinch-instrumentation && gradle :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon)
+fi
 adb install -r scripts/pinch-instrumentation/app/build/outputs/apk/debug/app-debug.apk
 adb install -r scripts/pinch-instrumentation/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r dev.nativelet.pinch.test/androidx.test.runner.AndroidJUnitRunner > "$OUT/pinch-test.txt"
