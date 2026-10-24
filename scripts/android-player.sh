@@ -6,9 +6,11 @@ PKG=$(adb shell pm list packages | grep -i nativelet | sed 's/package://' | head
 trap 'adb logcat -d > "$OUT/session.logcat.txt" 2>/dev/null || true' EXIT
 
 # uiautomator dump only succeeds when the UI is idle; while simulated playback
-# ticks (every 250ms) the tree never idles and dumps time out. The script
-# therefore proves playback with screencap diffs and pauses before every dump.
-# Each dump uses a fresh remote path and must contain the expected state marker.
+# ticks (every 250ms) the tree never idles and dumps time out. So the script
+# taps the track, lets playback tick, pauses via the bar's play/pause hit area
+# (position derived from the launch dump, no live dump needed), and only then
+# reads the tree. Ticking is proven by the expanded Seek clock not reading
+# 0:00 after ~4s of simulated playback - an idle-tree assertion.
 dump_until() { # <remote-name> <local-file> <expected-regex> [extra-regex]
   local remote="/sdcard/$1" local_file="$2" expect="$3" extra="${4:-}" i
   for i in 1 2 3 4 5 6; do
@@ -63,20 +65,15 @@ dump_until player-ui.xml "$OUT/ui.xml" 'Play Night Bus by Low Orbit'
 read BX1 BY1 BX2 BY2 < <(bar_bounds "$OUT/ui.xml")
 X=$(( (BX1+BX2)/2 )); BARY=$(( (BY1+BY2)/2 ))
 
-# Tap a track: the mini bar starts simulated playback. While it ticks, two
-# screencaps 1.5s apart must differ (the progress strip advances).
+# Tap a track: simulated playback starts. Let it tick, then pause via the
+# play/pause hit area at the right of the bar (no live dump needed).
 XY=$(center "$OUT/ui.xml" 'Play Night Bus by Low Orbit'); adb shell input tap $XY
-sleep 2
-adb exec-out screencap -p > "$OUT/bar-tick1.png"
-sleep 1.5
-adb exec-out screencap -p > "$OUT/bar.png"
-cmp -s "$OUT/bar-tick1.png" "$OUT/bar.png" && { echo 'playback not ticking'; exit 1; }
-
-# Pause (play/pause sits at the right of the bar) so the UI idles for a dump.
+sleep 4
 adb shell input tap $((BX2-80)) "$BARY"
 sleep 1
+adb exec-out screencap -p > "$OUT/bar.png"
 dump_until player-bar.xml "$OUT/bar.xml" 'Night Bus by Low Orbit. Mini player' 'Expand player'
-grep -q '"Play"' "$OUT/bar.xml" || grep -q "content-desc=\"Play\"" "$OUT/bar.xml"
+grep -q 'content-desc="Play"' "$OUT/bar.xml"
 
 # Drag the bar up: the player expands.
 adb shell input swipe "$X" "$((BY1+10))" "$X" 220 600
@@ -84,6 +81,8 @@ sleep 2
 adb exec-out screencap -p > "$OUT/expanded.png"
 dump_until player-expanded.xml "$OUT/expanded.xml" 'Collapse player' 'Next track'
 grep -q 'Seek\.' "$OUT/expanded.xml"
+# Ticking proof: after ~4s of simulated playback the Seek clock cannot be 0:00.
+grep -q 'Seek. 0:00 of' "$OUT/expanded.xml" && { echo 'playback not ticking'; exit 1; }
 
 # Next track changes the track on the player surface.
 NEXT=$(center "$OUT/expanded.xml" 'Next track'); adb shell input tap $NEXT
@@ -103,4 +102,4 @@ fi
 cmp -s "$OUT/playlist.png" "$OUT/bar.png" && { echo 'bar did not appear'; exit 1; }
 cmp -s "$OUT/bar.png" "$OUT/expanded.png" && { echo 'expand unchanged'; exit 1; }
 cmp -s "$OUT/expanded.png" "$OUT/collapsed.png" && { echo 'collapse unchanged'; exit 1; }
-echo 'player-session crash=no bar=appears playback=ticking expand=drag next=changes-track collapse=drag haptics=untested' | tee "$OUT/summary.txt"
+echo 'player-session crash=no bar=appears playback=ticks expand=drag next=changes-track collapse=drag haptics=untested' | tee "$OUT/summary.txt"
