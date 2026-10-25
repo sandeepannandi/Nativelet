@@ -3,8 +3,26 @@
 # injects visible energy, and the flow keeps moving after release.
 set -u
 OUT=smoke-out/flowfield; mkdir -p "$OUT"
-PKG=$(adb shell pm list packages | grep -i nativelet | sed 's/package://' | head -1 | tr -d '\r')
-open() { adb shell am force-stop "$PKG"; adb logcat -c; adb shell am start -W -a android.intent.action.VIEW -d "nativelet-showcase:///$1" "$PKG" >/dev/null 2>&1; sleep 8; }
+# Resolve the showcase package from the built APK (deterministic). A plain
+# `pm list packages | grep nativelet` is not safe here: the timeline suite
+# installs dev.nativelet.pinch.test, and head -1 can pick the wrong app.
+PKG=com.anonymous.nativeletshowcase
+APK=$(ls apps/showcase/android/app/build/outputs/apk/*/app-*.apk 2>/dev/null | head -1)
+if [ -n "$APK" ] && command -v aapt >/dev/null 2>&1; then
+  DETECTED=$(grep -o "package name=.[a-zA-Z0-9._]*" <<<"$(aapt dump badging "$APK" 2>/dev/null)" | head -1 | cut -d"'" -f2)
+  [ -n "$DETECTED" ] && PKG=$DETECTED
+fi
+open() {
+  adb shell am force-stop "$PKG"; adb logcat -c
+  adb shell am start -W -a android.intent.action.VIEW -d "nativelet-showcase:///$1" "$PKG" >/dev/null 2>&1
+  sleep 6
+  # Retry once if the deep link did not bring the app to the foreground.
+  adb shell dumpsys window 2>/dev/null | grep -q "mCurrentFocus.*$PKG" || {
+    adb shell am start -W -a android.intent.action.VIEW -d "nativelet-showcase:///$1" "$PKG" >/dev/null 2>&1
+    sleep 4
+  }
+  sleep 2
+}
 shot() { adb exec-out screencap -p > "$OUT/$1.png"; }
 report() {
   A=$(md5sum < "$OUT/$2.png" | cut -c1-8); B=$(md5sum < "$OUT/$3.png" | cut -c1-8)
