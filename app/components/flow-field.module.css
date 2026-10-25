@@ -1,0 +1,7 @@
+.stage { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.canvas { border-radius: 16px; background: #04060d; cursor: grab; touch-action: none; display: block; max-width: 100%; height: auto; }
+.canvas:active { cursor: grabbing; }
+.row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.chip { min-height: 44px; padding: 0 16px; border-radius: 14px; background: #101a30; border: 1px solid #26324f; color: #9db1e8; font-size: 13px; cursor: pointer; }
+.chipPrimary { composes: chip; background: #3f74e0; border-color: #3f74e0; color: #fff; }
+.hint { color: #5d6f9e; font-size: 12px; text-align: center; margin: 0; }

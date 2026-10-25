@@ -304,3 +304,11 @@
 .miniPlayer b::before { content: ""; width: 14px; height: 14px; border-radius: 5px; background: linear-gradient(135deg, #2f6b4f, #8fd0a8); }
 .miniPlayer b::after { content: ""; flex: 1; height: 5px; border-radius: 3px; background: rgba(25,63,48,0.18); }
 .miniPlayer em { width: 8px; height: 8px; margin-top: -32px; margin-left: auto; margin-right: 10px; border-left: 7px solid #193f30; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+.miniFlow { position: relative; width: 130px; height: 110px; border-radius: 12px; overflow: hidden; background: linear-gradient(160deg, #0a1124 0%, #04060d 100%); }
+.miniFlow i { position: absolute; width: 26px; height: 4px; border-radius: 4px; filter: blur(0.6px); }
+.miniFlow i:nth-child(1) { left: 14px; top: 22px; background: #4653a8; transform: rotate(18deg); box-shadow: 0 0 8px rgba(70, 83, 168, 0.8); }
+.miniFlow i:nth-child(2) { left: 44px; top: 40px; width: 34px; background: #3f74e0; transform: rotate(-10deg); box-shadow: 0 0 9px rgba(63, 116, 224, 0.8); }
+.miniFlow i:nth-child(3) { left: 82px; top: 28px; width: 30px; background: #4cc9f0; transform: rotate(28deg); box-shadow: 0 0 10px rgba(76, 201, 240, 0.75); }
+.miniFlow i:nth-child(4) { left: 24px; top: 66px; width: 22px; background: #4cc9f0; transform: rotate(-24deg); box-shadow: 0 0 10px rgba(76, 201, 240, 0.7); }
+.miniFlow i:nth-child(5) { left: 58px; top: 80px; background: #4653a8; transform: rotate(8deg); box-shadow: 0 0 8px rgba(70, 83, 168, 0.8); }
+.miniFlow i:nth-child(6) { left: 92px; top: 62px; width: 18px; background: #b7f5d9; transform: rotate(-16deg); box-shadow: 0 0 10px rgba(183, 245, 217, 0.8); }
