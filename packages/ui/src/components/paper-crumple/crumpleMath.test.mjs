@@ -53,7 +53,7 @@ test('crumpling shrinks the sheet monotonically', () => {
 
 test('a half-crumpled sheet holds its shape on release', () => {
   const s = createCrumple();
-  drag(s, line(CR_W / 2 + 110, CR_H / 2 + 140, CR_W / 2 + 50, CR_H / 2 + 60));
+  drag(s, line(CR_W / 2 + 110, CR_H / 2 + 140, CR_W / 2 + 80, CR_H / 2 + 100));
   run(s, 2);
   assert.ok(s.c > 0.15 && s.c < 0.75, `c=${s.c}`);
 });
