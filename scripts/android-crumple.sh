@@ -45,17 +45,34 @@ sleep 1.5
 # a second drag from the same corner area continues the crumple.
 adb shell input swipe $((CX + W / 7)) $((CY + H / 12)) $CX $CY 700
 sleep 1.5; shot crumple-ball
+# Where did the ball end up? Locate it in the screenshot so the flick and the
+# double tap start on the ball itself, wherever the drag left it.
+ballpos() { python3 - "$OUT/$1.png" <<'PY'
+import sys
+from PIL import Image
+im=Image.open(sys.argv[1]).convert("RGB");w,h=im.size
+bg=im.getpixel((int(w*0.04),int(h*0.5)))
+xs=[];ys=[]
+for y in range(int(h*0.12),int(h*0.68),4):
+    for x in range(0,w,4):
+        p=im.getpixel((x,y))
+        if max(abs(p[i]-bg[i]) for i in range(3))>40: xs.append(x);ys.append(y)
+print((min(xs)+max(xs))//2,(min(ys)+max(ys))//2)
+PY
+}
+read BX BY <<< "$(ballpos crumple-ball)"; echo "ball at $BX,$BY"
 report crumple-corner-drag crumple-flat crumple-ball
 report crumple-drag-progress crumple-mid crumple-ball
 # Flick the ball to the right: it must move.
-adb shell input swipe $CX $CY $((CX + W / 4)) $((CY - H / 25)) 90
+adb shell input swipe $BX $BY $((BX + W / 4)) $((BY - H / 25)) 90
 sleep 0.25; shot crumple-toss-1
 sleep 2.5; shot crumple-toss-2
 report crumple-flick-moves crumple-ball crumple-toss-2
+read BX BY <<< "$(ballpos crumple-toss-2)"; echo "ball now at $BX,$BY"
 # Double tap the ball: it smooths back to a sheet.
 # Two taps launched together: each `input tap` spawns a JVM, so back-to-back
 # calls can land far apart and would not be a double tap at all.
-adb shell "input tap $((CX + W / 5)) $((CY - H / 30)) & sleep 0.08; input tap $((CX + W / 5)) $((CY - H / 30)); wait"
+adb shell "input tap $BX $BY & sleep 0.08; input tap $BX $BY; wait"
 sleep 3; shot crumple-smooth
 report crumple-double-tap-opens crumple-toss-2 crumple-smooth
 # The reopened sheet must cover the corners of the original flat sheet again.
