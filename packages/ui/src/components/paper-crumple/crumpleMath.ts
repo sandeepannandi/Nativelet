@@ -209,9 +209,17 @@ export function buildCrumple(s: CrumpleState) {
     const X = s.fx[v];
     const Y = s.fy[v];
     const r = Math.sqrt(X * X + Y * Y);
-    const rho = Math.min(1, r / HALF_DIAG);
-    const theta = rho * Math.PI * 0.97;
     const phi = Math.atan2(Y, X);
+    // Map the rectangle onto a full disc (distance to the sheet edge along this
+    // direction), so the wrapped sheet closes into a ball with no open back cap.
+    const ca = Math.abs(Math.cos(phi));
+    const sa = Math.abs(Math.sin(phi));
+    const edge = Math.min(ca > 1e-6 ? CR_SHEET_W / 2 / ca : 1e9, sa > 1e-6 ? CR_SHEET_H / 2 / sa : 1e9);
+    // Early in the crumple keep the original radial mapping so the sheet folds in
+    // gradually; only near the finished ball blend to the closed mapping.
+    const k = clamp((w - 0.55) / 0.45, 0, 1);
+    const rho = (1 - k) * Math.min(1, r / HALF_DIAG) + k * Math.min(1, r / edge);
+    const theta = rho * Math.PI * (0.97 + 0.02 * k);
     const st = Math.sin(theta);
     const dx = st * Math.cos(phi);
     const dy = st * Math.sin(phi);
