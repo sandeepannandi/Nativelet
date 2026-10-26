@@ -98,7 +98,12 @@ ix,iy=int((x1-x0)*0.14),int((y1-y0)*0.10)
 pts=[(x0+ix,y0+iy),(x1-ix,y0+iy),(x0+ix,y1-iy),(x1-ix,y1-iy)]
 covered=lambda im:sum(d(im.getpixel(p),bg)>10 for p in pts)
 print(f"sheet corners covered: ball={covered(ball)}/4 smooth={covered(smooth)}/4")
-sys.exit(0 if covered(ball)<=2 and covered(smooth)>=3 else 1)
+# The double tap must also have visibly changed the sheet area (a creased sheet
+# that never moved would otherwise cover the corners without any reopening).
+grid=[(x,y) for y in range(y0,y1,8) for x in range(x0,x1,8)]
+changed=sum(d(ball.getpixel(p),smooth.getpixel(p))>25 for p in grid)/max(1,len(grid))
+print(f"sheet area changed by the double tap: {changed:.2f}")
+sys.exit(0 if covered(ball)<=2 and covered(smooth)>=3 and changed>=0.12 else 1)
 PY
 then echo "crumple-double-tap-reopens-sheet corners=covered" | tee -a "$OUT/summary.txt"
 else echo "crumple-double-tap-reopens-sheet corners=NOT-covered" | tee -a "$OUT/summary.txt"; CRUMPLE_FAIL=1; fi
