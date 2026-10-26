@@ -312,3 +312,6 @@
 .miniFlow i:nth-child(4) { left: 24px; top: 66px; width: 22px; background: #4cc9f0; transform: rotate(-24deg); box-shadow: 0 0 10px rgba(76, 201, 240, 0.7); }
 .miniFlow i:nth-child(5) { left: 58px; top: 80px; background: #4653a8; transform: rotate(8deg); box-shadow: 0 0 8px rgba(70, 83, 168, 0.8); }
 .miniFlow i:nth-child(6) { left: 92px; top: 62px; width: 18px; background: #b7f5d9; transform: rotate(-16deg); box-shadow: 0 0 10px rgba(183, 245, 217, 0.8); }
+.miniCrumple { position: relative; width: 130px; height: 110px; border-radius: 12px; overflow: hidden; background: linear-gradient(160deg, #f1eee8 0%, #dcd8cf 100%); }
+.miniCrumple i { position: absolute; left: 33px; top: 14px; width: 64px; height: 80px; background: #fcfaf4; clip-path: polygon(8% 12%, 38% 0, 70% 8%, 96% 26%, 100% 62%, 82% 92%, 48% 100%, 14% 88%, 0 52%); }
+.miniCrumple b { position: absolute; left: 33px; top: 14px; width: 64px; height: 80px; background: linear-gradient(115deg, rgba(120,112,98,0.0) 30%, rgba(120,112,98,0.38) 55%, rgba(120,112,98,0.12) 75%); clip-path: polygon(8% 12%, 38% 0, 70% 8%, 96% 26%, 100% 62%, 82% 92%, 48% 100%, 14% 88%, 0 52%); }

@@ -20,6 +20,7 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 
 ## Components
 
+- Paper Crumple: crumple a sheet of paper into a creased ball with a corner drag or pinch, flick it to roll and bounce, smooth it back open.
 - Mini Player: drag a mini player bar into a full now-playing screen - artwork morphs, waveform scrubs, release velocity decides.
 - Timeline Trim: pinch-zoomable waveform ruler, trim handles and a source-time playhead.
 
