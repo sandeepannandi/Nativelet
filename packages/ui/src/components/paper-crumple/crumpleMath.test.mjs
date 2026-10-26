@@ -42,12 +42,39 @@ test('dragging a corner to the middle crumples into a ball', () => {
   assert.ok(variance(s) > 1.2, 'facets are visibly shaded differently');
 });
 
-test('crumpling shrinks the sheet monotonically', () => {
+test('crumpling shrinks the sheet monotonically until it is a ball', () => {
   let prev = Infinity;
-  for (const c of [0, 0.25, 0.5, 0.75, 1]) {
+  for (const c of [0, 0.25, 0.5, 0.75]) {
     const s = createCrumple(); s.c = c; s.target = c; buildCrumple(s);
     const b = crumpleBounds(s); const area = b.w * b.h;
     assert.ok(area < prev, `area at c=${c}`); prev = area;
+  }
+  // Once it is a ball the size only settles (within a few percent).
+  for (const c of [0.9, 1]) {
+    const s = createCrumple(); s.c = c; s.target = c; buildCrumple(s);
+    const b = crumpleBounds(s);
+    assert.ok(Math.abs(b.w * b.h - prev) / prev < 0.05, `ball size at c=${c}`);
+  }
+});
+
+test('the finished ball is closed: no part of the sphere is left open to roll into view', () => {
+  for (const c of [0.9, 1]) {
+    const s = createCrumple(); s.c = c; s.target = c; buildCrumple(s);
+    const N = 3000, V = [];
+    for (let k = 0; k < CR_NV; k++) {
+      const x = s.qx[k], y = s.qy[k], z = s.qz[k], l = Math.hypot(x, y, z) || 1;
+      V.push([x / l, y / l, z / l]);
+    }
+    let worst = 0;
+    for (let i = 0; i < N; i++) {
+      const y = 1 - 2 * (i + 0.5) / N, r = Math.sqrt(1 - y * y), a = i * 2.399963;
+      const p = [r * Math.cos(a), y, r * Math.sin(a)];
+      let best = -1;
+      for (const q of V) { const d = p[0] * q[0] + p[1] * q[1] + p[2] * q[2]; if (d > best) best = d; }
+      worst = Math.max(worst, Math.acos(Math.min(1, best)));
+    }
+    // Vertex spacing is about 0.09 rad; the old open back cap measured 0.45 rad.
+    assert.ok(worst < 0.14, `largest gap ${worst.toFixed(3)} rad at c=${c}`);
   }
 });
 
