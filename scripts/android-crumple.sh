@@ -54,12 +54,32 @@ report crumple-flick-moves crumple-ball crumple-toss-2
 adb shell "input tap $((CX + W / 5)) $((CY - H / 30)) & sleep 0.08; input tap $((CX + W / 5)) $((CY - H / 30)); wait"
 sleep 3; shot crumple-smooth
 report crumple-double-tap-opens crumple-toss-2 crumple-smooth
-# The opened sheet must match the untouched flat sheet frame exactly.
-if [ "$(md5sum < "$OUT/crumple-smooth.png" | cut -c1-8)" = "$(md5sum < "$OUT/crumple-flat.png" | cut -c1-8)" ]; then
-  echo "crumple-double-tap-restores-flat-sheet match=yes" | tee -a "$OUT/summary.txt"
-else
-  echo "crumple-double-tap-restores-flat-sheet match=no" | tee -a "$OUT/summary.txt"; CRUMPLE_FAIL=1
-fi
+# The reopened sheet must cover the corners of the original flat sheet again.
+# Not a byte match: remembered creases are meant to stay faintly visible.
+python3 -m pip install -q pillow >/dev/null 2>&1 || true
+if python3 - "$OUT" <<'PY'
+import sys
+from PIL import Image
+o=sys.argv[1]
+def px(n): return Image.open(f"{o}/{n}.png").convert("RGB")
+flat,ball,smooth=px("crumple-flat"),px("crumple-toss-2"),px("crumple-smooth")
+w,h=flat.size
+bg=flat.getpixel((int(w*0.04),int(h*0.5)))
+d=lambda a,b:max(abs(a[i]-b[i]) for i in range(3))
+# sheet bounding box: pixels clearly lighter than the background, mid screen
+xs=[];ys=[]
+for y in range(int(h*0.15),int(h*0.65),6):
+    for x in range(0,w,6):
+        if d(flat.getpixel((x,y)),bg)>10: xs.append(x);ys.append(y)
+x0,x1,y0,y1=min(xs),max(xs),min(ys),max(ys)
+ix,iy=int((x1-x0)*0.14),int((y1-y0)*0.10)
+pts=[(x0+ix,y0+iy),(x1-ix,y0+iy),(x0+ix,y1-iy),(x1-ix,y1-iy)]
+covered=lambda im:sum(d(im.getpixel(p),bg)>10 for p in pts)
+print(f"sheet corners covered: ball={covered(ball)}/4 smooth={covered(smooth)}/4")
+sys.exit(0 if covered(ball)<=1 and covered(smooth)>=3 else 1)
+PY
+then echo "crumple-double-tap-reopens-sheet corners=covered" | tee -a "$OUT/summary.txt"
+else echo "crumple-double-tap-reopens-sheet corners=NOT-covered" | tee -a "$OUT/summary.txt"; CRUMPLE_FAIL=1; fi
 adb logcat -d > "$OUT/crumple-session.logcat.txt"
 CR=no; grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" "$OUT/crumple-session.logcat.txt" | grep -q . && CR=yes
 echo "crumple-session crash=$CR" | tee -a "$OUT/summary.txt"
