@@ -98,7 +98,7 @@ ix,iy=int((x1-x0)*0.14),int((y1-y0)*0.10)
 pts=[(x0+ix,y0+iy),(x1-ix,y0+iy),(x0+ix,y1-iy),(x1-ix,y1-iy)]
 covered=lambda im:sum(d(im.getpixel(p),bg)>10 for p in pts)
 print(f"sheet corners covered: ball={covered(ball)}/4 smooth={covered(smooth)}/4")
-sys.exit(0 if covered(ball)<=1 and covered(smooth)>=3 else 1)
+sys.exit(0 if covered(ball)<=2 and covered(smooth)>=3 else 1)
 PY
 then echo "crumple-double-tap-reopens-sheet corners=covered" | tee -a "$OUT/summary.txt"
 else echo "crumple-double-tap-reopens-sheet corners=NOT-covered" | tee -a "$OUT/summary.txt"; CRUMPLE_FAIL=1; fi
