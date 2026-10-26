@@ -32,6 +32,7 @@ report() {
 # near the middle of the display.
 SIZE=$(adb shell wm size | grep -o '[0-9]*x[0-9]*' | tail -1); W=${SIZE%x*}; H=${SIZE#*x}
 CX=$((W / 2)); CY=$((H / 2 - H / 20))
+python3 -m pip install -q pillow >/dev/null 2>&1 || true
 open crumple; sleep 1; shot crumple-flat
 # The flat sheet is static until touched.
 sleep 2; shot crumple-flat2
@@ -61,6 +62,7 @@ print((min(xs)+max(xs))//2,(min(ys)+max(ys))//2)
 PY
 }
 read BX BY <<< "$(ballpos crumple-ball)"; echo "ball at $BX,$BY"
+[ -n "$BX" ] || { echo "could not locate ball"; CRUMPLE_FAIL=1; BX=$CX; BY=$CY; }
 report crumple-corner-drag crumple-flat crumple-ball
 report crumple-drag-progress crumple-mid crumple-ball
 # Flick the ball to the right: it must move.
@@ -77,7 +79,6 @@ sleep 3; shot crumple-smooth
 report crumple-double-tap-opens crumple-toss-2 crumple-smooth
 # The reopened sheet must cover the corners of the original flat sheet again.
 # Not a byte match: remembered creases are meant to stay faintly visible.
-python3 -m pip install -q pillow >/dev/null 2>&1 || true
 if python3 - "$OUT" <<'PY'
 import sys
 from PIL import Image
