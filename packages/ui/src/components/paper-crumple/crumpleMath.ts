@@ -322,7 +322,7 @@ export function crumpleMove(s: CrumpleState, x: number, y: number, t: number) {
   s.moved = Math.max(s.moved, Math.sqrt((x - s.downX) ** 2 + (y - s.downY) ** 2));
   if (s.mode === 1) {
     const d = Math.sqrt((x - s.bx) ** 2 + (y - s.by) ** 2);
-    s.target = clamp(s.startC + (s.startD - d) / 150, 0, 1);
+    s.target = clamp(s.startC + (s.startD - d) / 110, 0, 1);
     if (s.target > 0.97) s.target = 1;
   } else if (s.mode === 2) {
     const dt = Math.max(0.004, (t - s.lastT) / 1000);
@@ -364,7 +364,7 @@ export function crumpleUp(s: CrumpleState, t: number) {
     }
   }
   if (s.mode === 1) {
-    if (s.c >= 0.78 || s.target >= 0.78) s.target = 1;
+    if (s.c >= 0.68 || s.target >= 0.68) s.target = 1;
     else s.target = s.c;
   } else if (s.mode === 2) {
     const sp = Math.sqrt(s.vx * s.vx + s.vy * s.vy);

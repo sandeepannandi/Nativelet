@@ -40,6 +40,10 @@ report crumple-static-until-touched crumple-flat crumple-flat2
 adb shell input swipe $((CX + W / 6)) $((CY + H / 9)) $CX $CY 900 &
 sleep 0.5; shot crumple-mid
 wait
+sleep 1.5
+# Emulator frame pacing varies, so make sure the sheet really ended as a ball:
+# a second drag from the same corner area continues the crumple.
+adb shell input swipe $((CX + W / 7)) $((CY + H / 12)) $CX $CY 700
 sleep 1.5; shot crumple-ball
 report crumple-corner-drag crumple-flat crumple-ball
 report crumple-drag-progress crumple-mid crumple-ball
