@@ -21,7 +21,7 @@ export const CR_NV = (CR_GX + 1) * (CR_GY + 1);
 export const CR_NT = CR_GX * CR_GY * 2;
 export const CR_SHEET_W = 232;
 export const CR_SHEET_H = 304;
-export const CR_BALL_R = 56;
+export const CR_BALL_R = 70;
 export const CR_LEVELS = 10;
 export const CR_LAYERS = 3;
 export const CR_BUCKETS = CR_LAYERS * 2 * CR_LEVELS;
@@ -342,6 +342,15 @@ export function crumpleMove(s: CrumpleState, x: number, y: number, t: number) {
   s.lastX = x; s.lastY = y; s.lastT = t;
 }
 
+// Declared before crumpleUp: worklet closures capture by value at module
+// load, so a later declaration would arrive as undefined on the UI thread.
+export function crumpleSmooth(s: CrumpleState) {
+  'worklet';
+  s.target = 0;
+  s.vx = 0;
+  s.vy = 0;
+}
+
 export function crumpleUp(s: CrumpleState, t: number) {
   'worklet';
   const tap = s.moved < 10 && t - s.downT < 260;
@@ -384,13 +393,6 @@ export function crumplePinch(s: CrumpleState, scale: number, active: boolean) {
   }
   // Pinch in (scale < 1) crumples, pinch out (scale > 1) opens it.
   s.target = clamp(s.pinchC + (1 - scale) * 1.7, 0, 1);
-}
-
-export function crumpleSmooth(s: CrumpleState) {
-  'worklet';
-  s.target = 0;
-  s.vx = 0;
-  s.vy = 0;
 }
 
 export function stepCrumple(s: CrumpleState, dt: number) {
