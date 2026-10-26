@@ -49,10 +49,18 @@ sleep 0.25; shot crumple-toss-1
 sleep 2.5; shot crumple-toss-2
 report crumple-flick-moves crumple-ball crumple-toss-2
 # Double tap the ball: it smooths back to a sheet.
-adb shell input tap $((CX + W / 5)) $((CY - H / 30)); sleep 0.1
-adb shell input tap $((CX + W / 5)) $((CY - H / 30))
-sleep 2.5; shot crumple-smooth
+# Two taps launched together: each `input tap` spawns a JVM, so back-to-back
+# calls can land far apart and would not be a double tap at all.
+adb shell "input tap $((CX + W / 5)) $((CY - H / 30)) & sleep 0.08; input tap $((CX + W / 5)) $((CY - H / 30)); wait"
+sleep 3; shot crumple-smooth
 report crumple-double-tap-opens crumple-toss-2 crumple-smooth
+# The opened sheet must match the untouched flat sheet frame exactly.
+if [ "$(md5sum < "$OUT/crumple-smooth.png" | cut -c1-8)" = "$(md5sum < "$OUT/crumple-flat.png" | cut -c1-8)" ]; then
+  echo "crumple-double-tap-restores-flat-sheet match=yes" | tee -a "$OUT/summary.txt"
+else
+  echo "crumple-double-tap-restores-flat-sheet match=no" | tee -a "$OUT/summary.txt"; CRUMPLE_FAIL=1
+fi
 adb logcat -d > "$OUT/crumple-session.logcat.txt"
 CR=no; grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" "$OUT/crumple-session.logcat.txt" | grep -q . && CR=yes
 echo "crumple-session crash=$CR" | tee -a "$OUT/summary.txt"
+[ -z "${CRUMPLE_FAIL:-}" ] || { echo "double tap did not restore the sheet"; exit 1; }

@@ -356,7 +356,7 @@ export function crumpleUp(s: CrumpleState, t: number) {
   const tap = s.moved < 10 && t - s.downT < 260;
   if (tap && s.c >= 0.9) {
     // Double tap on the ball smooths it back out.
-    if (t - s.lastTapT < 380) {
+    if (t - s.lastTapT < 480) {
       crumpleSmooth(s);
       s.lastTapT = -1e9;
     } else {
