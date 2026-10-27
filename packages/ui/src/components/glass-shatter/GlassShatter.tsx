@@ -21,6 +21,8 @@ import { createWorld, fillMesh, stepWorld, type World } from "./shatterMath";
 export type GlassShatterProps = {
   /** The picture behind the glass, drawn at `imageScale` pixels per point. */
   image: SkImage;
+  /** Development-only aggregated UI-thread timing; off for library users. */
+  diagnostics?: boolean;
   imageScale?: number;
   width?: number;
   height?: number;
@@ -90,6 +92,7 @@ function makeTintRamp() {
 }
 
 export function GlassShatter({
+  diagnostics = false,
   image,
   imageScale = 2,
   width = 340,
@@ -105,6 +108,7 @@ export function GlassShatter({
   const [systemReduce, setSystemReduce] = useState(false);
   const reduce = reducedMotion ?? systemReduce;
   const sim = useSharedValue<World | null>(null);
+  const perf = useSharedValue({ count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false });
   const brokenId = useSharedValue(0);
   const frame = useSharedValue(0);
   const inputs = useSharedValue<Ev[]>([]);
@@ -178,6 +182,7 @@ export function GlassShatter({
       if (e.id <= seen.value) continue;
       seen.value = e.id;
       if (e.k === 0) {
+        perf.value = { count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false };
         sim.value = createWorld({ width, height, hitX: e.x, hitY: e.y, seed: (e.id * 7919) % 100000, target: shardCount });
         brokenId.value = brokenId.value + 1;
       } else if (e.k === 1) {
@@ -189,7 +194,17 @@ export function GlassShatter({
     if (!w) return;
     if (!reduceM.value) {
       const dt = Math.min(48, info.timeSincePreviousFrame ?? 16.7) / 1000;
+      const start = diagnostics ? performance.now() : 0;
       stepWorld(w, dt * (slowM.value ? 0.25 : 1));
+      if (diagnostics) {
+        const p = perf.value; const ms = performance.now() - start;
+        p.physics += ms; p.physicsMax = Math.max(p.physicsMax, ms); p.count++;
+        p.interval += info.timeSincePreviousFrame ?? 0; p.intervalMax = Math.max(p.intervalMax, info.timeSincePreviousFrame ?? 0);
+        if (!p.reported && (p.count >= 90 || w.bodies.every((b) => b.gone))) {
+          console.log(`SHATTER_UI frames=${p.count} physics_avg=${(p.physics / p.count).toFixed(2)} physics_max=${p.physicsMax.toFixed(2)} mesh_avg=${(p.mesh / p.count).toFixed(2)} path_avg=${(p.path / p.count).toFixed(2)} copies_avg=${(p.copies / p.count).toFixed(2)} interval_avg=${(p.interval / p.count).toFixed(2)} interval_max=${p.intervalMax.toFixed(2)} indices_builds=${p.indices}`);
+          p.reported = true;
+        }
+      }
     }
     frame.value = frame.value + 1;
   });
@@ -200,6 +215,7 @@ export function GlassShatter({
     const w = sim.value;
     const out: number[] = [];
     if (!w) return out;
+    if (diagnostics) perf.value.indices++;
     let base = 0;
     for (let i = 0; i < w.bodies.length; i++) {
       const n = w.bodies[i].local.length;
@@ -215,7 +231,9 @@ export function GlassShatter({
     const w = sim.value;
     const path = Skia.Path.Make();
     if (!w) return { xy: [], tex: [], tint: [], path };
+    const meshStart = diagnostics ? performance.now() : 0;
     fillMesh(w, imageScale);
+    const filled = diagnostics ? performance.now() : 0;
     const xy = w.mxy as { x: number; y: number }[];
     const start = w.mstart as number[];
     for (let i = 0; i < w.bodies.length; i++) {
@@ -227,8 +245,11 @@ export function GlassShatter({
       for (let k = 1; k < n; k++) path.lineTo(xy[s0 + k].x, xy[s0 + k].y);
       path.close();
     }
+    const pathed = diagnostics ? performance.now() : 0;
     // Copies of the reused buffers, so Skia sees a changed value every frame.
-    return { xy: xy.slice(), tex: (w.mtex as { x: number; y: number }[]).slice(), tint: (w.mtint as { x: number; y: number }[]).slice(), path };
+    const result = { xy: xy.slice(), tex: (w.mtex as { x: number; y: number }[]).slice(), tint: (w.mtint as { x: number; y: number }[]).slice(), path };
+    if (diagnostics) { const p = perf.value; p.mesh += filled - meshStart; p.path += pathed - filled; p.copies += performance.now() - pathed; }
+    return result;
   });
   const vertices = useDerivedValue(() => mesh.value.xy);
   const textures = useDerivedValue(() => mesh.value.tex);

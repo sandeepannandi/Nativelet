@@ -47,7 +47,7 @@ function drawScene() {
   return copy;
 }
 
-export default function Example({ onFeedback }: { onFeedback?: (event: "hit") => void }) {
+export default function Example({ onFeedback, diagnostics = false }: { diagnostics?: boolean; onFeedback?: (event: "hit") => void }) {
   const [slow, setSlow] = useState(false);
   const [reduce, setReduce] = useState(false);
   const [token, setToken] = useState(0);
@@ -59,7 +59,7 @@ export default function Example({ onFeedback }: { onFeedback?: (event: "hit") =>
   });
   return (
     <View style={{ alignItems: "center", gap: 10, paddingVertical: 14 }}>
-      <GlassShatter image={scene} imageScale={SCALE} width={PANE_W} height={PANE_H} slowMotion={slow} reducedMotion={reduce} resetToken={token} onFeedback={onFeedback} />
+      <GlassShatter diagnostics={diagnostics} image={scene} imageScale={SCALE} width={PANE_W} height={PANE_H} slowMotion={slow} reducedMotion={reduce} resetToken={token} onFeedback={onFeedback} />
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Pressable accessibilityRole="button" onPress={() => setToken((t) => t + 1)} style={chip(true)}>
           <Text style={{ fontSize: 12, color: "#fff", fontFamily: "Geist-Regular" }}>Reset glass</Text>

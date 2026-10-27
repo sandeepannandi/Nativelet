@@ -134,13 +134,24 @@ echo "reset button at: ${RC:-not found}"
 if [ -n "$RC" ]; then
   adb shell input tap $RC; sleep 1.5; shot shatter-reset
   RD=$(pdiff shatter-intact shatter-reset)
-  adb shell input tap $CX $CY; sleep 0.4; shot shatter-reset-mid
-  RB=$(pdiff shatter-reset shatter-reset-mid)
-  sleep 3.5; shot shatter-reset-gone
+  adb shell "screenrecord --time-limit 12 --size 540x1170 /sdcard/shatter-reset.mp4" >/dev/null 2>&1 &
+  RESET_REC=$!
+  sleep 0.8
+  adb shell input tap $CX $CY
+  RB=0
+  for idx in 1 2 3 4 5 6 7 8; do
+    sleep 0.25; shot shatter-reset-burst-$idx
+    diff=$(pdiff shatter-reset shatter-reset-burst-$idx)
+    RB=$(python3 -c "print(max($RB,$diff))")
+  done
+  sleep 5; shot shatter-reset-gone
+  timeout 25 tail --pid=$RESET_REC -f /dev/null 2>/dev/null; kill $RESET_REC 2>/dev/null || true
+  timeout 30 adb pull /sdcard/shatter-reset.mp4 "$OUT/shatter-reset.mp4" >/dev/null 2>&1 || true
   if python3 -c "import sys;sys.exit(0 if float('$RD')<=0.05 and float('$RB')>=0.15 else 1)"; then echo "shatter-interactive-reset reset_vs_intact=$RD breaks_again=$RB ok" | tee -a "$OUT/summary.txt"
   else echo "shatter-interactive-reset reset_vs_intact=$RD breaks_again=$RB NOT-ok" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1; fi
 else echo "shatter-interactive-reset NO-RESET-BUTTON-FOUND" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1; fi
 adb logcat -d > "$OUT/shatter-session1.logcat.txt"
+grep "SHATTER_UI" "$OUT/shatter-session1.logcat.txt" | sed "s/.*SHATTER_UI/shatter-ui/" | tee -a "$OUT/summary.txt"
 # Relaunch: the pane is whole again (same as the first screenshot).
 open shatter; shot shatter-relaunch
 R=$(pdiff shatter-intact shatter-relaunch)
