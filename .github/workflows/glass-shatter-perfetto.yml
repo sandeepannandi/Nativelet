@@ -19,11 +19,25 @@ jobs:
           path: apk
       - name: Record exact reused APK checksum
         run: sha256sum apk/*.apk
+      # Host-only tools, deliberately separate from app/package dependencies.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Provision and verify host analysis tools before emulator
+        run: |
+          mkdir -p "$RUNNER_TEMP/shatter-host"
+          cp scripts/shatter-host-preflight/* "$RUNNER_TEMP/shatter-host/"
+          bash "$RUNNER_TEMP/shatter-host/provision.sh" "$RUNNER_TEMP/shatter-host"
+          mkdir -p smoke-out/host-preflight
+          cp "$RUNNER_TEMP/shatter-host/"{upstream-actual.csv,schema-query.csv} smoke-out/host-preflight/
+          echo "SHATTER_TRACE_PROCESSOR=$RUNNER_TEMP/shatter-host/perfetto/linux-amd64/trace_processor_shell" >> "$GITHUB_ENV"
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Fail fast host checks before emulator
+        run: bash scripts/shatter-host-preflight/preflight.sh
       - name: One bounded native capture
         uses: reactivecircus/android-emulator-runner@v2
         with:

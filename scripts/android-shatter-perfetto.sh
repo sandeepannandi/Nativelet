@@ -2,19 +2,42 @@
 set -euo pipefail
 OUT=smoke-out/native-trace; mkdir -p "$OUT"
 PKG=com.anonymous.nativeletshowcase
+for tool in adb timeout python3; do command -v "$tool" >/dev/null; done
+: "${SHATTER_TRACE_PROCESSOR:?verified trace processor required}"
+[ -x "$SHATTER_TRACE_PROCESSOR" ]
 adb root; adb wait-for-device
 adb shell id | tee "$OUT/adb-id.txt"; grep -q 'uid=0' "$OUT/adb-id.txt"
 adb shell perfetto --query > "$OUT/perfetto-query.txt"
 grep -q linux.perf "$OUT/perfetto-query.txt" || { echo 'BLOCKER linux.perf absent'; exit 1; }
 grep -q linux.ftrace "$OUT/perfetto-query.txt" || { echo 'BLOCKER linux.ftrace absent'; exit 1; }
+grep -q linux.process_stats "$OUT/perfetto-query.txt" || { echo 'BLOCKER process_stats absent'; exit 1; }
+[ "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 34 ]
+[ "$(adb shell getprop ro.product.cpu.abi | tr -d '\r')" = x86_64 ]
+adb shell atrace --list_categories > "$OUT/atrace-categories.txt"
+for category in gfx view binder_driver; do grep -Eq "^[[:space:]]*$category[[:space:]]+-" "$OUT/atrace-categories.txt"; done
+adb shell 'for t in am logcat dumpsys pidof screencap input ps perfetto; do command -v "$t" || exit 1; done'
+adb shell 'test -d /data/misc/perfetto-traces && test -w /data/misc/perfetto-traces'
+adb shell df -k /data/misc/perfetto-traces > "$OUT/device-space.txt"
+python3 - "$OUT/device-space.txt" <<'SPACE'
+import pathlib,sys
+rows=pathlib.Path(sys.argv[1]).read_text().splitlines()
+assert len(rows)>1 and int(rows[-1].split()[3])>=131072,'BLOCKER less than128MiB device space'
+SPACE
+adb shell wm size > "$OUT/device-size.txt"; adb shell wm density > "$OUT/device-density.txt"
+# APK already exact-hash gated on host; confirm installed APK bytes too.
+adb shell pm path "$PKG" > "$OUT/package-path.txt"
+APK_PATH=$(sed -n 's/^package://p' "$OUT/package-path.txt" | tr -d '\r'); [ -n "$APK_PATH" ]
+adb shell sha256sum "$APK_PATH" > "$OUT/installed-checksum.txt"
+grep -q '^f83e3a72be328a79be186cd7ce6e6ca79d6f9ea3bf46877ec1988471ff83ea5b ' "$OUT/installed-checksum.txt"
 adb shell cat /sys/kernel/tracing/available_events > "$OUT/available-events.txt"
-grep -q 'sched:sched_switch' "$OUT/available-events.txt" || { echo 'BLOCKER sched_switch absent'; exit 1; }
+for event in sched_switch sched_waking sched_blocked_reason; do grep -q "sched:$event" "$OUT/available-events.txt"; done
 adb shell am force-stop "$PKG"; adb logcat -c
 adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///shatter' "$PKG"
 sleep 12; bash scripts/android-system-ready.sh
 # Fresh visual gates before warm-up; no idle-dependent hierarchy dump.
 adb shell dumpsys window > "$OUT/focus.txt"
-grep -q "$PKG" "$OUT/focus.txt"
+grep -E 'mCurrentFocus=' "$OUT/focus.txt" | grep -q "$PKG"
+# A generic package occurrence elsewhere in dumpsys is insufficient.
 PID=$(adb shell pidof "$PKG" | tr -d '\r'); [ -n "$PID" ]
 adb exec-out screencap -p > "$OUT/initial.png"
 python3 scripts/shatter-trace-match.py target "$OUT/initial.png" > "$OUT/initial-target.json"
@@ -60,12 +83,17 @@ data_sources { config { name: "linux.ftrace" ftrace_config {
 } } }
 data_sources { config { name: "linux.process_stats" process_stats_config { scan_all_processes_on_start: true } } }
 CFG
-adb shell perfetto --txt -c - -o /data/misc/perfetto-traces/shatter.pftrace < "$OUT/config.pbtxt" > "$OUT/perfetto-log.txt" 2>&1 &
+timeout --signal=TERM --kill-after=5s 30s adb shell perfetto --txt -c - -o /data/misc/perfetto-traces/shatter.pftrace < "$OUT/config.pbtxt" > "$OUT/perfetto-log.txt" 2>&1 &
 TRACE_JOB=$!
+trap 'kill "$TRACE_JOB" 2>/dev/null || true' EXIT
 sleep 2
+kill -0 "$TRACE_JOB" || { echo 'BLOCKER trace process exited before fracture'; exit 1; }
+adb shell cat /proc/uptime > "$OUT/fracture-before-uptime.txt"
 adb shell input tap "$HX" "$HY"
+adb shell cat /proc/uptime > "$OUT/fracture-after-uptime.txt"
 sleep 0.5; adb exec-out screencap -p > "$OUT/mid.png"
 wait "$TRACE_JOB"
+trap - EXIT
 adb logcat -d > "$OUT/capture-logcat.txt"
 adb pull /data/misc/perfetto-traces/shatter.pftrace "$OUT/shatter.pftrace"
 adb exec-out screencap -p > "$OUT/after.png"
@@ -76,3 +104,6 @@ python3 scripts/shatter-trace-match.py fracture "$OUT/mid.png" "$OUT/before.png"
 python3 -c 'import sys;assert float(open(sys.argv[1]).read())>0.03,"BLOCKER no visual fracture"' "$OUT/fracture-share.txt"
 grep 'SHATTER_UI' "$OUT/capture-logcat.txt" | tee "$OUT/summary.txt" || true
 [ -s "$OUT/shatter.pftrace" ] || { echo 'BLOCKER trace empty'; exit 1; }
+
+# A nonempty file is not success: target samples, useful stacks and scheduler coverage.
+python3 scripts/shatter-host-preflight/validate-capture.py "$SHATTER_TRACE_PROCESSOR" "$OUT" "$PID"
