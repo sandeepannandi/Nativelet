@@ -261,7 +261,7 @@ export function GlassShatter({
         p.physics += ms; p.physicsMax = Math.max(p.physicsMax, ms); p.count++;
         p.interval += info.timeSincePreviousFrame ?? 0; p.intervalMax = Math.max(p.intervalMax, info.timeSincePreviousFrame ?? 0);
         if (!p.reported && (p.count >= 90 || w.bodies.every((b) => b.gone))) {
-          console.log(`SHATTER_UI frames=${p.count} physics_avg=${(p.physics / p.count).toFixed(2)} physics_max=${p.physicsMax.toFixed(2)} mesh_avg=${(p.mesh / p.count).toFixed(2)} path_avg=${(p.path / p.count).toFixed(2)} copies_avg=${(p.copies / p.count).toFixed(2)} interval_avg=${(p.interval / p.count).toFixed(2)} interval_max=${p.intervalMax.toFixed(2)} indices_builds=${p.indices}`);
+          console.log(`SHATTER_UI frames=${p.count} physics_avg=${(p.physics / p.count).toFixed(2)} physics_max=${p.physicsMax.toFixed(2)} cpu_total_avg=${((p.physics+p.mesh+p.path+p.copies)/p.count).toFixed(2)} mesh_avg=${(p.mesh / p.count).toFixed(2)} path_avg=${(p.path / p.count).toFixed(2)} copies_avg=${(p.copies / p.count).toFixed(2)} interval_avg=${(p.interval / p.count).toFixed(2)} interval_max=${p.intervalMax.toFixed(2)} indices_builds=${p.indices}`);
           p.reported = true;
           if (SAMPLE_UI && sampling.value === 1) {
             try { const path = (globalThis as typeof globalThis & { _stopProfiling: () => string })._stopProfiling(); console.log(`SHATTER_PROFILE saved=${path}`); }

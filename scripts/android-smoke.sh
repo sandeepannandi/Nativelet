@@ -11,6 +11,9 @@ PKG=$(grep -o 'package name=.[a-z.]*' <<<"$(aapt dump badging "$APK" 2>/dev/null
 adb shell pm list packages | grep -i nativelet > "$OUT/packages.txt"
 PKG=$(sed 's/package://' "$OUT/packages.txt" | head -1 | tr -d '\r')
 echo "package=$PKG" | tee "$OUT/summary.txt"
+bash scripts/android-shatter-native-costs.sh
+# Separate unrecorded first/Reset/second component timing, no profiler build.
+bash scripts/android-shatter-native-pacing.sh
 adb shell wm size > "$OUT/wm.txt"
 ROUTES="index fold genie blossom capsule cards carousel chart curl glass gooey light lens morph orbit pinch ripple sort swipe toasts mosaic bubbles flap banner fog pendulum blackhole coin reveal prism hourglass strings range wheel timeline path player flowfield crumple shatter"
 for r in $ROUTES; do

@@ -31,6 +31,13 @@ for route in filter(None,a.routes.split(',')):
  for suffix in ['-1.png','-2.png','.logcat.txt','.start.txt']:
   path=root/f'{route}{suffix}'
   if not path.is_file() or not path.stat().st_size:failures.append(f'Missing or empty artifact: {path}')
+
+# Native Glass Shatter gate is additional, never a substitute for original suite.
+if (root / 'native-pacing' / 'timing.json').exists():
+    import json as _json
+    if not _json.loads((root / 'native-pacing' / 'timing.json').read_text()).get('pass'):
+        failures.append('Native Glass Shatter unrecorded pacing gate failed')
+
 if failures:
  print('\n'.join(failures),file=sys.stderr);sys.exit(1)
 print(f'Fail-closed gate passed: {len(summaries)} summaries, {len(list(root.rglob("*.png")))} screenshots. Visual/gesture inspection still required.')
