@@ -1,0 +1,5 @@
+# One finite same-UI-Hermes comparison
+
+No product fix or merge. Four immutable local implementations: reference4332fcc, contact pool, y-row bitset and Float64 solver. Same359-shard two-seed workload,60frames per job, dt1/60 and0.048 separately.48jobs:16warmup,32measured, rotating candidate order across rounds. UI callback executes actual worklets, no animation mounted. Log each sample, setup, step and mesh; exact complete worlds/meshes compared to immutable reference outside sample windows. Allocation inside setup/step/mesh counts; GC may occur outside windows, an acknowledged limitation. No tracer, profiler, screenrecord or retries.
+
+Predeclared acceptance: all48jobs present/exact; BOTH dt groups >=20% mean total-step+mesh reduction against reference, p95<=12ms,max<=16.67ms, setupmax<=50ms. These reserve some frame headroom but do not prove full rendering/presentation or first-hit latency. Test failed means failed; no post-result relaxation. Even a qualifying implementation still needs actual component behavior/pacing and full-suite gates before merge.
