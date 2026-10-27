@@ -104,3 +104,16 @@ test('render buffers: one point per polygon vertex, reused, gone shards parked',
   });
   assert.ok(w.bodies.some((b) => b.gone), 'shards left the frame');
 });
+
+test('cached hull bounds enclose every collision vertex', () => {
+  const w = createWorld({ width: W, height: H, hitX: 170, hitY: 180, seed: 5, target: 360 });
+  for (let f = 0; f < 90; f++) {
+    stepWorld(w, 1 / 60);
+    for (const b of w.bodies) {
+      for (let i = 0; i < b.wx.length; i++) {
+        assert.ok(b.wx[i] >= b.minX && b.wx[i] <= b.maxX);
+        assert.ok(b.wy[i] >= b.minY && b.wy[i] <= b.maxY);
+      }
+    }
+  }
+});

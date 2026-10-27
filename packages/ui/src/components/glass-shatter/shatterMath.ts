@@ -181,6 +181,7 @@ export type Body = {
   lnx: number[]; lny: number[]; enx: number[]; eny: number[];
   /** Scratch: index of the best separating edge from the last maxSeparation call. */
   si: number;
+  minX: number; minY: number; maxX: number; maxY: number;
   /** Pane position of the centroid before the break. */
   homeX: number; homeY: number;
   radius: number;
@@ -221,13 +222,18 @@ export function updateWorldHull(b: Body) {
   'worklet';
   const c = Math.cos(b.a);
   const s = Math.sin(b.a);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (let i = 0; i < b.hull.length; i++) {
     const p = b.hull[i];
     b.wx[i] = b.x + p.x * c - p.y * s;
     b.wy[i] = b.y + p.x * s + p.y * c;
+    const x = b.wx[i], y = b.wy[i];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
     b.enx[i] = b.lnx[i] * c - b.lny[i] * s;
     b.eny[i] = b.lnx[i] * s + b.lny[i] * c;
   }
+  b.minX = minX; b.minY = minY; b.maxX = maxX; b.maxY = maxY;
 }
 
 export function createWorld(o: FractureOptions & { gravity?: number }): World {
@@ -269,7 +275,7 @@ export function createWorld(o: FractureOptions & { gravity?: number }): World {
       x: s.cx, y: s.cy, a: 0, vx: 0, vy: 0, w: 0,
       invM: 1 / mass, invI: 1 / Math.max(inertia, 1e-6),
       local, hull, wx: hull.map(() => 0), wy: hull.map(() => 0),
-      lnx, lny, enx: hull.map(() => 0), eny: hull.map(() => 0), si: 0,
+      lnx, lny, enx: hull.map(() => 0), eny: hull.map(() => 0), si: 0, minX: 0, minY: 0, maxX: 0, maxY: 0,
       homeX: s.cx, homeY: s.cy, radius, sleep: 0, asleep: false,
       held: true, releaseAt: 0, kx: 0, ky: 0, kw: 0, gone: false,
     };
@@ -281,7 +287,8 @@ export function createWorld(o: FractureOptions & { gravity?: number }): World {
   // The blow: shards leave the impact point radially. Close pieces get a hard
   // shove, far pieces just drop and tip, with a little scatter.
   const reach = Math.hypot(o.width, o.height);
-  for (const b of bodies) {
+  for (let bi = 0; bi < bodies.length; bi++) {
+    const b = bodies[bi];
     const dx = b.x - o.hitX;
     const dy = b.y - o.hitY;
     const d = Math.hypot(dx, dy) || 1;
@@ -308,6 +315,8 @@ type Contact = {
   jn: number; jt: number;
   mn: number; mt: number;
   bias: number;
+  am: number; ai: number; bm: number; bi: number;
+  rnA: number; rnB: number; rtA: number; rtB: number;
 };
 
 /**
@@ -318,16 +327,18 @@ type Contact = {
 function maxSeparation(A: Body, B: Body): number {
   'worklet';
   let best = -Infinity;
-  const n = A.wx.length;
-  const m = B.wx.length;
+  const ax = A.wx, ay = A.wy, bx = B.wx, by = B.wy;
+  const enx = A.enx, eny = A.eny;
+  const n = ax.length;
+  const m = bx.length;
   for (let i = 0; i < n; i++) {
-    const nx = A.enx[i];
-    const ny = A.eny[i];
-    const ox = A.wx[i];
-    const oy = A.wy[i];
+    const nx = enx[i];
+    const ny = eny[i];
+    const ox = ax[i];
+    const oy = ay[i];
     let min = Infinity;
     for (let k = 0; k < m; k++) {
-      const d = (B.wx[k] - ox) * nx + (B.wy[k] - oy) * ny;
+      const d = (bx[k] - ox) * nx + (by[k] - oy) * ny;
       if (d < min) min = d;
     }
     if (min > best) {
@@ -409,7 +420,7 @@ function collide(A: Body, B: Body, out: Contact[]) {
     out.push({
       a: A, b: B, nx: cnx, ny: cny, px, py, pen: -sep,
       rax: px - A.x, ray: py - A.y, rbx: px - B.x, rby: py - B.y,
-      jn: 0, jt: 0, mn: 0, mt: 0, bias: 0,
+      jn: 0, jt: 0, mn: 0, mt: 0, bias: 0, am: 0, ai: 0, bm: 0, bi: 0, rnA: 0, rnB: 0, rtA: 0, rtB: 0,
     });
   }
 }
@@ -429,6 +440,7 @@ function prep(ct: Contact, dt: number) {
   const rtA = ct.rax * ty - ct.ray * tx;
   const rnB = ct.rbx * ny - ct.rby * nx;
   const rtB = ct.rbx * ty - ct.rby * tx;
+  ct.rnA = rnA; ct.rnB = rnB; ct.rtA = rtA; ct.rtB = rtB;
   const k = a.invM + a.invI * rnA * rnA + b.invM + b.invI * rnB * rnB;
   const kt = a.invM + a.invI * rtA * rtA + b.invM + b.invI * rtB * rtB;
   ct.mn = k > 0 ? 1 / k : 0;
@@ -444,31 +456,30 @@ function prep(ct: Contact, dt: number) {
 function solve(ct: Contact) {
   'worklet';
   const a = ct.a, b = ct.b;
-  const nx = ct.nx, ny = ct.ny;
-  const tx = -ny, ty = nx;
-  let rx = (b.vx - b.w * ct.rby) - (a.vx - a.w * ct.ray);
-  let ry = (b.vy + b.w * ct.rbx) - (a.vy + a.w * ct.rax);
-  let dj = ct.mn * (ct.bias - (rx * nx + ry * ny));
+  const nx = ct.nx, ny = ct.ny, tx = -ny, ty = nx;
+  const rax = ct.rax, ray = ct.ray, rbx = ct.rbx, rby = ct.rby;
+  const am = ct.am, ai = ct.ai, bm = ct.bm, bi = ct.bi;
+  let avx = a.vx, avy = a.vy, aw = a.w;
+  let bvx = b.vx, bvy = b.vy, bw = b.w;
+  let rx = (bvx - bw * rby) - (avx - aw * ray);
+  let ry = (bvy + bw * rbx) - (avy + aw * rax);
   const old = ct.jn;
-  ct.jn = Math.max(old + dj, 0);
-  dj = ct.jn - old;
+  const next = Math.max(old + ct.mn * (ct.bias - (rx * nx + ry * ny)), 0);
+  ct.jn = next;
+  const dj = next - old;
   let jx = nx * dj, jy = ny * dj;
-  a.vx -= a.invM * jx; a.vy -= a.invM * jy;
-  a.w -= a.invI * (ct.rax * jy - ct.ray * jx);
-  b.vx += b.invM * jx; b.vy += b.invM * jy;
-  b.w += b.invI * (ct.rbx * jy - ct.rby * jx);
-  rx = (b.vx - b.w * ct.rby) - (a.vx - a.w * ct.ray);
-  ry = (b.vy + b.w * ct.rbx) - (a.vy + a.w * ct.rax);
-  let djt = -ct.mt * (rx * tx + ry * ty);
-  const maxF = FRICTION * ct.jn;
+  avx -= am * jx; avy -= am * jy; aw -= ai * ct.rnA * dj;
+  bvx += bm * jx; bvy += bm * jy; bw += bi * ct.rnB * dj;
+  rx = (bvx - bw * rby) - (avx - aw * ray);
+  ry = (bvy + bw * rbx) - (avy + aw * rax);
+  const maxF = FRICTION * next;
   const oldT = ct.jt;
-  ct.jt = Math.max(-maxF, Math.min(maxF, oldT + djt));
-  djt = ct.jt - oldT;
+  const nextT = Math.max(-maxF, Math.min(maxF, oldT - ct.mt * (rx * tx + ry * ty)));
+  ct.jt = nextT;
+  const djt = nextT - oldT;
   jx = tx * djt; jy = ty * djt;
-  a.vx -= a.invM * jx; a.vy -= a.invM * jy;
-  a.w -= a.invI * (ct.rax * jy - ct.ray * jx);
-  b.vx += b.invM * jx; b.vy += b.invM * jy;
-  b.w += b.invI * (ct.rbx * jy - ct.rby * jx);
+  a.vx = avx - am * jx; a.vy = avy - am * jy; a.w = aw - ai * ct.rtA * djt;
+  b.vx = bvx + bm * jx; b.vy = bvy + bm * jy; b.w = bw + bi * ct.rtB * djt;
 }
 
 const SUB = 3;
@@ -482,7 +493,8 @@ function stepFixed(w: World, dt: number) {
   'worklet';
   const bodies = w.bodies;
   w.time += dt;
-  for (const b of bodies) {
+  for (let bi = 0; bi < bodies.length; bi++) {
+    const b = bodies[bi];
     if (b.gone) continue;
     if (b.held && w.time >= b.releaseAt) {
       b.held = false;
@@ -518,6 +530,8 @@ function stepFixed(w: World, dt: number) {
       const b = order[j];
       if (b.x - b.radius > aRight) break;
       if (b.gone) continue;
+      // Tight hull bounds reject only pairs whose actual polygons cannot touch.
+      if (a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY) continue;
       if (!aMoving && (b.asleep || b.held)) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const rr = a.radius + b.radius;
@@ -526,7 +540,8 @@ function stepFixed(w: World, dt: number) {
     }
   }
   w.contacts = contacts.length;
-  for (const ct of contacts) {
+  for (let ci = 0; ci < contacts.length; ci++) {
+    const ct = contacts[ci];
     // A moving body touching a sleeper wakes it.
     if (!ct.a.held && !ct.b.held && (ct.a.asleep !== ct.b.asleep)) {
       const m = ct.a.asleep ? ct.b : ct.a;
@@ -539,10 +554,15 @@ function stepFixed(w: World, dt: number) {
   const anchored: Body[] = [];
   const am: number[] = [];
   const ai: number[] = [];
-  for (const b of bodies) if (!b.gone && (b.asleep || b.held)) { anchored.push(b); am.push(b.invM); ai.push(b.invI); b.invM = 0; b.invI = 0; }
-  for (let it = 0; it < 14; it++) for (const ct of contacts) solve(ct);
+  for (let bi = 0; bi < bodies.length; bi++) { const b = bodies[bi]; if (!b.gone && (b.asleep || b.held)) { anchored.push(b); am.push(b.invM); ai.push(b.invI); b.invM = 0; b.invI = 0; } }
+  for (let ci = 0; ci < contacts.length; ci++) {
+    const ct = contacts[ci];
+    ct.am = ct.a.invM; ct.ai = ct.a.invI; ct.bm = ct.b.invM; ct.bi = ct.b.invI;
+  }
+  for (let it = 0; it < 14; it++) for (let ci = 0; ci < contacts.length; ci++) solve(contacts[ci]);
   for (let q = 0; q < anchored.length; q++) { anchored[q].invM = am[q]; anchored[q].invI = ai[q]; }
-  for (const b of bodies) {
+  for (let bi = 0; bi < bodies.length; bi++) {
+    const b = bodies[bi];
     if (b.gone || b.held || b.asleep) continue;
     b.x += b.vx * dt;
     b.y += b.vy * dt;
