@@ -54,20 +54,21 @@ test('actual component callback consumes terminal/reset/hit; baseline and reduce
   const ts = require('../../../../../apps/showcase/node_modules/typescript');
   const code=ts.transpileModule(fs.readFileSync(new URL('./GlassShatter.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
   function mount(mode,diagnostics=true,terminalAt=3,trace=false) {
-    let callback,steps=0,fills=0;const shared=[],derived=[],worlds=[];
+    let callback,steps=0,fills=0,attaches=0,disposes=0;const shared=[],derived=[],worlds=[];
     const react={useEffect(){},useMemo:f=>f(),useRef:v=>({current:v}),useState:v=>[v,()=>{}],createElement:()=>({})};
     react.default=react;
     const path={moveTo(){},lineTo(){},close(){}};
     const canvas={clear(){},drawRect(){}};const paint={setColor(){},dispose(){}};
     const surface={getCanvas:()=>canvas,flush(){},makeImageSnapshot:()=>({makeNonTextureImage:()=>({dispose(){}}),dispose(){}}),dispose(){}};
     const math={createWorld:()=>{const w={bodies:[{gone:false,local:[]}],ticks:0,mxy:[],mtex:[],mtint:[],mstart:[0]};worlds.push(w);return w;},stepWorld:w=>{steps++;w.ticks++;w.bodies[0].gone=w.ticks>=terminalAt;},allShardsGone,fillMesh:w=>{fills++;w.mxy=[{x:w.bodies[0].gone?-9999:0,y:0}];}};
-    const mocks={react,'react-native':{AccessibilityInfo:{},PanResponder:{create:()=>({panHandlers:{}})}},'@shopify/react-native-skia':{FilterMode:{Linear:1},MipmapMode:{Linear:1,None:0},vec:()=>({}),Skia:{Surface:{MakeOffscreen:()=>surface},Paint:()=>paint,Color:v=>v,XYWHRect(){},Path:{Make:()=>path}}},'react-native-reanimated':{runOnUI:f=>f,useSharedValue:v=>{const o={value:v};shared.push(o);return o;},useDerivedValue:f=>{derived.push(f);return {value:{xy:[],tex:[],tint:[],path}};},useFrameCallback:f=>{callback=f;}},'./shatterMath':math,'./shatterTrace':{traceShatterSection}};
+    const native={NATIVE_SHATTER:true,prepareNativeShatter:async()=>{},attachNative:w=>{attaches++;w.nativeHandle=attaches;},disposeNative:w=>{if(w?.nativeHandle!==undefined){disposes++;delete w.nativeHandle;}},advanceNative:(w,dt)=>{assert.ok(w.nativeHandle);math.stepWorld(w,dt);}};
+    const mocks={'./shatterNative':native,'./ShatterUnavailable':{ShatterUnavailable:()=>({})},react,'react-native':{AccessibilityInfo:{},PanResponder:{create:()=>({panHandlers:{}})}},'@shopify/react-native-skia':{FilterMode:{Linear:1},MipmapMode:{Linear:1,None:0},vec:()=>({}),Skia:{Surface:{MakeOffscreen:()=>surface},Paint:()=>paint,Color:v=>v,XYWHRect(){},Path:{Make:()=>path}}},'react-native-reanimated':{runOnJS:f=>f,runOnUI:f=>f,useSharedValue:v=>{const o={value:v};shared.push(o);return o;},useDerivedValue:f=>{derived.push(f);return {value:{xy:[],tex:[],tint:[],path}};},useFrameCallback:f=>{callback=f;}},'./shatterMath':math,'./shatterTrace':{traceShatterSection}};
     const context={exports:{},require:n=>mocks[n],process:{env:{EXPO_PUBLIC_SHATTER_TAIL:mode,EXPO_PUBLIC_SHATTER_TRACE:trace?"1":"0"}},performance,console:{log(){}},globalThis:{}};
     vm.runInNewContext(code,context);context.exports.GlassShatter({image:{},diagnostics});
     const [perf,broken,frame,terminal,terminalObserved,finalMeshObserved,inputs,seen,slow,reduce]=shared;
     const tick=()=>{const prev=frame.value;callback({timeSincePreviousFrame:16.7});if(frame.value!==prev)derived[1]();};
     const event=(id,k)=>{inputs.value=[{id,k,x:170,y:180}];};
-    return {shared,perf,frame,terminal,reduce,event,tick,worlds,get steps(){return steps;},get fills(){return fills;}};
+    return {shared,perf,frame,terminal,reduce,event,tick,worlds,get attaches(){return attaches;},get disposes(){return disposes;},get steps(){return steps;},get fills(){return fills;}};
   }
   const markerEvents=[];
   globalThis._beginSection=n=>markerEvents.push(n);
@@ -93,8 +94,8 @@ test('actual component callback consumes terminal/reset/hit; baseline and reduce
   assert.equal(v.worlds[0].mxy[0].x,-9999);
   for(let i=0;i<5;i++){b.tick();v.tick();}
   assert.equal(b.steps,8);assert.equal(v.steps,3);assert.equal(v.fills,3);
-  v.event(2,1);v.tick();assert.equal(v.terminal.value,false,'actual reset consumed');
-  v.event(3,0);v.tick();assert.equal(v.steps,4);assert.equal(v.worlds.length,2);assert.equal(v.terminal.value,false);
+  v.event(2,1);v.tick();assert.equal(v.terminal.value,false,'actual reset consumed');assert.equal(v.disposes,1,'reset disposes native handle');
+  v.event(3,0);v.tick();assert.equal(v.steps,4);assert.equal(v.worlds.length,2);assert.equal(v.terminal.value,false);assert.equal(v.attaches,2,'second hit attaches new native world');
   const off=mount('physics-mesh',false);off.event(1,0);for(let i=0;i<5;i++)off.tick();assert.equal(off.steps,5,'diagnostics off unchanged');
   const reduced=mount('physics-mesh');reduced.reduce.value=true;reduced.event(1,0);reduced.tick();assert.equal(reduced.steps,0);assert.equal(reduced.terminal.value,false);
   const report90=mount('physics-mesh',true,999);report90.event(1,0);for(let i=0;i<95;i++)report90.tick();assert.equal(report90.perf.value.reported,true);assert.equal(report90.terminal.value,false);assert.equal(report90.steps,95,'90-frame report never terminates');
