@@ -1,0 +1,84 @@
+name: Glass Shatter exact SAT candidate validation
+on:
+  push:
+    branches: ["diagnostics/glass-shatter-inline"]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [physics-mesh]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Local tests before native build
+        run: node --experimental-strip-types --test packages/ui/src/components/glass-shatter/{shatterMath,shatterTrace}.test.mjs
+      - name: Install locked showcase dependencies
+        working-directory: apps/showcase
+        run: npm ci
+      - name: Tail callback tests with installed TypeScript
+        run: node --experimental-strip-types --test packages/ui/src/components/glass-shatter/{shatterTail,shatterInline}.test.mjs
+      - name: Prebuild Android
+        working-directory: apps/showcase
+        run: npx expo prebuild --platform android --no-install --clean
+      - name: Build diagnostic release
+        working-directory: apps/showcase/android
+        env:
+          EXPO_PUBLIC_SHATTER_PROFILE: "0"
+          EXPO_PUBLIC_SHATTER_TRACE: "0"
+          EXPO_PUBLIC_SHATTER_TAIL: ${{ matrix.variant }}
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon
+      - name: Exact new artifact hash
+        run: sha256sum apps/showcase/android/app/build/outputs/apk/release/*.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tail-apk-${{ matrix.variant }}
+          path: apps/showcase/android/app/build/outputs/apk/release/*.apk
+  validate:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: tail-apk-physics-mesh
+          path: apk
+      - name: Host dependencies
+        run: |
+          python3 -m pip install pillow
+          bash scripts/shatter-host-preflight/android-sdk.sh
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: One unprofiled sequence and separate Prism reproduction
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: false
+          script: |
+            adb install -r apk/*.apk
+            bash scripts/android-system-ready.sh
+            bash scripts/android-shatter-inline-check.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inline-native-validation
+          path: smoke-out
