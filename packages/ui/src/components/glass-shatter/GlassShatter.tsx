@@ -15,9 +15,13 @@ import {
   vec,
   type SkImage,
 } from "@shopify/react-native-skia";
-import { runOnUI, useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
+import { runOnJS, runOnUI, useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import { traceShatterSection } from "./shatterTrace";
-import { createWorld, fillMesh, stepWorld, allShardsGone, type World } from "./shatterMath";
+import { createWorld, fillMesh, allShardsGone, type World } from "./shatterMath";
+
+import { NATIVE_SHATTER, prepareNativeShatter, attachNative, disposeNative, advanceNative } from "./shatterNative";
+
+import { ShatterUnavailable } from "./ShatterUnavailable";
 
 export type GlassShatterProps = {
   /** The picture behind the glass, drawn at `imageScale` pixels per point. */
@@ -122,10 +126,13 @@ export function GlassShatter({
   label = "A pane of glass over a harbor at sunrise. Tap or flick it to shatter it; the shards fall away.",
   style,
 }: GlassShatterProps) {
+  const [nativeStatus, setNativeStatus] = useState(NATIVE_SHATTER ? "Preparing native Glass Shatter..." : "");
+  useEffect(() => { let mounted=true;prepareNativeShatter().then(()=>{if(mounted)setNativeStatus("");},err=>{if(mounted)setNativeStatus(String(err.message ?? err));});return()=>{mounted=false;}; }, []);
+  const reportNativeError = (message: string) => setNativeStatus(message);
   const [systemReduce, setSystemReduce] = useState(false);
   const reduce = reducedMotion ?? systemReduce;
   const worldKey = useMemo(() => ++nextWorldKey, []);
-  useEffect(() => () => { runOnUI((key: number) => { "worklet"; delete uiWorlds()[key]; })(worldKey); }, [worldKey]);
+  useEffect(() => () => { runOnUI((key: number) => { "worklet"; disposeNative(uiWorlds()[key]); delete uiWorlds()[key]; })(worldKey); }, [worldKey]);
   const perf = useSharedValue({ count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false });
   const brokenId = useSharedValue(0);
   const frame = useSharedValue(0);
@@ -183,7 +190,7 @@ export function GlassShatter({
 
   const pan = useMemo(() => {
     const hit = (x: number, y: number) => {
-      if (brokenJS.current) return;
+      if (brokenJS.current || nativeStatus) return;
       brokenJS.current = true;
       push(0, Math.max(2, Math.min(width - 2, x)), Math.max(2, Math.min(height - 2, y)));
       latest.current.onFeedback?.("hit");
@@ -194,10 +201,13 @@ export function GlassShatter({
       onPanResponderGrant: (evt) => hit(evt.nativeEvent.locationX, evt.nativeEvent.locationY),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width, height]);
+  }, [width, height, nativeStatus]);
 
+  const stopped = useSharedValue(false);
   const sampling = useSharedValue(0); // 0 not started, 1 active, 2 complete
   useFrameCallback((info) => {
+    if (stopped.value) return;
+    try {
     const evs = inputs.value;
     for (let i = 0; i < evs.length; i++) {
       const e = evs[i];
@@ -212,9 +222,13 @@ export function GlassShatter({
         finalMeshObserved.value = false;
         terminal.value = false;
         perf.value = { count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false };
+        disposeNative(uiWorlds()[worldKey]);
         uiWorlds()[worldKey] = traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/createWorld", () => {
           "worklet";
-          return createWorld({ width, height, hitX: e.x, hitY: e.y, seed: (e.id * 7919) % 100000, target: shardCount });
+          if (NATIVE_SHATTER && (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width > 4096 || height > 4096 || !Number.isInteger(shardCount) || shardCount < 3 || shardCount > 600)) throw new Error("Glass Shatter dimensions or shard count exceed native capacity.");
+          const world = createWorld({ width, height, hitX: e.x, hitY: e.y, seed: (e.id * 7919) % 100000, target: shardCount });
+          attachNative(world);
+          return world;
         });
         brokenId.value = brokenId.value + 1;
       } else if (e.k === 1) {
@@ -223,6 +237,7 @@ export function GlassShatter({
         terminal.value = false;
         traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/reset", () => {
           "worklet";
+          disposeNative(uiWorlds()[worldKey]);
           uiWorlds()[worldKey] = null;
         });
         brokenId.value = brokenId.value + 1;
@@ -239,7 +254,7 @@ export function GlassShatter({
       const start = diagnostics ? performance.now() : 0;
       traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/stepWorld", () => {
         "worklet";
-        stepWorld(w, dt * (slowM.value ? 0.25 : 1));
+        advanceNative(w, dt * (slowM.value ? 0.25 : 1));
       });
       if (diagnostics) {
         const p = perf.value; const ms = performance.now() - start;
@@ -265,6 +280,15 @@ export function GlassShatter({
     // vertices and the paths clear. Only subsequent callbacks are skipped.
     frame.value = frame.value + 1;
     if (QUIESCE_PHYSICS_MESH && reachedTerminal) terminal.value = true;
+    } catch (error) {
+      stopped.value = true;
+      const world = uiWorlds()[worldKey];
+      try { disposeNative(world); } catch { /* World may already have been invalidated. */ }
+      uiWorlds()[worldKey] = null;
+      seen.value = inputs.value.length ? inputs.value[inputs.value.length - 1].id : seen.value;
+      brokenId.value = brokenId.value + 1;
+      runOnJS(reportNativeError)(`Glass Shatter stopped: ${String(error)}`);
+    }
   });
 
   // Triangle fans, one per shard, rebuilt only when the pane breaks or resets.
@@ -272,7 +296,7 @@ export function GlassShatter({
     brokenId.value;
     const w = uiWorlds()[worldKey];
     const out: number[] = [];
-    if (!w) return out;
+    if (stopped.value || !w) return out;
     if (diagnostics) perf.value.indices++;
     let base = 0;
     for (let i = 0; i < w.bodies.length; i++) {
@@ -288,7 +312,7 @@ export function GlassShatter({
     brokenId.value;
     const w = uiWorlds()[worldKey];
     const path = Skia.Path.Make();
-    if (!w) return { xy: [], tex: [], tint: [], path };
+    if (stopped.value || !w) return { xy: [], tex: [], tint: [], path };
     const meshStart = diagnostics ? performance.now() : 0;
     traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/fillMesh", () => {
       "worklet";
@@ -329,6 +353,7 @@ export function GlassShatter({
   const edges = useDerivedValue(() => mesh.value.path);
   const sheenOpacity = useDerivedValue(() => (brokenId.value >= 0 && uiWorlds()[worldKey] ? 0 : 1));
 
+  if (nativeStatus) return <ShatterUnavailable message={nativeStatus} width={width} height={height} style={style} />;
   return (
     <View
       style={[{ width, height, borderRadius: 18, overflow: "hidden", backgroundColor: "#0b1426" }, style]}

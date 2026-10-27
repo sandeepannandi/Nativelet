@@ -1,0 +1,36 @@
+{
+  "name": "@nativelet/glass-shatter-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nativelet Glass Shatter fixed-step native companion",
+  "main": "index.js",
+  "files": [
+    "cpp",
+    "specs",
+    "android",
+    "ios",
+    "app.plugin.cjs",
+    "react-native.config.js",
+    "index.js",
+    "README.md",
+    "NativeletShatterCore.podspec",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "react-native": ">=0.86 <0.87",
+    "react-native-worklets": ">=0.10.1 <0.11"
+  },
+  "codegenConfig": {
+    "name": "NativeletShatterSpecs",
+    "type": "modules",
+    "jsSrcsDir": "specs",
+    "android": {
+      "javaPackageName": "com.nativelet.shatter"
+    },
+    "ios": {
+      "modulesProvider": {
+        "NativeletShatter": "NativeletShatterProvider"
+      }
+    }
+  }
+}

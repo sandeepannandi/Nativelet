@@ -319,51 +319,47 @@ type Contact = {
   rnA: number; rnB: number; rtA: number; rtB: number;
 };
 
+/**
+ * Best separating axis of A's edges against B. Returns the separation and
+ * leaves the edge index in A.si. Stops at the first axis that separates them
+ * (the caller only needs to know they do not touch).
+ */
+function maxSeparation(A: Body, B: Body): number {
+  'worklet';
+  let best = -Infinity;
+  const ax = A.wx, ay = A.wy, bx = B.wx, by = B.wy;
+  const enx = A.enx, eny = A.eny;
+  const n = ax.length;
+  const m = bx.length;
+  for (let i = 0; i < n; i++) {
+    const nx = enx[i];
+    const ny = eny[i];
+    const ox = ax[i];
+    const oy = ay[i];
+    let min = Infinity;
+    for (let k = 0; k < m; k++) {
+      const d = (bx[k] - ox) * nx + (by[k] - oy) * ny;
+      if (d < min) min = d;
+      // Later vertices can only lower this axis minimum. Once it cannot beat
+      // the best earlier face, stop this axis without changing the SAT result.
+      if (min <= best) break;
+    }
+    if (min > best) {
+      best = min;
+      A.si = i;
+      if (best > 0) return best;
+    }
+  }
+  return best;
+}
+
 /** Polygon-polygon manifold by SAT and incident-edge clipping. Appends contacts. */
 function collide(A: Body, B: Body, out: Contact[]) {
   'worklet';
-  // Same SAT arithmetic/order as maxSeparation, in this worklet to avoid a
-  // worklet function call per candidate pair. No axis/contact loss.
-  let sepA = -Infinity;
-  {
-    const ax = A.wx, ay = A.wy, bx = B.wx, by = B.wy;
-    const enx = A.enx, eny = A.eny;
-    for (let i = 0; i < ax.length; i++) {
-      const nx = enx[i], ny = eny[i], ox = ax[i], oy = ay[i];
-      let min = Infinity;
-      for (let k = 0; k < bx.length; k++) {
-        const d = (bx[k] - ox) * nx + (by[k] - oy) * ny;
-        if (d < min) min = d;
-        if (min <= sepA) break;
-      }
-      if (min > sepA) {
-        sepA = min;
-        A.si = i;
-        if (sepA > 0) return;
-      }
-    }
-  }
-  // Same SAT arithmetic/order as maxSeparation, in this worklet to avoid a
-  // worklet function call per candidate pair. No axis/contact loss.
-  let sepB = -Infinity;
-  {
-    const ax = B.wx, ay = B.wy, bx = A.wx, by = A.wy;
-    const enx = B.enx, eny = B.eny;
-    for (let i = 0; i < ax.length; i++) {
-      const nx = enx[i], ny = eny[i], ox = ax[i], oy = ay[i];
-      let min = Infinity;
-      for (let k = 0; k < bx.length; k++) {
-        const d = (bx[k] - ox) * nx + (by[k] - oy) * ny;
-        if (d < min) min = d;
-        if (min <= sepB) break;
-      }
-      if (min > sepB) {
-        sepB = min;
-        B.si = i;
-        if (sepB > 0) return;
-      }
-    }
-  }
+  const sepA = maxSeparation(A, B);
+  if (sepA > 0) return;
+  const sepB = maxSeparation(B, A);
+  if (sepB > 0) return;
   // Reference body owns the face with the shallowest penetration.
   let flip = false;
   let R = A;

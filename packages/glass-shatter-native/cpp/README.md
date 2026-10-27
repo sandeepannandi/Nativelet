@@ -1,0 +1,1 @@
+See ../README.md for portable consumer installation, ownership, limits and verification caveats. Native core preserves original expression order and same-runtime JS trigonometry. No native platform compile or actual UI JSI qualification has been completed yet.

@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.13)
+project(nativelet_shatter)
+set(CMAKE_CXX_STANDARD 20)
+find_package(ReactAndroid REQUIRED CONFIG)
+add_library(nativelet_shatter STATIC ../cpp/NativeletShatter.cpp)
+set_target_properties(nativelet_shatter PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(nativelet_shatter PUBLIC ../cpp ../android/build/generated/source/codegen/jni)
+# Worklets is linked by RN autolinking. Resolve headers from consumer's installed peer.
+execute_process(COMMAND node --print "require.resolve('react-native-worklets/package.json',{paths:[process.argv[1]]})" "${REACT_NATIVE_DIR}" OUTPUT_VARIABLE WORKLETS_PACKAGE OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+get_filename_component(WORKLETS_ROOT ${WORKLETS_PACKAGE} DIRECTORY)
+target_include_directories(nativelet_shatter PRIVATE ${WORKLETS_ROOT}/Common/cpp)
+target_compile_options(nativelet_shatter PRIVATE -ffp-contract=off -fno-fast-math)
+target_link_libraries(nativelet_shatter ReactAndroid::jsi ReactAndroid::reactnative worklets)
+
+if("$ENV{NATIVELET_SHATTER_DIAGNOSTICS}" STREQUAL "1" OR "$ENV{EXPO_PUBLIC_SHATTER_PROFILE}" STREQUAL "1")
+ target_compile_definitions(nativelet_shatter PRIVATE NATIVELET_SHATTER_DIAGNOSTICS=1)
+endif()

@@ -26,6 +26,9 @@
       ],
       "qrcode-generator": [
         "./node_modules/qrcode-generator"
+      ],
+      "react-native-worklets": [
+        "./node_modules/react-native-worklets"
       ]
     },
     "typeRoots": [

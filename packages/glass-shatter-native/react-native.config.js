@@ -1,0 +1,1 @@
+module.exports={dependency:{platforms:{android:{sourceDir:'android',cxxModuleCMakeListsPath:'CMakeLists.txt',cxxModuleCMakeListsModuleName:'nativelet_shatter',cxxModuleHeaderName:'NativeletShatter'},ios:{podspecPath:'NativeletShatterCore.podspec'}}}};
