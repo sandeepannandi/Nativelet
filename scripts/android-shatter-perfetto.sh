@@ -28,7 +28,7 @@ adb shell wm size > "$OUT/device-size.txt"; adb shell wm density > "$OUT/device-
 adb shell pm path "$PKG" > "$OUT/package-path.txt"
 APK_PATH=$(sed -n 's/^package://p' "$OUT/package-path.txt" | tr -d '\r'); [ -n "$APK_PATH" ]
 adb shell sha256sum "$APK_PATH" > "$OUT/installed-checksum.txt"
-grep -q '^f83e3a72be328a79be186cd7ce6e6ca79d6f9ea3bf46877ec1988471ff83ea5b ' "$OUT/installed-checksum.txt"
+grep -q '^221eea2e66db390a78868c5f4b47bce1c412c279be34e0b218e331aff54f5a15 ' "$OUT/installed-checksum.txt"
 adb shell cat /sys/kernel/tracing/available_events > "$OUT/available-events.txt"
 for event in sched_switch sched_waking sched_blocked_reason; do grep -q "sched:$event" "$OUT/available-events.txt"; done
 adb shell am force-stop "$PKG"; adb logcat -c
@@ -43,26 +43,10 @@ adb exec-out screencap -p > "$OUT/initial.png"
 python3 scripts/shatter-trace-match.py target "$OUT/initial.png" > "$OUT/initial-target.json"
 python3 scripts/shatter-trace-match.py intact "$OUT/initial.png" > "$OUT/initial-rim.json"
 read HX HY < <(python3 -c 'import json,sys;print(*json.load(open(sys.argv[1]))["hit"])' "$OUT/initial-target.json")
-adb shell input tap "$HX" "$HY"
-for i in $(seq 1 30); do sleep 3; adb logcat -d > "$OUT/warmup-logcat.txt"; grep -q 'SHATTER_PROFILE saved=' "$OUT/warmup-logcat.txt" && break; done
-check_sampler() {
- [ "$(grep -c 'SHATTER_PROFILE started' "$1")" -eq 1 ]
- [ "$(grep -c 'SHATTER_PROFILE saved=' "$1")" -eq 1 ]
- ! grep -q 'SHATTER_PROFILE error' "$1"
- [ "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID" ]
-}
-check_sampler "$OUT/warmup-logcat.txt"
-grep -q 'SHATTER_UI' "$OUT/warmup-logcat.txt"
-adb exec-out screencap -p > "$OUT/cleared.png"
-python3 scripts/shatter-trace-match.py clear "$OUT/cleared.png" "$OUT/initial.png" > "$OUT/cleared-rim.json"
-python3 scripts/shatter-trace-match.py target "$OUT/cleared.png" > "$OUT/reset-target.json"
-read RX RY < <(python3 -c 'import json,sys;print(*json.load(open(sys.argv[1]))["reset"])' "$OUT/reset-target.json")
-adb shell input tap "$RX" "$RY"; sleep 2
-adb exec-out screencap -p > "$OUT/before.png"
-python3 scripts/shatter-trace-match.py reset "$OUT/before.png" "$OUT/initial.png" > "$OUT/reset-rim.json"
-python3 scripts/shatter-trace-match.py target "$OUT/before.png" > "$OUT/capture-target.json"
-adb logcat -d > "$OUT/reset-logcat.txt"; check_sampler "$OUT/reset-logcat.txt"
-read HX HY < <(python3 -c 'import json,sys;print(*json.load(open(sys.argv[1]))["hit"])' "$OUT/capture-target.json")
+# Retained APK has no phase markers or sampler. Exactly one measured fall,
+# bounded by uptime, scheduler/native stacks and Android gfx/view trace slices.
+# Initial intact state is checked above; no warm-up fracture or reset.
+cp "$OUT/initial.png" "$OUT/before.png"
 adb shell cat /proc/"$PID"/maps > "$OUT/maps.txt"
 adb shell ps -T -p "$PID" > "$OUT/threads.txt"
 cat > "$OUT/config.pbtxt" <<CFG
@@ -97,8 +81,9 @@ trap - EXIT
 adb logcat -d > "$OUT/capture-logcat.txt"
 adb pull /data/misc/perfetto-traces/shatter.pftrace "$OUT/shatter.pftrace"
 adb exec-out screencap -p > "$OUT/after.png"
-check_sampler "$OUT/capture-logcat.txt"
-[ "$(grep -c 'SHATTER_UI' "$OUT/capture-logcat.txt")" -eq 2 ]
+! grep -q 'SHATTER_PROFILE\|Glass Shatter stopped:' "$OUT/capture-logcat.txt"
+[ "$(grep -c 'SHATTER_UI' "$OUT/capture-logcat.txt")" -eq 1 ]
+[ "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID" ]
 python3 scripts/shatter-trace-match.py clear "$OUT/after.png" "$OUT/initial.png" > "$OUT/after-rim.json"
 python3 scripts/shatter-trace-match.py fracture "$OUT/mid.png" "$OUT/before.png" > "$OUT/fracture-share.txt"
 python3 -c 'import sys;assert float(open(sys.argv[1]).read())>0.03,"BLOCKER no visual fracture"' "$OUT/fracture-share.txt"
