@@ -177,6 +177,10 @@ export type Body = {
   hull: Vec[];
   /** Cached world-space hull. */
   wx: number[]; wy: number[];
+  /** Hull edge normals (outward): local, and rotated into the world. */
+  lnx: number[]; lny: number[]; enx: number[]; eny: number[];
+  /** Scratch: index of the best separating edge from the last maxSeparation call. */
+  si: number;
   /** Pane position of the centroid before the break. */
   homeX: number; homeY: number;
   radius: number;
@@ -202,6 +206,12 @@ export type World = {
   contacts: number;
   /** Bodies sorted by left edge for the sweep. */
   order: Body[];
+  /** Render buffers, allocated on first fillMesh and then reused every frame. */
+  mxy?: Vec[]; mtex?: Vec[]; mtint?: Vec[];
+  /** Index of each body's first vertex in the buffers. */
+  mstart?: number[];
+  /** True once a body's vertices were parked off screen. */
+  mparked?: boolean[];
 };
 
 const SHRINK = 1.2;
@@ -215,6 +225,8 @@ export function updateWorldHull(b: Body) {
     const p = b.hull[i];
     b.wx[i] = b.x + p.x * c - p.y * s;
     b.wy[i] = b.y + p.x * s + p.y * c;
+    b.enx[i] = b.lnx[i] * c - b.lny[i] * s;
+    b.eny[i] = b.lnx[i] * s + b.lny[i] * c;
   }
 }
 
@@ -229,6 +241,16 @@ export function createWorld(o: FractureOptions & { gravity?: number }): World {
       const k = Math.max(0, 1 - SHRINK / d);
       return { x: p.x * k, y: p.y * k };
     });
+    const lnx: number[] = [];
+    const lny: number[] = [];
+    for (let i = 0; i < hull.length; i++) {
+      const j = (i + 1) % hull.length;
+      const ex = hull[j].y - hull[i].y;
+      const ey = -(hull[j].x - hull[i].x);
+      const l = Math.sqrt(ex * ex + ey * ey) || 1;
+      lnx.push(ex / l);
+      lny.push(ey / l);
+    }
     const mass = s.area * 0.01;
     // Polar moment about the centroid for a polygon (density 0.01).
     let num = 0;
@@ -247,6 +269,7 @@ export function createWorld(o: FractureOptions & { gravity?: number }): World {
       x: s.cx, y: s.cy, a: 0, vx: 0, vy: 0, w: 0,
       invM: 1 / mass, invI: 1 / Math.max(inertia, 1e-6),
       local, hull, wx: hull.map(() => 0), wy: hull.map(() => 0),
+      lnx, lny, enx: hull.map(() => 0), eny: hull.map(() => 0), si: 0,
       homeX: s.cx, homeY: s.cy, radius, sleep: 0, asleep: false,
       held: true, releaseAt: 0, kx: 0, ky: 0, kw: 0, gone: false,
     };
@@ -277,109 +300,115 @@ export function createWorld(o: FractureOptions & { gravity?: number }): World {
 
 
 type Contact = {
-  a: Body; b: Body | null;
-  nx: number; ny: number; // from a toward b (or out of the wall for b === null: pushes a)
+  a: Body; b: Body;
+  nx: number; ny: number; // from a toward b
   px: number; py: number; // world contact point
   pen: number;
-  ra: Vec; rb: Vec;
+  rax: number; ray: number; rbx: number; rby: number;
   jn: number; jt: number;
   mn: number; mt: number;
   bias: number;
 };
 
-/** Best separating axis of A's edges against B. Returns [separation, edgeIndex]. */
-function maxSeparation(A: Body, B: Body): [number, number] {
+/**
+ * Best separating axis of A's edges against B. Returns the separation and
+ * leaves the edge index in A.si. Stops at the first axis that separates them
+ * (the caller only needs to know they do not touch).
+ */
+function maxSeparation(A: Body, B: Body): number {
   'worklet';
   let best = -Infinity;
-  let idx = 0;
   const n = A.wx.length;
+  const m = B.wx.length;
   for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    let nx = A.wy[j] - A.wy[i];
-    let ny = -(A.wx[j] - A.wx[i]);
-    const l = Math.hypot(nx, ny) || 1;
-    nx /= l;
-    ny /= l;
+    const nx = A.enx[i];
+    const ny = A.eny[i];
+    const ox = A.wx[i];
+    const oy = A.wy[i];
     let min = Infinity;
-    for (let k = 0; k < B.wx.length; k++) {
-      const d = (B.wx[k] - A.wx[i]) * nx + (B.wy[k] - A.wy[i]) * ny;
+    for (let k = 0; k < m; k++) {
+      const d = (B.wx[k] - ox) * nx + (B.wy[k] - oy) * ny;
       if (d < min) min = d;
     }
     if (min > best) {
       best = min;
-      idx = i;
+      A.si = i;
+      if (best > 0) return best;
     }
   }
-  return [best, idx];
+  return best;
 }
 
 /** Polygon-polygon manifold by SAT and incident-edge clipping. Appends contacts. */
 function collide(A: Body, B: Body, out: Contact[]) {
   'worklet';
-  const [sepA, ia] = maxSeparation(A, B);
+  const sepA = maxSeparation(A, B);
   if (sepA > 0) return;
-  const [sepB, ib] = maxSeparation(B, A);
+  const sepB = maxSeparation(B, A);
   if (sepB > 0) return;
   // Reference body owns the face with the shallowest penetration.
   let flip = false;
   let R = A;
   let I = B;
-  let ri = ia;
+  let ri = A.si;
   if (sepB > sepA + 1e-4) {
     flip = true;
     R = B;
     I = A;
-    ri = ib;
+    ri = B.si;
   }
   const rn = R.wx.length;
+  const rj = ri + 1 === rn ? 0 : ri + 1;
   const r1x = R.wx[ri], r1y = R.wy[ri];
-  const r2x = R.wx[(ri + 1) % rn], r2y = R.wy[(ri + 1) % rn];
-  let tx = r2x - r1x, ty = r2y - r1y;
-  const tl = Math.hypot(tx, ty) || 1;
-  tx /= tl; ty /= tl;
-  const nx = ty, ny = -tx; // outward normal of the reference face
+  const r2x = R.wx[rj], r2y = R.wy[rj];
+  const nx = R.enx[ri], ny = R.eny[ri]; // outward normal of the reference face
+  const tx = -ny, ty = nx;
   // Incident edge: the edge of I most anti-parallel to the reference normal.
   const inn = I.wx.length;
   let ii = 0;
   let minDot = Infinity;
   for (let i = 0; i < inn; i++) {
-    const j = (i + 1) % inn;
-    let ex = I.wy[j] - I.wy[i];
-    let ey = -(I.wx[j] - I.wx[i]);
-    const l = Math.hypot(ex, ey) || 1;
-    ex /= l; ey /= l;
-    const d = ex * nx + ey * ny;
+    const d = I.enx[i] * nx + I.eny[i] * ny;
     if (d < minDot) { minDot = d; ii = i; }
   }
-  let p1 = { x: I.wx[ii], y: I.wy[ii] };
-  let p2 = { x: I.wx[(ii + 1) % inn], y: I.wy[(ii + 1) % inn] };
-  // Clip the incident edge to the side planes of the reference edge.
-  const clip = (a: Vec, b: Vec, dx: number, dy: number, off: number): [Vec, Vec] | null => {
-    const da = a.x * dx + a.y * dy - off;
-    const db = b.x * dx + b.y * dy - off;
-    const pts: Vec[] = [];
-    if (da <= 0) pts.push(a);
-    if (db <= 0) pts.push(b);
+  const ij = ii + 1 === inn ? 0 : ii + 1;
+  let ax = I.wx[ii], ay = I.wy[ii];
+  let bx = I.wx[ij], by = I.wy[ij];
+  // Clip the incident edge to the two side planes of the reference edge.
+  for (let pass = 0; pass < 2; pass++) {
+    const dx = pass === 0 ? -tx : tx;
+    const dy = pass === 0 ? -ty : ty;
+    const off = pass === 0 ? -(r1x * tx + r1y * ty) : r2x * tx + r2y * ty;
+    const da = ax * dx + ay * dy - off;
+    const db = bx * dx + by * dy - off;
+    let q1x = 0, q1y = 0, q2x = 0, q2y = 0;
+    let cnt = 0;
+    if (da <= 0) { q1x = ax; q1y = ay; cnt = 1; }
+    if (db <= 0) {
+      if (cnt === 0) { q1x = bx; q1y = by; } else { q2x = bx; q2y = by; }
+      cnt++;
+    }
     if (da * db < 0) {
       const t = da / (da - db);
-      pts.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      q2x = ax + (bx - ax) * t;
+      q2y = ay + (by - ay) * t;
+      cnt = 2;
     }
-    return pts.length < 2 ? null : [pts[0], pts[1]];
-  };
-  let c = clip(p1, p2, -tx, -ty, -(r1x * tx + r1y * ty));
-  if (!c) return;
-  c = clip(c[0], c[1], tx, ty, r2x * tx + r2y * ty);
-  if (!c) return;
+    if (cnt < 2) return;
+    ax = q1x; ay = q1y; bx = q2x; by = q2y;
+  }
   const faceOff = r1x * nx + r1y * ny;
   // Contact normal points from A toward B.
   const cnx = flip ? -nx : nx;
   const cny = flip ? -ny : ny;
-  for (const p of c) {
-    const sep = p.x * nx + p.y * ny - faceOff;
+  for (let k = 0; k < 2; k++) {
+    const px = k === 0 ? ax : bx;
+    const py = k === 0 ? ay : by;
+    const sep = px * nx + py * ny - faceOff;
     if (sep > 0) continue;
     out.push({
-      a: A, b: B, nx: cnx, ny: cny, px: p.x, py: p.y, pen: -sep,
-      ra: { x: p.x - A.x, y: p.y - A.y }, rb: { x: p.x - B.x, y: p.y - B.y },
+      a: A, b: B, nx: cnx, ny: cny, px, py, pen: -sep,
+      rax: px - A.x, ray: py - A.y, rbx: px - B.x, rby: py - B.y,
       jn: 0, jt: 0, mn: 0, mt: 0, bias: 0,
     });
   }
@@ -391,84 +420,55 @@ const SLOP = 0.3;
 const BAUMGARTE = 0.2;
 const MAX_PUSH = 140;
 
-function wallContacts(a: Body, W: number, H: number, out: Contact[]) {
-  'worklet';
-  for (let i = 0; i < a.wx.length; i++) {
-    const x = a.wx[i], y = a.wy[i];
-    // n points from the body into the wall.
-    const push = (nx: number, ny: number, pen: number) =>
-      out.push({
-        a, b: null, nx, ny, px: x, py: y, pen,
-        ra: { x: x - a.x, y: y - a.y }, rb: { x: 0, y: 0 },
-        jn: 0, jt: 0, mn: 0, mt: 0, bias: 0,
-      });
-    if (y > H) push(0, 1, y - H);
-    if (x < 0) push(-1, 0, -x);
-    if (x > W) push(1, 0, x - W);
-  }
-}
-
-function relVel(ct: Contact): [number, number] {
-  'worklet';
-  const { a, b } = ct;
-  const vax = a.vx - a.w * ct.ra.y, vay = a.vy + a.w * ct.ra.x;
-  if (!b) return [-vax, -vay];
-  const vbx = b.vx - b.w * ct.rb.y, vby = b.vy + b.w * ct.rb.x;
-  return [vbx - vax, vby - vay];
-}
-
 function prep(ct: Contact, dt: number) {
   'worklet';
-  const { a, b } = ct;
+  const a = ct.a, b = ct.b;
   const nx = ct.nx, ny = ct.ny;
   const tx = -ny, ty = nx;
-  const rnA = ct.ra.x * ny - ct.ra.y * nx;
-  const rtA = ct.ra.x * ty - ct.ra.y * tx;
-  let k = a.invM + a.invI * rnA * rnA;
-  let kt = a.invM + a.invI * rtA * rtA;
-  if (b) {
-    const rnB = ct.rb.x * ny - ct.rb.y * nx;
-    const rtB = ct.rb.x * ty - ct.rb.y * tx;
-    k += b.invM + b.invI * rnB * rnB;
-    kt += b.invM + b.invI * rtB * rtB;
-  }
+  const rnA = ct.rax * ny - ct.ray * nx;
+  const rtA = ct.rax * ty - ct.ray * tx;
+  const rnB = ct.rbx * ny - ct.rby * nx;
+  const rtB = ct.rbx * ty - ct.rby * tx;
+  const k = a.invM + a.invI * rnA * rnA + b.invM + b.invI * rnB * rnB;
+  const kt = a.invM + a.invI * rtA * rtA + b.invM + b.invI * rtB * rtB;
   ct.mn = k > 0 ? 1 / k : 0;
   ct.mt = kt > 0 ? 1 / kt : 0;
-  const [rx, ry] = relVel(ct);
+  const rx = (b.vx - b.w * ct.rby) - (a.vx - a.w * ct.ray);
+  const ry = (b.vy + b.w * ct.rbx) - (a.vy + a.w * ct.rax);
   const vn = rx * nx + ry * ny; // negative = closing
   const bounce = vn < -120 ? -RESTITUTION * vn : 0;
   const push = Math.min(MAX_PUSH, (BAUMGARTE * Math.max(ct.pen - SLOP, 0)) / dt);
   ct.bias = Math.max(bounce, push);
 }
 
-function applyImpulse(ct: Contact, jx: number, jy: number) {
-  'worklet';
-  const { a, b } = ct;
-  a.vx -= a.invM * jx; a.vy -= a.invM * jy;
-  a.w -= a.invI * (ct.ra.x * jy - ct.ra.y * jx);
-  if (b) {
-    b.vx += b.invM * jx; b.vy += b.invM * jy;
-    b.w += b.invI * (ct.rb.x * jy - ct.rb.y * jx);
-  }
-}
-
 function solve(ct: Contact) {
   'worklet';
+  const a = ct.a, b = ct.b;
   const nx = ct.nx, ny = ct.ny;
   const tx = -ny, ty = nx;
-  let [rx, ry] = relVel(ct);
+  let rx = (b.vx - b.w * ct.rby) - (a.vx - a.w * ct.ray);
+  let ry = (b.vy + b.w * ct.rbx) - (a.vy + a.w * ct.rax);
   let dj = ct.mn * (ct.bias - (rx * nx + ry * ny));
   const old = ct.jn;
   ct.jn = Math.max(old + dj, 0);
   dj = ct.jn - old;
-  applyImpulse(ct, nx * dj, ny * dj);
-  [rx, ry] = relVel(ct);
+  let jx = nx * dj, jy = ny * dj;
+  a.vx -= a.invM * jx; a.vy -= a.invM * jy;
+  a.w -= a.invI * (ct.rax * jy - ct.ray * jx);
+  b.vx += b.invM * jx; b.vy += b.invM * jy;
+  b.w += b.invI * (ct.rbx * jy - ct.rby * jx);
+  rx = (b.vx - b.w * ct.rby) - (a.vx - a.w * ct.ray);
+  ry = (b.vy + b.w * ct.rbx) - (a.vy + a.w * ct.rax);
   let djt = -ct.mt * (rx * tx + ry * ty);
   const maxF = FRICTION * ct.jn;
   const oldT = ct.jt;
   ct.jt = Math.max(-maxF, Math.min(maxF, oldT + djt));
   djt = ct.jt - oldT;
-  applyImpulse(ct, tx * djt, ty * djt);
+  jx = tx * djt; jy = ty * djt;
+  a.vx -= a.invM * jx; a.vy -= a.invM * jy;
+  a.w -= a.invI * (ct.rax * jy - ct.ray * jx);
+  b.vx += b.invM * jx; b.vy += b.invM * jy;
+  b.w += b.invI * (ct.rbx * jy - ct.rby * jx);
 }
 
 const SUB = 3;
@@ -528,7 +528,7 @@ function stepFixed(w: World, dt: number) {
   w.contacts = contacts.length;
   for (const ct of contacts) {
     // A moving body touching a sleeper wakes it.
-    if (ct.b && !ct.a.held && !ct.b.held && (ct.a.asleep !== ct.b.asleep)) {
+    if (!ct.a.held && !ct.b.held && (ct.a.asleep !== ct.b.asleep)) {
       const m = ct.a.asleep ? ct.b : ct.a;
       if (m.vx * m.vx + m.vy * m.vy > 40 * 40) { ct.a.asleep = false; ct.b.asleep = false; ct.a.sleep = ct.b.sleep = 0; }
     }
@@ -588,4 +588,62 @@ export function shardGlint(b: Body): number {
   'worklet';
   const g = 0.5 + 0.5 * Math.sin(b.a * 2.3 + b.homeX * 0.05 + b.homeY * 0.03);
   return g * g;
+}
+
+/**
+ * Fill the world's render buffers in place: screen positions, texture lookups
+ * (the picture behind each shard, bent by its tilt) and tint-ramp lookups.
+ * Shards that left the frame are parked off screen once and then skipped.
+ */
+export function fillMesh(w: World, imageScale: number) {
+  'worklet';
+  const bodies = w.bodies;
+  if (!w.mxy || !w.mtex || !w.mtint || !w.mstart || !w.mparked) {
+    const xy: Vec[] = [];
+    const tex: Vec[] = [];
+    const tint: Vec[] = [];
+    const start: number[] = [];
+    const parked: boolean[] = [];
+    for (let i = 0; i < bodies.length; i++) {
+      start.push(xy.length);
+      parked.push(false);
+      for (let k = 0; k < bodies[i].local.length; k++) {
+        xy.push({ x: 0, y: 0 });
+        tex.push({ x: 0, y: 0 });
+        tint.push({ x: 0.5, y: 0.5 });
+      }
+    }
+    w.mxy = xy; w.mtex = tex; w.mtint = tint; w.mstart = start; w.mparked = parked;
+  }
+  const xy = w.mxy, tex = w.mtex, tint = w.mtint, start = w.mstart, parked = w.mparked;
+  const off = [0, 0];
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i];
+    const n = b.local.length;
+    const s0 = start[i];
+    if (b.gone) {
+      if (!parked[i]) {
+        for (let k = 0; k < n; k++) {
+          xy[s0 + k].x = -9999; xy[s0 + k].y = -9999;
+          tex[s0 + k].x = 0; tex[s0 + k].y = 0;
+        }
+        parked[i] = true;
+      }
+      continue;
+    }
+    const c = Math.cos(b.a);
+    const sn = Math.sin(b.a);
+    shardRefraction(b, off);
+    const glint = b.held ? 0.18 : shardGlint(b);
+    const ty = Math.max(0.5, Math.min(255.5, glint * 255 + 0.5));
+    for (let k = 0; k < n; k++) {
+      const p = b.local[k];
+      const x = b.x + p.x * c - p.y * sn;
+      const y = b.y + p.x * sn + p.y * c;
+      const o = s0 + k;
+      xy[o].x = x; xy[o].y = y;
+      tex[o].x = (x + off[0]) * imageScale; tex[o].y = (y + off[1]) * imageScale;
+      tint[o].x = ty;
+    }
+  }
 }

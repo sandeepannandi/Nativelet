@@ -16,7 +16,7 @@ import {
   type SkImage,
 } from "@shopify/react-native-skia";
 import { useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
-import { createWorld, shardGlint, shardRefraction, stepWorld, type World } from "./shatterMath";
+import { createWorld, fillMesh, stepWorld, type World } from "./shatterMath";
 
 export type GlassShatterProps = {
   /** The picture behind the glass, drawn at `imageScale` pixels per point. */
@@ -213,42 +213,22 @@ export function GlassShatter({
     frame.value;
     brokenId.value;
     const w = sim.value;
-    const xy: { x: number; y: number }[] = [];
-    const tex: { x: number; y: number }[] = [];
-    const tint: { x: number; y: number }[] = [];
     const path = Skia.Path.Make();
-    if (!w) return { xy, tex, tint, path };
-    const off = [0, 0];
+    if (!w) return { xy: [], tex: [], tint: [], path };
+    fillMesh(w, imageScale);
+    const xy = w.mxy as { x: number; y: number }[];
+    const start = w.mstart as number[];
     for (let i = 0; i < w.bodies.length; i++) {
       const b = w.bodies[i];
+      if (b.gone) continue;
       const n = b.local.length;
-      const c = Math.cos(b.a);
-      const s = Math.sin(b.a);
-      if (b.gone) {
-        for (let k = 0; k < n; k++) {
-          xy.push({ x: -9999, y: -9999 });
-          tex.push({ x: 0, y: 0 });
-          tint.push({ x: 0.5, y: 0.5 });
-        }
-        continue;
-      }
-      shardRefraction(b, off);
-      const glint = b.held ? 0.18 : shardGlint(b);
-      const tx = Math.max(0.5, Math.min(255.5, glint * 255 + 0.5));
-      for (let k = 0; k < n; k++) {
-        const p = b.local[k];
-        const x = b.x + p.x * c - p.y * s;
-        const y = b.y + p.x * s + p.y * c;
-        xy.push({ x, y });
-        // The glass is clear: each shard shows the picture behind where it is now, bent by its tilt.
-        tex.push({ x: (x + off[0]) * imageScale, y: (y + off[1]) * imageScale });
-        tint.push({ x: tx, y: 0.5 });
-        if (k === 0) path.moveTo(x, y);
-        else path.lineTo(x, y);
-      }
+      const s0 = start[i];
+      path.moveTo(xy[s0].x, xy[s0].y);
+      for (let k = 1; k < n; k++) path.lineTo(xy[s0 + k].x, xy[s0 + k].y);
       path.close();
     }
-    return { xy, tex, tint, path };
+    // Copies of the reused buffers, so Skia sees a changed value every frame.
+    return { xy: xy.slice(), tex: (w.mtex as { x: number; y: number }[]).slice(), tint: (w.mtint as { x: number; y: number }[]).slice(), path };
   });
   const vertices = useDerivedValue(() => mesh.value.xy);
   const textures = useDerivedValue(() => mesh.value.tex);

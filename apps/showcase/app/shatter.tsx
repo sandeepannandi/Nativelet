@@ -2,7 +2,7 @@ import { Link } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useEffect } from 'react';
 import { Platform, Text, View } from 'react-native';
-import { createWorld, stepWorld } from '../../../packages/ui/src/components/glass-shatter/shatterMath';
+import { createWorld, fillMesh, stepWorld } from '../../../packages/ui/src/components/glass-shatter/shatterMath';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Example from '../../../packages/ui/src/components/glass-shatter/Example';
 export default function ShatterScreen() {
@@ -13,10 +13,14 @@ export default function ShatterScreen() {
     const t = setTimeout(() => {
       const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
       const w = createWorld({ width: 340, height: 460, hitX: 170, hitY: 180, seed: 5, target: 360 });
-      const times: number[] = [];
-      for (let i = 0; i < 90; i++) { const a = now(); stepWorld(w, 1 / 60); times.push(now() - a); }
-      const sum = times.reduce((x, y) => x + y, 0);
-      console.log(`SHATTER_BENCH shards=${w.bodies.length} frames=90 avg_ms=${(sum / 90).toFixed(2)} worst_ms=${Math.max(...times).toFixed(2)} budget_ms=16.67`);
+      const sim: number[] = [];
+      const mesh: number[] = [];
+      for (let i = 0; i < 90; i++) {
+        const a = now(); stepWorld(w, 1 / 60); const b = now(); fillMesh(w, 2); const c = now();
+        sim.push(b - a); mesh.push(c - b);
+      }
+      const avg = (v: number[]) => v.reduce((x, y) => x + y, 0) / v.length;
+      console.log(`SHATTER_BENCH shards=${w.bodies.length} frames=90 sim_avg_ms=${avg(sim).toFixed(2)} sim_worst_ms=${Math.max(...sim).toFixed(2)} mesh_avg_ms=${avg(mesh).toFixed(2)} mesh_worst_ms=${Math.max(...mesh).toFixed(2)} budget_ms=16.67`);
     }, 2000);
     return () => clearTimeout(t);
   }, []);

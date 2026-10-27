@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fracturePane, polyArea, createWorld, stepWorld, allAsleep, clipHalfPlane } from './shatterMath.ts';
+import { fracturePane, polyArea, createWorld, stepWorld, allAsleep, clipHalfPlane, fillMesh } from './shatterMath.ts';
 
 const W = 340, H = 460;
 test('fracture tiles the pane, density falls with distance, deterministic', () => {
@@ -87,4 +87,20 @@ test('contact quality: colliding polygons overlap only slightly', () => {
   assert.ok(near > 1000, 'many pairs were in contact range');
   assert.ok(worstFrac < 0.15, 'no pair sinks more than 15% of the smaller shard into the other');
   assert.ok(sum / Math.max(hits, 1) < 3, 'average overlap stays under 3 px2');
+});
+
+test('render buffers: one point per polygon vertex, reused, gone shards parked', () => {
+  const w = createWorld({ width: W, height: H, hitX: 170, hitY: 180, seed: 5, target: 360 });
+  fillMesh(w, 2);
+  const total = w.bodies.reduce((n, b) => n + b.local.length, 0);
+  assert.equal(w.mxy.length, total);
+  const first = w.mxy;
+  for (let f = 0; f < 240; f++) stepWorld(w, 1 / 60);
+  fillMesh(w, 2);
+  assert.strictEqual(w.mxy, first, 'buffers are reused, not reallocated');
+  w.bodies.forEach((b, i) => {
+    if (b.gone) assert.equal(w.mxy[w.mstart[i]].x, -9999);
+    else assert.ok(Number.isFinite(w.mxy[w.mstart[i]].x));
+  });
+  assert.ok(w.bodies.some((b) => b.gone), 'shards left the frame');
 });
