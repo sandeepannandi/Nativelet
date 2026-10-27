@@ -1,0 +1,51 @@
+name: Glass Shatter retained comparison APK shell recovery
+on:
+  push:
+    branches: ["diagnostics/glass-shatter-compare-observe"]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: tail-apk-physics-mesh
+          run-id: 40555347439
+          github-token: ${{ github.token }}
+          path: apk
+      - name: Host dependencies
+        run: |
+          python3 -m pip install pillow
+          bash -n scripts/android-shatter-compare.sh
+          python3 -m py_compile scripts/check-shatter-compare.py
+          sha256sum apk/*.apk
+          test "$(sha256sum apk/*.apk | cut -d' ' -f1)" = "ae993aca48fd9e4ef6e25817a4b85795ef6d01b3e0ae70afd339e264c708b606"
+          bash scripts/shatter-host-preflight/android-sdk.sh
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: One finite UI runtime comparison
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: false
+          script: |
+            adb install -r apk/*.apk
+            bash scripts/android-system-ready.sh
+            bash scripts/android-shatter-compare.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: same-ui-comparison
+          path: smoke-out

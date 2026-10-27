@@ -3,7 +3,7 @@ p=pathlib.Path(sys.argv[1]);s=p.read_text();rows=[]
 for line in s.splitlines():
  if 'SHATTER_COMPARE {' in line:rows.append(json.loads(line.split('SHATTER_COMPARE ',1)[1]))
 def percentile(xs,q):return sorted(xs)[min(len(xs)-1,int(len(xs)*q))]
-result={'jobs':len(rows),'all_exact':all(r['exact'] for r in rows),'acceptance':'both dt: >=20% total mean gain, total p95<=12ms,max<=16.67ms, setupmax<=50ms; no inferred component/fullsuite pass','candidates':{}}
+result={'jobs':len(rows),'all_exact':len(rows)==48 and sorted(r['job'] for r in rows)==list(range(48)) and all(r['exact'] for r in rows),'acceptance':'both dt: >=20% total mean gain, total p95<=12ms,max<=16.67ms, setupmax<=50ms; no inferred component/fullsuite pass','candidates':{}}
 for name in ['reference','pool','bitset','packed']:
  bydt={}
  for dt in [1/60,.048]:
