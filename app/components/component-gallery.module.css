@@ -315,3 +315,11 @@
 .miniCrumple { position: relative; width: 130px; height: 110px; border-radius: 12px; overflow: hidden; background: linear-gradient(160deg, #f1eee8 0%, #dcd8cf 100%); }
 .miniCrumple i { position: absolute; left: 33px; top: 14px; width: 64px; height: 80px; background: #fcfaf4; clip-path: polygon(8% 12%, 38% 0, 70% 8%, 96% 26%, 100% 62%, 82% 92%, 48% 100%, 14% 88%, 0 52%); }
 .miniCrumple b { position: absolute; left: 33px; top: 14px; width: 64px; height: 80px; background: linear-gradient(115deg, rgba(120,112,98,0.0) 30%, rgba(120,112,98,0.38) 55%, rgba(120,112,98,0.12) 75%); clip-path: polygon(8% 12%, 38% 0, 70% 8%, 96% 26%, 100% 62%, 82% 92%, 48% 100%, 14% 88%, 0 52%); }
+
+.miniShatter { position: relative; width: 130px; height: 110px; border-radius: 12px; overflow: hidden; background: linear-gradient(180deg, #1d2b5c 0%, #e0617a 55%, #ffc268 100%); }
+.miniShatter i { position: absolute; inset: 0; background:
+  linear-gradient(32deg, transparent 49.2%, rgba(255,255,255,0.85) 49.5%, transparent 50.2%),
+  linear-gradient(118deg, transparent 49.2%, rgba(255,255,255,0.8) 49.5%, transparent 50.2%),
+  linear-gradient(74deg, transparent 49.2%, rgba(255,255,255,0.7) 49.5%, transparent 50.2%),
+  linear-gradient(158deg, transparent 49.2%, rgba(255,255,255,0.7) 49.5%, transparent 50.2%); }
+.miniShatter b { position: absolute; left: 44px; top: 36px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.75); box-shadow: 0 0 0 10px rgba(255,255,255,0.12); }
