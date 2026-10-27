@@ -207,6 +207,17 @@ export type World = {
 const SHRINK = 1.2;
 const CRACK_SPEED = 780;
 
+export function updateWorldHull(b: Body) {
+  'worklet';
+  const c = Math.cos(b.a);
+  const s = Math.sin(b.a);
+  for (let i = 0; i < b.hull.length; i++) {
+    const p = b.hull[i];
+    b.wx[i] = b.x + p.x * c - p.y * s;
+    b.wy[i] = b.y + p.x * s + p.y * c;
+  }
+}
+
 export function createWorld(o: FractureOptions & { gravity?: number }): World {
   'worklet';
   const shards = fracturePane(o);
@@ -264,16 +275,6 @@ export function createWorld(o: FractureOptions & { gravity?: number }): World {
 }
 
 
-export function updateWorldHull(b: Body) {
-  'worklet';
-  const c = Math.cos(b.a);
-  const s = Math.sin(b.a);
-  for (let i = 0; i < b.hull.length; i++) {
-    const p = b.hull[i];
-    b.wx[i] = b.x + p.x * c - p.y * s;
-    b.wy[i] = b.y + p.x * s + p.y * c;
-  }
-}
 
 type Contact = {
   a: Body; b: Body | null;
@@ -476,15 +477,6 @@ const SLEEP_V = 6;
 const SLEEP_W = 0.25;
 const SLEEP_T = 0.5;
 
-export function stepWorld(w: World, dtFrame: number) {
-  'worklet';
-  let remaining = Math.min(dtFrame, 1 / 20);
-  while (remaining > 1e-6) {
-    const dt = Math.min(FIXED * SUB / SUB, remaining);
-    remaining -= dt;
-    stepFixed(w, dt);
-  }
-}
 
 function stepFixed(w: World, dt: number) {
   'worklet';
@@ -562,6 +554,16 @@ function stepFixed(w: World, dt: number) {
     } else b.sleep = 0;
     updateWorldHull(b);
     if (b.y - b.radius > w.height + 60 || b.x + b.radius < -w.width * 0.6 || b.x - b.radius > w.width * 1.6) b.gone = true;
+  }
+}
+
+export function stepWorld(w: World, dtFrame: number) {
+  'worklet';
+  let remaining = Math.min(dtFrame, 1 / 20);
+  while (remaining > 1e-6) {
+    const dt = Math.min(FIXED * SUB / SUB, remaining);
+    remaining -= dt;
+    stepFixed(w, dt);
   }
 }
 
