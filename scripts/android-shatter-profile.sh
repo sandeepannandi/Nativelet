@@ -18,6 +18,8 @@ if 'SHATTER_NATIVE_ERROR' in s: raise SystemExit('native runtime harness error')
 rows=[json.loads(x) for x in re.findall(r'SHATTER_NATIVE_CASE (\{[^\r\n]+\})',s)]
 assert len(rows)==54 and len({x['job'] for x in rows})==54,('missing/duplicate cases',len(rows))
 assert all(x['exact'] and x['frames']==240 and x['shards']>=300 for x in rows)
+boundary=[json.loads(x) for x in re.findall(r'SHATTER_NATIVE_BOUNDARY (\{[^\r\n]+\})',s)]
+assert len(boundary)==1 and boundary[0]['passed']==36 and boundary[0]['meshFrames']==240, boundary
 assert 'SHATTER_NATIVE_BOUNDARY' in s and 'SHATTER_NATIVE_DONE cases=54 frames=12960' in s
 print('PASS actual Android JSI boundary and full-state 54cases/12960frames. NOT behavior/pacing/full-suite qualification.')
 PY

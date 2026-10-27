@@ -8,15 +8,15 @@ export function checkShatterNativeBoundary() {
  const world=()=>{ 'worklet';return createWorld({width:340,height:460,hitX:170,hitY:180,seed:7919,target:360});};
  const trig=(buf:ArrayBuffer)=>{ 'worklet';const a=new Float64Array(buf),r=new Float64Array(a.length*2);for(let i=0;i<a.length;i++){r[i*2]=Math.cos(a[i]);r[i*2+1]=Math.sin(a[i]);}return r.buffer;};
  let passed=0;
- const rejects=(f:()=>void)=>{ 'worklet';let fail=false;try{f();}catch{fail=true;}if(!fail)throw new Error('expected native rejection');passed++;};
+ const rejects=(f:()=>void)=>{ 'worklet';let fail=false;try{f();}catch{fail=true;}if(!fail)throw new Error('expected native rejection');return 1;};
  for(let kind=0;kind<12;kind++){
   const w=world(),h=api.create(w);
-  if(kind<5){rejects(()=>{ 'worklet';api.advance(h,1/60,(input)=>{ 'worklet';if(kind===0)throw new Error('intentional trig failure');if(kind===1)return {};if(kind===2)return new ArrayBuffer(0);const out=new Float64Array(trig(input));out[0]=kind===3?NaN:2;return out.buffer;});});}
+  if(kind<5){passed+=rejects(()=>{ 'worklet';api.advance(h,1/60,(input)=>{ 'worklet';if(kind===0)throw new Error('intentional trig failure');if(kind===1)return {};if(kind===2)return new ArrayBuffer(0);const out=new Float64Array(trig(input));out[0]=kind===3?NaN:2;return out.buffer;});});}
   else {const fake=world();if(kind===5)Object.defineProperty(fake,'bodies',{get(){api.dispose(h);return w.bodies;}});
    else Object.defineProperty(fake.bodies[0],'x',{set(){if(kind===6)api.advance(h,1/60,trig);if(kind===7)api.dispose(h);if(kind===8){try{api.dispose(h);}catch{/* Even swallowed reentry must poison outer render. */}}if(kind===9)throw new Error("receiver setter");}});
    if(kind===10)Object.freeze(fake.bodies[1]);if(kind===11)Object.defineProperty(fake,"bodies",{get(){throw new Error("receiver getter");}});
-   rejects(()=>{ 'worklet';api.render(h,fake);});}
-  rejects(()=>{ 'worklet';api.render(h,w);});api.dispose(h);api.dispose(h);rejects(()=>{ 'worklet';api.advance(h,1/60,trig);});
+   passed+=rejects(()=>{ 'worklet';api.render(h,fake);});}
+  passed+=rejects(()=>{ 'worklet';api.render(h,w);});api.dispose(h);api.dispose(h);passed+=rejects(()=>{ 'worklet';api.advance(h,1/60,trig);});
  }
  // Actual wrapper render mesh equivalence, without assuming full-world debug sync.
  const a=world(),b=world(),h=api.create(b);
