@@ -340,6 +340,9 @@ function maxSeparation(A: Body, B: Body): number {
     for (let k = 0; k < m; k++) {
       const d = (bx[k] - ox) * nx + (by[k] - oy) * ny;
       if (d < min) min = d;
+      // Later vertices can only lower this axis minimum. Once it cannot beat
+      // the best earlier face, stop this axis without changing the SAT result.
+      if (min <= best) break;
     }
     if (min > best) {
       best = min;
