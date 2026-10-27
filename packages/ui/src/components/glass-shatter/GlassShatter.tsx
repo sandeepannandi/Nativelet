@@ -42,6 +42,7 @@ export type GlassShatterProps = {
 // Mutable physics graphs stay inside the UI runtime. Putting ~359 bodies and
 // thousands of contact fields in a SharedValue makes each hot-loop access cross
 // the shareable-value boundary. Only the small input/version scalars are shared.
+const SAMPLE_UI = process.env.EXPO_PUBLIC_SHATTER_PROFILE === "1";
 let nextWorldKey = 0;
 function uiWorlds(): Record<number, World | null> {
   "worklet";
@@ -187,6 +188,7 @@ export function GlassShatter({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [width, height]);
 
+  const sampling = useSharedValue(0); // 0 not started, 1 active, 2 complete
   useFrameCallback((info) => {
     const evs = inputs.value;
     for (let i = 0; i < evs.length; i++) {
@@ -194,6 +196,10 @@ export function GlassShatter({
       if (e.id <= seen.value) continue;
       seen.value = e.id;
       if (e.k === 0) {
+        if (SAMPLE_UI && diagnostics && sampling.value === 0) {
+          try { (globalThis as typeof globalThis & { _startProfiling: (hz: number) => void })._startProfiling(100); sampling.value = 1; console.log("SHATTER_PROFILE started hz=100"); }
+          catch (err) { sampling.value = 2; console.log(`SHATTER_PROFILE error-start ${String(err)}`); }
+        }
         perf.value = { count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false };
         uiWorlds()[worldKey] = createWorld({ width, height, hitX: e.x, hitY: e.y, seed: (e.id * 7919) % 100000, target: shardCount });
         brokenId.value = brokenId.value + 1;
@@ -215,6 +221,11 @@ export function GlassShatter({
         if (!p.reported && (p.count >= 90 || w.bodies.every((b) => b.gone))) {
           console.log(`SHATTER_UI frames=${p.count} physics_avg=${(p.physics / p.count).toFixed(2)} physics_max=${p.physicsMax.toFixed(2)} mesh_avg=${(p.mesh / p.count).toFixed(2)} path_avg=${(p.path / p.count).toFixed(2)} copies_avg=${(p.copies / p.count).toFixed(2)} interval_avg=${(p.interval / p.count).toFixed(2)} interval_max=${p.intervalMax.toFixed(2)} indices_builds=${p.indices}`);
           p.reported = true;
+          if (SAMPLE_UI && sampling.value === 1) {
+            try { const path = (globalThis as typeof globalThis & { _stopProfiling: () => string })._stopProfiling(); console.log(`SHATTER_PROFILE saved=${path}`); }
+            catch (err) { console.log(`SHATTER_PROFILE error-stop ${String(err)}`); }
+            sampling.value = 2;
+          }
         }
       }
     }

@@ -1,4 +1,4 @@
-name: Glass Shatter isolated native diagnostics
+name: Glass Shatter bounded UI sampling checkpoint
 on:
   workflow_dispatch:
   push:
@@ -25,8 +25,12 @@ jobs:
       - name: Prebuild native project
         working-directory: apps/showcase
         run: npx expo prebuild --platform android --no-install --clean
+      - name: Configure diagnostic trace temp directory
+        run: node scripts/prepare-shatter-profile.cjs
       - name: Build release APK (x86_64, bundled JS)
         working-directory: apps/showcase/android
+        env:
+          EXPO_PUBLIC_SHATTER_PROFILE: "1"
         run: ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon
       - uses: actions/upload-artifact@v4
         with:
@@ -60,8 +64,7 @@ jobs:
           script: |
             adb install -r apk/*.apk
             bash scripts/android-system-ready.sh
-            bash scripts/android-prism-diagnostic.sh
-            bash scripts/android-shatter.sh
+            bash scripts/android-shatter-profile.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
