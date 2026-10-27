@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fracturePane, polyArea, createWorld, stepWorld, allAsleep } from './shatterMath.ts';
+import { fracturePane, polyArea, createWorld, stepWorld, allAsleep, clipHalfPlane } from './shatterMath.ts';
 
 const W = 340, H = 460;
 test('fracture tiles the pane, density falls with distance, deterministic', () => {
@@ -55,4 +55,36 @@ assert.ok(w.maxPen < 8, "penetration bounded");
 console.log("pile top y", Math.min(...w.bodies.map((b) => Math.min(...b.wy))).toFixed(0));
   assert.ok(allAsleep(w), 'all shards settle or leave the frame');
   assert.ok(w.bodies.filter((b) => b.gone).length > w.bodies.length * 0.9, 'most shards fall out');
+});
+
+test('contact quality: colliding polygons overlap only slightly', () => {
+  const w = createWorld({ width: W, height: H, hitX: 170, hitY: 180, seed: 5, target: 360 });
+  const poly = (b) => b.wx.map((x, i) => ({ x, y: b.wy[i] }));
+  // Overlap area of two convex polygons: clip one by every edge of the other.
+  const overlap = (A, B) => {
+    let p = A;
+    for (let i = 0; i < B.length && p.length > 2; i++) {
+      const a = B[i], c = B[(i + 1) % B.length];
+      const ex = c.x - a.x, ey = c.y - a.y, l = Math.hypot(ex, ey) || 1;
+      p = clipHalfPlane(p, a.x, a.y, ey / l, -ex / l);
+    }
+    return p.length > 2 ? Math.abs(polyArea(p)) : 0;
+  };
+  let near = 0, hits = 0, sum = 0, worstFrac = 0;
+  for (let f = 0; f < 150; f++) {
+    stepWorld(w, 1 / 60);
+    if (f % 5) continue;
+    const live = w.bodies.filter((b) => !b.gone);
+    for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+      const a = live[i], b = live[j];
+      if (Math.hypot(a.x - b.x, a.y - b.y) > a.radius + b.radius) continue;
+      near++;
+      const pa = poly(a), pb = poly(b), o = overlap(pa, pb);
+      if (o > 0) { hits++; sum += o; worstFrac = Math.max(worstFrac, o / Math.min(Math.abs(polyArea(pa)), Math.abs(polyArea(pb)))); }
+    }
+  }
+  console.log(`contact quality: ${near} neighbour pairs sampled, ${hits} overlapping, mean overlap ${(sum / Math.max(hits, 1)).toFixed(2)} px2, worst ${(worstFrac * 100).toFixed(1)}% of the smaller shard`);
+  assert.ok(near > 1000, 'many pairs were in contact range');
+  assert.ok(worstFrac < 0.15, 'no pair sinks more than 15% of the smaller shard into the other');
+  assert.ok(sum / Math.max(hits, 1) < 3, 'average overlap stays under 3 px2');
 });
