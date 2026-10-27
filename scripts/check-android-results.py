@@ -33,6 +33,10 @@ for route in filter(None,a.routes.split(',')):
   if not path.is_file() or not path.stat().st_size:failures.append(f'Missing or empty artifact: {path}')
 
 # Native Glass Shatter gate is additional, never a substitute for original suite.
+if (root / 'native-pacing').exists() and not (root / 'native-pacing' / 'timing.json').exists():
+    failures.append('Native Glass Shatter unrecorded pacing evidence missing')
+if (root / 'native-costs').exists() and not (root / 'native-costs' / 'costs.json').exists():
+    failures.append('Native Glass Shatter wrapper cost evidence missing')
 if (root / 'native-pacing' / 'timing.json').exists():
     import json as _json
     if not _json.loads((root / 'native-pacing' / 'timing.json').read_text()).get('pass'):

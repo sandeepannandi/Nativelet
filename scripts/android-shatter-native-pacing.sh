@@ -17,6 +17,9 @@ adb exec-out screencap -p > "$OUT/reset.png"
 adb shell input tap "$HX" "$HY";sleep 15
 adb exec-out screencap -p > "$OUT/second.png"
 adb logcat -d > "$OUT/logcat.txt"
+python3 scripts/shatter-trace-match.py clear "$OUT/first.png" "$OUT/initial.png" > "$OUT/first-clear.json"
+python3 scripts/shatter-trace-match.py reset "$OUT/reset.png" "$OUT/initial.png" > "$OUT/reset-state.json"
+python3 scripts/shatter-trace-match.py clear "$OUT/second.png" "$OUT/initial.png" > "$OUT/second-clear.json"
 python3 - "$OUT" <<'PY'
 import pathlib,re,sys,json
 p=pathlib.Path(sys.argv[1]);s=(p/'logcat.txt').read_text();r=re.findall(r'SHATTER_UI frames=(\d+) physics_avg=([\d.]+).*?interval_avg=([\d.]+)',s);cpu=re.findall(r'cpu_total_avg=([\d.]+)',s);out={'cpu_total_avg':cpu,'cycles':r,'unrecorded_unsampled':True,'budget_ms':16.67,'pass':len(cpu)==2 and all(float(x)<=16.67 for x in cpu) and len(r)==2 and all(float(x[1])<=16.67 and float(x[2])<=20 for x in r)};(p/'timing.json').write_text(json.dumps(out,indent=2));print(json.dumps(out));assert 'SHATTER_PROFILE'not in s and 'Glass Shatter stopped:'not in s
