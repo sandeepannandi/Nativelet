@@ -5,7 +5,7 @@ PKG=com.anonymous.nativeletshowcase
 adb shell am force-stop "$PKG"
 adb logcat -c
 adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///shatter-native-test' "$PKG"
-for i in $(seq 1 120); do
+for i in $(seq 1 240); do
  sleep 5
  adb logcat -d > "$OUT/logcat.txt"
  grep -q 'SHATTER_NATIVE_DONE\|SHATTER_NATIVE_ERROR' "$OUT/logcat.txt" && break
