@@ -12,26 +12,34 @@ grep -q 'sched:sched_switch' "$OUT/available-events.txt" || { echo 'BLOCKER sche
 adb shell am force-stop "$PKG"; adb logcat -c
 adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///shatter' "$PKG"
 sleep 12; bash scripts/android-system-ready.sh
-SIZE=$(adb shell wm size | grep -o '[0-9]*x[0-9]*' | tail -1); W=${SIZE%x*}; H=${SIZE#*x}
-# Consume the APK's one-shot Hermes sample before the native capture.
-adb shell input tap "$((W/2))" "$((H/2-H/20))"
+# Fresh visual gates before warm-up; no idle-dependent hierarchy dump.
+adb shell dumpsys window > "$OUT/focus.txt"
+grep -q "$PKG" "$OUT/focus.txt"
+PID=$(adb shell pidof "$PKG" | tr -d '\r'); [ -n "$PID" ]
+adb exec-out screencap -p > "$OUT/initial.png"
+python3 scripts/shatter-trace-match.py target "$OUT/initial.png" > "$OUT/initial-target.json"
+python3 scripts/shatter-trace-match.py intact "$OUT/initial.png" > "$OUT/initial-rim.json"
+read HX HY < <(python3 -c 'import json,sys;print(*json.load(open(sys.argv[1]))["hit"])' "$OUT/initial-target.json")
+adb shell input tap "$HX" "$HY"
 for i in $(seq 1 30); do sleep 3; adb logcat -d > "$OUT/warmup-logcat.txt"; grep -q 'SHATTER_PROFILE saved=' "$OUT/warmup-logcat.txt" && break; done
-grep -q 'SHATTER_PROFILE saved=' "$OUT/warmup-logcat.txt" || { echo 'BLOCKER warmup sampler not stopped'; exit 1; }
-# Resolve Reset glass from the observed UI hierarchy, not guessed coordinates.
-adb shell uiautomator dump /sdcard/shatter-reset.xml >/dev/null
-adb pull /sdcard/shatter-reset.xml "$OUT/reset.xml"
-read RX RY < <(python3 - "$OUT/reset.xml" <<'PY'
-import sys,xml.etree.ElementTree as E,re
-for e in E.parse(sys.argv[1]).iter('node'):
- if e.get('text')=='Reset glass' or e.get('content-desc')=='Reset glass':
-  a=list(map(int,re.findall(r'\d+',e.get('bounds'))));print((a[0]+a[2])//2,(a[1]+a[3])//2);break
-else:raise SystemExit('BLOCKER no reset element')
-PY
-)
-[ -n "${RX:-}" ] || { echo 'BLOCKER reset unavailable'; exit 1; }
+check_sampler() {
+ [ "$(grep -c 'SHATTER_PROFILE started' "$1")" -eq 1 ]
+ [ "$(grep -c 'SHATTER_PROFILE saved=' "$1")" -eq 1 ]
+ ! grep -q 'SHATTER_PROFILE error' "$1"
+ [ "$(adb shell pidof "$PKG" | tr -d '\r')" = "$PID" ]
+}
+check_sampler "$OUT/warmup-logcat.txt"
+grep -q 'SHATTER_UI' "$OUT/warmup-logcat.txt"
+adb exec-out screencap -p > "$OUT/cleared.png"
+python3 scripts/shatter-trace-match.py clear "$OUT/cleared.png" "$OUT/initial.png" > "$OUT/cleared-rim.json"
+python3 scripts/shatter-trace-match.py target "$OUT/cleared.png" > "$OUT/reset-target.json"
+read RX RY < <(python3 -c 'import json,sys;print(*json.load(open(sys.argv[1]))["reset"])' "$OUT/reset-target.json")
 adb shell input tap "$RX" "$RY"; sleep 2
 adb exec-out screencap -p > "$OUT/before.png"
-PID=$(adb shell pidof "$PKG" | tr -d '\r'); [ -n "$PID" ]
+python3 scripts/shatter-trace-match.py reset "$OUT/before.png" "$OUT/initial.png" > "$OUT/reset-rim.json"
+python3 scripts/shatter-trace-match.py target "$OUT/before.png" > "$OUT/capture-target.json"
+adb logcat -d > "$OUT/reset-logcat.txt"; check_sampler "$OUT/reset-logcat.txt"
+read HX HY < <(python3 -c 'import json,sys;print(*json.load(open(sys.argv[1]))["hit"])' "$OUT/capture-target.json")
 adb shell cat /proc/"$PID"/maps > "$OUT/maps.txt"
 adb shell ps -T -p "$PID" > "$OUT/threads.txt"
 cat > "$OUT/config.pbtxt" <<CFG
@@ -52,16 +60,19 @@ data_sources { config { name: "linux.ftrace" ftrace_config {
 } } }
 data_sources { config { name: "linux.process_stats" process_stats_config { scan_all_processes_on_start: true } } }
 CFG
-adb logcat -c
 adb shell perfetto --txt -c - -o /data/misc/perfetto-traces/shatter.pftrace < "$OUT/config.pbtxt" > "$OUT/perfetto-log.txt" 2>&1 &
 TRACE_JOB=$!
 sleep 2
-adb shell input tap "$((W/2))" "$((H/2-H/20))"
+adb shell input tap "$HX" "$HY"
 sleep 0.5; adb exec-out screencap -p > "$OUT/mid.png"
 wait "$TRACE_JOB"
 adb logcat -d > "$OUT/capture-logcat.txt"
 adb pull /data/misc/perfetto-traces/shatter.pftrace "$OUT/shatter.pftrace"
 adb exec-out screencap -p > "$OUT/after.png"
-if grep -q 'SHATTER_PROFILE started' "$OUT/capture-logcat.txt"; then echo 'BLOCKER Hermes restarted during capture'; exit 1; fi
+check_sampler "$OUT/capture-logcat.txt"
+[ "$(grep -c 'SHATTER_UI' "$OUT/capture-logcat.txt")" -eq 2 ]
+python3 scripts/shatter-trace-match.py clear "$OUT/after.png" "$OUT/initial.png" > "$OUT/after-rim.json"
+python3 scripts/shatter-trace-match.py fracture "$OUT/mid.png" "$OUT/before.png" > "$OUT/fracture-share.txt"
+python3 -c 'import sys;assert float(open(sys.argv[1]).read())>0.03,"BLOCKER no visual fracture"' "$OUT/fracture-share.txt"
 grep 'SHATTER_UI' "$OUT/capture-logcat.txt" | tee "$OUT/summary.txt" || true
 [ -s "$OUT/shatter.pftrace" ] || { echo 'BLOCKER trace empty'; exit 1; }
