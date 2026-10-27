@@ -62,7 +62,8 @@ for y in range(int(h*0.30),int(h*0.55),6):
 print(f"{m/max(1,n):.2f}")
 PY
 }
-open shatter; sleep 1; shot shatter-intact
+open shatter; sleep 6; shot shatter-intact
+adb logcat -d | grep -h "SHATTER_BENCH" | head -3 | sed "s/.*SHATTER_BENCH/shatter-bench/" | tee -a "$OUT/summary.txt"
 sleep 2; shot shatter-intact2
 report shatter-static-until-touched shatter-intact shatter-intact2
 I=$(bgshare shatter-intact)
@@ -79,13 +80,19 @@ sleep 3.5; shot shatter-gone
 report shatter-tap-breaks shatter-intact shatter-mid
 report shatter-shards-fall shatter-mid shatter-gone
 G=$(bgshare shatter-gone)
-D1=$(pdiff shatter-intact shatter-mid)
-D2=$(pdiff shatter-mid shatter-gone)
+# The emulator renders slowly and the hit can land a moment after the tap, so
+# take the strongest difference over the whole falling sequence.
+D1=0; for f in shatter-mid shatter-burst-1 shatter-burst-2 shatter-burst-3 shatter-fall; do
+  d=$(pdiff shatter-intact $f); D1=$(python3 -c "print(max($D1,$d))")
+done
+PEAK=shatter-fall
+D2=$(pdiff shatter-fall shatter-gone)
 D3=$(pdiff shatter-intact shatter-gone)
-echo "shatter-change intact->mid=$D1 mid->gone=$D2 intact->gone=$D3 bg_share_intact=$I bg_share_gone=$G" | tee -a "$OUT/summary.txt"
-# Falling shards must visibly differ from the whole pane, and from the cleared
-# state. After they leave, the picture is still there (not blank page background).
-if python3 -c "import sys;sys.exit(0 if float('$D1')>=0.15 and float('$D2')>=0.10 and float('$I')<=0.35 and float('$G')<=0.35 else 1)"; then
+echo "shatter-change intact->peak=$D1 fall->gone=$D2 intact->gone=$D3 bg_share_intact=$I bg_share_gone=$G" | tee -a "$OUT/summary.txt"
+# Some frame must show the broken pane (clearly different from the whole one),
+# the final state must differ from that frame, the pane must end clear of
+# shards, and the picture must still be there (not blank page background).
+if python3 -c "import sys;sys.exit(0 if float('$D1')>=0.15 and float('$D2')>=0.10 and float('$D3')<=0.10 and float('$I')<=0.35 and float('$G')<=0.35 else 1)"; then
   echo "shatter-breaks-and-clears ok" | tee -a "$OUT/summary.txt"
 else
   echo "shatter-breaks-and-clears NOT-ok" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1
@@ -95,25 +102,21 @@ grep -E "Total frames rendered|Janky frames|50th percentile|90th percentile|95th
 timeout 30 tail --pid=$RECPID -f /dev/null 2>/dev/null; kill $RECPID 2>/dev/null; timeout 60 adb pull /sdcard/shatter.mp4 "$OUT/shatter-fall.mp4" >/dev/null 2>&1 || true
 # Interactive Reset: the Reset glass button must put a whole pane back, and the
 # new pane must break again when tapped.
-# uiautomator dump can hang while the screen animates, so bound every try.
-for try in 1 2 3 4 5; do
-  rm -f "$OUT/ui.xml"; adb shell rm -f /sdcard/ui.xml
-  timeout 20 adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-  timeout 20 adb pull /sdcard/ui.xml "$OUT/ui.xml" >/dev/null 2>&1 && grep -q "Reset glass" "$OUT/ui.xml" && break
-  sleep 2
-done
-touch "$OUT/ui.xml"
-RC=$(python3 - "$OUT/ui.xml" <<'PY'
-import re,sys
-x=open(sys.argv[1],encoding="utf8",errors="ignore").read()
-for m in re.finditer(r'<node[^>]*>',x):
-    n=m.group(0)
-    if 'Reset glass' in n:
-        b=re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',n)
-        if b:
-            a=list(map(int,b.groups()));print((a[0]+a[2])//2,(a[1]+a[3])//2);break
+# Find the dark "Reset glass" button in the screenshot (first dark navy blob
+# below the pane), so no uiautomator dump is needed on an animating screen.
+RC=$(python3 - "$OUT/shatter-gone.png" <<'PY'
+import sys
+from PIL import Image
+im=Image.open(sys.argv[1]).convert("RGB");w,h=im.size
+xs=[];ys=[]
+for y in range(int(h*0.66),int(h*0.82),4):
+    for x in range(0,int(w*0.4),4):
+        r,g,b=im.getpixel((x,y))
+        if abs(r-31)<14 and abs(g-58)<14 and abs(b-95)<14: xs.append(x);ys.append(y)
+if len(xs)>40: print((min(xs)+max(xs))//2,(min(ys)+max(ys))//2)
 PY
 )
+echo "reset button at: ${RC:-not found}"
 if [ -n "$RC" ]; then
   adb shell input tap $RC; sleep 1.5; shot shatter-reset
   RD=$(pdiff shatter-intact shatter-reset)
@@ -123,13 +126,14 @@ if [ -n "$RC" ]; then
   if python3 -c "import sys;sys.exit(0 if float('$RD')<=0.05 and float('$RB')>=0.15 else 1)"; then echo "shatter-interactive-reset reset_vs_intact=$RD breaks_again=$RB ok" | tee -a "$OUT/summary.txt"
   else echo "shatter-interactive-reset reset_vs_intact=$RD breaks_again=$RB NOT-ok" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1; fi
 else echo "shatter-interactive-reset NO-RESET-BUTTON-FOUND" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1; fi
+adb logcat -d > "$OUT/shatter-session1.logcat.txt"
 # Relaunch: the pane is whole again (same as the first screenshot).
 open shatter; shot shatter-relaunch
 R=$(pdiff shatter-intact shatter-relaunch)
 if python3 -c "import sys;sys.exit(0 if float('$R')<=0.05 else 1)"; then echo "shatter-relaunch-intact diff=$R" | tee -a "$OUT/summary.txt"
 else echo "shatter-relaunch-intact diff=$R NOT-intact" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1; fi
 adb logcat -d > "$OUT/shatter-session.logcat.txt"
-CR=no; grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" "$OUT/shatter-session.logcat.txt" | grep -q . && CR=yes
+CR=no; cat "$OUT/shatter-session1.logcat.txt" "$OUT/shatter-session.logcat.txt" | grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" | grep -q . && CR=yes
 echo "shatter-session crash=$CR" | tee -a "$OUT/summary.txt"
 [ "$CR" = no ] || SHATTER_FAIL=1
 [ -z "${SHATTER_FAIL:-}" ] || { echo "glass shatter behavior check failed"; exit 1; }
