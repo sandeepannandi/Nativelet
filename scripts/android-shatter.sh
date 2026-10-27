@@ -20,6 +20,7 @@ open() {
     sleep 4
   }
   sleep 2
+  bash scripts/android-system-ready.sh
 }
 shot() { adb exec-out screencap -p > "$OUT/$1.png"; }
 report() {
