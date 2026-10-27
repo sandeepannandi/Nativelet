@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Offline proposal only. Run from repository root BEFORE emulator startup.
 set -euo pipefail
-for tool in bash python3 timeout grep tr seq sleep mkdir cat tee sha256sum adb sed; do
+for tool in bash python3 timeout grep tr seq sleep mkdir cat tee sha256sum adb sed realpath java; do
  command -v "$tool" >/dev/null || { echo "BLOCKER missing host tool: $tool"; exit 1; }
 done
 bash -n scripts/android-system-ready.sh scripts/android-shatter-perfetto.sh
@@ -25,6 +25,7 @@ python3 scripts/shatter-trace-match.py clear scripts/shatter-trace-templates/cle
 if python3 scripts/shatter-trace-match.py reset scripts/shatter-trace-templates/clear.png scripts/shatter-trace-templates/intact.png; then
  echo 'BLOCKER reset gate accepts cleared state'; exit 1
 fi
+[ "$(realpath "$(command -v adb)")" = "$(realpath "${ANDROID_HOME:?}/platform-tools/adb")" ]
 adb version
 [ -r /dev/kvm ] && [ -w /dev/kvm ] || { echo 'BLOCKER KVM access'; exit 1; }
 python3 - <<'PYCHECK'

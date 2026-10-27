@@ -36,6 +36,8 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Expose and verify actual hosted Android SDK before emulator
+        run: bash scripts/shatter-host-preflight/android-sdk.sh
       - name: Fail fast host checks before emulator
         run: bash scripts/shatter-host-preflight/preflight.sh
       - name: One bounded native capture
