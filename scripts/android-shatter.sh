@@ -67,9 +67,13 @@ sleep 2; shot shatter-intact2
 report shatter-static-until-touched shatter-intact shatter-intact2
 I=$(bgshare shatter-intact)
 adb shell dumpsys gfxinfo "$PKG" reset >/dev/null 2>&1
+adb shell "screenrecord --time-limit 7 --size 540x1170 /sdcard/shatter.mp4" >/dev/null 2>&1 &
+RECPID=$!
+sleep 0.8
 adb shell input tap $CX $CY
 sleep 0.35; shot shatter-mid
-sleep 1.2; shot shatter-fall
+shot shatter-burst-1; shot shatter-burst-2; shot shatter-burst-3
+sleep 0.6; shot shatter-fall
 adb shell dumpsys gfxinfo "$PKG" > "$OUT/shatter-gfxinfo.txt" 2>&1
 sleep 3.5; shot shatter-gone
 report shatter-tap-breaks shatter-intact shatter-mid
@@ -88,6 +92,30 @@ else
 fi
 # Frame statistics for the first ~1.5 s after the hit, when most shards are live.
 grep -E "Total frames rendered|Janky frames|50th percentile|90th percentile|95th percentile|99th percentile" "$OUT/shatter-gfxinfo.txt" | head -6 | sed 's/^/shatter-gfxinfo: /' | tee -a "$OUT/summary.txt"
+wait $RECPID 2>/dev/null; adb pull /sdcard/shatter.mp4 "$OUT/shatter-fall.mp4" >/dev/null 2>&1 || true
+# Interactive Reset: the Reset glass button must put a whole pane back, and the
+# new pane must break again when tapped.
+adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "$OUT/ui.xml" >/dev/null 2>&1
+RC=$(python3 - "$OUT/ui.xml" <<'PY'
+import re,sys
+x=open(sys.argv[1],encoding="utf8",errors="ignore").read()
+for m in re.finditer(r'<node[^>]*>',x):
+    n=m.group(0)
+    if 'Reset glass' in n:
+        b=re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"',n)
+        if b:
+            a=list(map(int,b.groups()));print((a[0]+a[2])//2,(a[1]+a[3])//2);break
+PY
+)
+if [ -n "$RC" ]; then
+  adb shell input tap $RC; sleep 1.5; shot shatter-reset
+  RD=$(pdiff shatter-intact shatter-reset)
+  adb shell input tap $CX $CY; sleep 0.4; shot shatter-reset-mid
+  RB=$(pdiff shatter-reset shatter-reset-mid)
+  sleep 3.5; shot shatter-reset-gone
+  if python3 -c "import sys;sys.exit(0 if float('$RD')<=0.05 and float('$RB')>=0.15 else 1)"; then echo "shatter-interactive-reset reset_vs_intact=$RD breaks_again=$RB ok" | tee -a "$OUT/summary.txt"
+  else echo "shatter-interactive-reset reset_vs_intact=$RD breaks_again=$RB NOT-ok" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1; fi
+else echo "shatter-interactive-reset NO-RESET-BUTTON-FOUND" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1; fi
 # Relaunch: the pane is whole again (same as the first screenshot).
 open shatter; shot shatter-relaunch
 R=$(pdiff shatter-intact shatter-relaunch)
