@@ -62,20 +62,34 @@ for y in range(int(h*0.30),int(h*0.55),6):
 print(f"{m/max(1,n):.2f}")
 PY
 }
+# System frame statistics for a window of N seconds, so the active shatter can
+# be read against idle baselines on the same emulator (software GPU, slow).
+gfx() { # <label> <seconds>
+  adb shell dumpsys gfxinfo "$PKG" reset >/dev/null 2>&1
+  sleep "$2"
+  adb shell dumpsys gfxinfo "$PKG" > "$OUT/$1-gfxinfo.txt" 2>&1
+  T=$(grep -o "Total frames rendered: [0-9]*" "$OUT/$1-gfxinfo.txt" | grep -o "[0-9]*$"); J=$(grep -o "Janky frames: [0-9]*" "$OUT/$1-gfxinfo.txt" | head -1 | grep -o "[0-9]*$")
+  P50=$(grep -o "50th percentile: [0-9]*ms" "$OUT/$1-gfxinfo.txt" | grep -o "[0-9]*ms"); P90=$(grep -o "90th percentile: [0-9]*ms" "$OUT/$1-gfxinfo.txt" | grep -o "[0-9]*ms")
+  echo "shatter-frames $1 window=${2}s frames=${T:-0} janky=${J:-0} p50=${P50:-n/a} p90=${P90:-n/a}" | tee -a "$OUT/summary.txt"
+}
 open shatter; sleep 6; shot shatter-intact
 adb logcat -d | grep -h "SHATTER_BENCH" | head -3 | sed "s/.*SHATTER_BENCH/shatter-bench/" | tee -a "$OUT/summary.txt"
 sleep 2; shot shatter-intact2
 report shatter-static-until-touched shatter-intact shatter-intact2
+gfx idle-intact 3
 I=$(bgshare shatter-intact)
 adb shell dumpsys gfxinfo "$PKG" reset >/dev/null 2>&1
 adb shell "screenrecord --time-limit 7 --size 540x1170 /sdcard/shatter.mp4" >/dev/null 2>&1 &
 RECPID=$!
 sleep 0.8
-adb shell input tap $CX $CY
+adb shell input tap $CX $CY; ACTIVE_START=$(date +%s)
 sleep 0.35; shot shatter-mid
 shot shatter-burst-1; shot shatter-burst-2; shot shatter-burst-3
 sleep 0.6; shot shatter-fall
-adb shell dumpsys gfxinfo "$PKG" > "$OUT/shatter-gfxinfo.txt" 2>&1
+adb shell dumpsys gfxinfo "$PKG" > "$OUT/shatter-active-gfxinfo.txt" 2>&1
+AT=$(( $(date +%s) - ACTIVE_START ))
+TA=$(grep -o "Total frames rendered: [0-9]*" "$OUT/shatter-active-gfxinfo.txt" | grep -o "[0-9]*$"); JA=$(grep -o "Janky frames: [0-9]*" "$OUT/shatter-active-gfxinfo.txt" | head -1 | grep -o "[0-9]*$")
+echo "shatter-frames active-fall window=${AT}s frames=${TA:-0} janky=${JA:-0} p50=$(grep -o "50th percentile: [0-9]*ms" "$OUT/shatter-active-gfxinfo.txt" | grep -o "[0-9]*ms") p90=$(grep -o "90th percentile: [0-9]*ms" "$OUT/shatter-active-gfxinfo.txt" | grep -o "[0-9]*ms")" | tee -a "$OUT/summary.txt"
 sleep 3.5; shot shatter-gone
 report shatter-tap-breaks shatter-intact shatter-mid
 report shatter-shards-fall shatter-mid shatter-gone
@@ -97,8 +111,8 @@ if python3 -c "import sys;sys.exit(0 if float('$D1')>=0.15 and float('$D2')>=0.1
 else
   echo "shatter-breaks-and-clears NOT-ok" | tee -a "$OUT/summary.txt"; SHATTER_FAIL=1
 fi
-# Frame statistics for the first ~1.5 s after the hit, when most shards are live.
-grep -E "Total frames rendered|Janky frames|50th percentile|90th percentile|95th percentile|99th percentile" "$OUT/shatter-gfxinfo.txt" | head -6 | sed 's/^/shatter-gfxinfo: /' | tee -a "$OUT/summary.txt"
+# (replaced by the labelled lines above) Frame statistics for the first ~1.5 s after the hit, when most shards are live.
+gfx idle-after-gone 3
 timeout 30 tail --pid=$RECPID -f /dev/null 2>/dev/null; kill $RECPID 2>/dev/null; timeout 60 adb pull /sdcard/shatter.mp4 "$OUT/shatter-fall.mp4" >/dev/null 2>&1 || true
 # Interactive Reset: the Reset glass button must put a whole pane back, and the
 # new pane must break again when tapped.
@@ -136,4 +150,6 @@ adb logcat -d > "$OUT/shatter-session.logcat.txt"
 CR=no; cat "$OUT/shatter-session1.logcat.txt" "$OUT/shatter-session.logcat.txt" | grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" | grep -q . && CR=yes
 echo "shatter-session crash=$CR" | tee -a "$OUT/summary.txt"
 [ "$CR" = no ] || SHATTER_FAIL=1
+# Baseline: Flow Field animates continuously on the same emulator.
+open flowfield; gfx flowfield-baseline 3
 [ -z "${SHATTER_FAIL:-}" ] || { echo "glass shatter behavior check failed"; exit 1; }
