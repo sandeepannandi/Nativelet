@@ -1,0 +1,66 @@
+name: Glass Shatter direct video behavior
+on:
+  push:
+    branches: ["diagnostics/glass-shatter-video"]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, physics-mesh]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: tail-apk-${{ matrix.variant }}
+          run-id: 40543979710
+          github-token: ${{ github.token }}
+          path: apk
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Existing host image tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/shatter-host"
+          cp scripts/shatter-host-preflight/* "$RUNNER_TEMP/shatter-host/"
+          bash "$RUNNER_TEMP/shatter-host/provision.sh" "$RUNNER_TEMP/shatter-host"
+          bash -n scripts/android-shatter-video-observe.sh
+          sha256sum apk/*.apk | tee apk/checksum.txt
+      - name: Enable KVM and SDK
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          bash scripts/shatter-host-preflight/android-sdk.sh
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: One direct video sequence, existing APK only
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: false
+          script: |
+            adb install -r apk/*.apk
+            bash scripts/android-system-ready.sh
+            adb shell am force-stop com.anonymous.nativeletshowcase
+            adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///shatter' com.anonymous.nativeletshowcase
+            sleep 12
+            mkdir -p smoke-out/video
+            adb shell pm path com.anonymous.nativeletshowcase > smoke-out/video/package.txt
+            adb shell sha256sum $(sed -n 's/^package://p' smoke-out/video/package.txt | tr -d '\r') > smoke-out/video/installed-checksum.txt
+            cp apk/checksum.txt smoke-out/video/apk-checksum.txt
+            bash scripts/android-shatter-video-observe.sh smoke-out/video
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: direct-video-${{ matrix.variant }}
+          path: smoke-out
