@@ -15,7 +15,7 @@ import {
   vec,
   type SkImage,
 } from "@shopify/react-native-skia";
-import { useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
+import { runOnUI, useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import { createWorld, fillMesh, stepWorld, type World } from "./shatterMath";
 
 export type GlassShatterProps = {
@@ -38,6 +38,17 @@ export type GlassShatterProps = {
   label?: string;
   style?: ViewStyle;
 };
+
+// Mutable physics graphs stay inside the UI runtime. Putting ~359 bodies and
+// thousands of contact fields in a SharedValue makes each hot-loop access cross
+// the shareable-value boundary. Only the small input/version scalars are shared.
+let nextWorldKey = 0;
+function uiWorlds(): Record<number, World | null> {
+  "worklet";
+  const g = globalThis as typeof globalThis & { __nativeletShatterWorlds?: Record<number, World | null> };
+  if (!g.__nativeletShatterWorlds) g.__nativeletShatterWorlds = {};
+  return g.__nativeletShatterWorlds;
+}
 
 type Ev = { id: number; k: number; x: number; y: number };
 type Mesh = { xy: { x: number; y: number }[]; tex: { x: number; y: number }[]; tint: { x: number; y: number }[]; path: ReturnType<typeof Skia.Path.Make> };
@@ -107,7 +118,8 @@ export function GlassShatter({
 }: GlassShatterProps) {
   const [systemReduce, setSystemReduce] = useState(false);
   const reduce = reducedMotion ?? systemReduce;
-  const sim = useSharedValue<World | null>(null);
+  const worldKey = useMemo(() => ++nextWorldKey, []);
+  useEffect(() => () => { runOnUI((key: number) => { "worklet"; delete uiWorlds()[key]; })(worldKey); }, [worldKey]);
   const perf = useSharedValue({ count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false });
   const brokenId = useSharedValue(0);
   const frame = useSharedValue(0);
@@ -183,14 +195,14 @@ export function GlassShatter({
       seen.value = e.id;
       if (e.k === 0) {
         perf.value = { count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false };
-        sim.value = createWorld({ width, height, hitX: e.x, hitY: e.y, seed: (e.id * 7919) % 100000, target: shardCount });
+        uiWorlds()[worldKey] = createWorld({ width, height, hitX: e.x, hitY: e.y, seed: (e.id * 7919) % 100000, target: shardCount });
         brokenId.value = brokenId.value + 1;
       } else if (e.k === 1) {
-        sim.value = null;
+        uiWorlds()[worldKey] = null;
         brokenId.value = brokenId.value + 1;
       }
     }
-    const w = sim.value;
+    const w = uiWorlds()[worldKey];
     if (!w) return;
     if (!reduceM.value) {
       const dt = Math.min(48, info.timeSincePreviousFrame ?? 16.7) / 1000;
@@ -212,7 +224,7 @@ export function GlassShatter({
   // Triangle fans, one per shard, rebuilt only when the pane breaks or resets.
   const indices = useDerivedValue(() => {
     brokenId.value;
-    const w = sim.value;
+    const w = uiWorlds()[worldKey];
     const out: number[] = [];
     if (!w) return out;
     if (diagnostics) perf.value.indices++;
@@ -228,7 +240,7 @@ export function GlassShatter({
   const mesh = useDerivedValue<Mesh>(() => {
     frame.value;
     brokenId.value;
-    const w = sim.value;
+    const w = uiWorlds()[worldKey];
     const path = Skia.Path.Make();
     if (!w) return { xy: [], tex: [], tint: [], path };
     const meshStart = diagnostics ? performance.now() : 0;
@@ -255,7 +267,7 @@ export function GlassShatter({
   const textures = useDerivedValue(() => mesh.value.tex);
   const tintTex = useDerivedValue(() => mesh.value.tint);
   const edges = useDerivedValue(() => mesh.value.path);
-  const sheenOpacity = useDerivedValue(() => (brokenId.value >= 0 && sim.value ? 0 : 1));
+  const sheenOpacity = useDerivedValue(() => (brokenId.value >= 0 && uiWorlds()[worldKey] ? 0 : 1));
 
   return (
     <View
