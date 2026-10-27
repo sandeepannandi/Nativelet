@@ -92,10 +92,17 @@ else
 fi
 # Frame statistics for the first ~1.5 s after the hit, when most shards are live.
 grep -E "Total frames rendered|Janky frames|50th percentile|90th percentile|95th percentile|99th percentile" "$OUT/shatter-gfxinfo.txt" | head -6 | sed 's/^/shatter-gfxinfo: /' | tee -a "$OUT/summary.txt"
-wait $RECPID 2>/dev/null; adb pull /sdcard/shatter.mp4 "$OUT/shatter-fall.mp4" >/dev/null 2>&1 || true
+timeout 30 tail --pid=$RECPID -f /dev/null 2>/dev/null; kill $RECPID 2>/dev/null; timeout 60 adb pull /sdcard/shatter.mp4 "$OUT/shatter-fall.mp4" >/dev/null 2>&1 || true
 # Interactive Reset: the Reset glass button must put a whole pane back, and the
 # new pane must break again when tapped.
-adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml "$OUT/ui.xml" >/dev/null 2>&1
+# uiautomator dump can hang while the screen animates, so bound every try.
+for try in 1 2 3 4 5; do
+  rm -f "$OUT/ui.xml"; adb shell rm -f /sdcard/ui.xml
+  timeout 20 adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+  timeout 20 adb pull /sdcard/ui.xml "$OUT/ui.xml" >/dev/null 2>&1 && grep -q "Reset glass" "$OUT/ui.xml" && break
+  sleep 2
+done
+touch "$OUT/ui.xml"
 RC=$(python3 - "$OUT/ui.xml" <<'PY'
 import re,sys
 x=open(sys.argv[1],encoding="utf8",errors="ignore").read()
