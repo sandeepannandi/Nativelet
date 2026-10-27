@@ -16,7 +16,8 @@ import {
   type SkImage,
 } from "@shopify/react-native-skia";
 import { runOnUI, useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
-import { createWorld, fillMesh, stepWorld, type World } from "./shatterMath";
+import { traceShatterSection } from "./shatterTrace";
+import { createWorld, fillMesh, stepWorld, allShardsGone, type World } from "./shatterMath";
 
 export type GlassShatterProps = {
   /** The picture behind the glass, drawn at `imageScale` pixels per point. */
@@ -42,6 +43,10 @@ export type GlassShatterProps = {
 // Mutable physics graphs stay inside the UI runtime. Putting ~359 bodies and
 // thousands of contact fields in a SharedValue makes each hot-loop access cross
 // the shareable-value boundary. Only the small input/version scalars are shared.
+// Local diagnostic A/B only. Baseline is unchanged unless both diagnostics and
+// the exact opt-in mode are selected. CanvasKeepAlive is deliberately unchanged.
+const TRACE_PHASES = process.env.EXPO_PUBLIC_SHATTER_TRACE === "1";
+const QUIESCE_PHYSICS_MESH = process.env.EXPO_PUBLIC_SHATTER_TAIL === "physics-mesh";
 const SAMPLE_UI = process.env.EXPO_PUBLIC_SHATTER_PROFILE === "1";
 let nextWorldKey = 0;
 function uiWorlds(): Record<number, World | null> {
@@ -124,6 +129,9 @@ export function GlassShatter({
   const perf = useSharedValue({ count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false });
   const brokenId = useSharedValue(0);
   const frame = useSharedValue(0);
+  const terminal = useSharedValue(false);
+  const terminalObserved = useSharedValue(false);
+  const finalMeshObserved = useSharedValue(false);
   const inputs = useSharedValue<Ev[]>([]);
   const seen = useSharedValue(0);
   const slowM = useSharedValue(false);
@@ -200,20 +208,39 @@ export function GlassShatter({
           try { (globalThis as typeof globalThis & { _startProfiling: (hz: number) => void })._startProfiling(100); sampling.value = 1; console.log("SHATTER_PROFILE started hz=100"); }
           catch (err) { sampling.value = 2; console.log(`SHATTER_PROFILE error-start ${String(err)}`); }
         }
+        terminalObserved.value = false;
+        finalMeshObserved.value = false;
+        terminal.value = false;
         perf.value = { count: 0, physics: 0, physicsMax: 0, mesh: 0, path: 0, copies: 0, interval: 0, intervalMax: 0, indices: 0, reported: false };
-        uiWorlds()[worldKey] = createWorld({ width, height, hitX: e.x, hitY: e.y, seed: (e.id * 7919) % 100000, target: shardCount });
+        uiWorlds()[worldKey] = traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/createWorld", () => {
+          "worklet";
+          return createWorld({ width, height, hitX: e.x, hitY: e.y, seed: (e.id * 7919) % 100000, target: shardCount });
+        });
         brokenId.value = brokenId.value + 1;
       } else if (e.k === 1) {
-        uiWorlds()[worldKey] = null;
+        terminalObserved.value = false;
+        finalMeshObserved.value = false;
+        terminal.value = false;
+        traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/reset", () => {
+          "worklet";
+          uiWorlds()[worldKey] = null;
+        });
         brokenId.value = brokenId.value + 1;
       }
     }
     const w = uiWorlds()[worldKey];
     if (!w) return;
+    // Keep the callback subscribed: it must still consume Reset and a new hit.
+    // Do not use p.reported/count90: reporting can happen before all shards leave.
+    if (diagnostics && QUIESCE_PHYSICS_MESH && terminal.value) return;
+    let reachedTerminal = false;
     if (!reduceM.value) {
       const dt = Math.min(48, info.timeSincePreviousFrame ?? 16.7) / 1000;
       const start = diagnostics ? performance.now() : 0;
-      stepWorld(w, dt * (slowM.value ? 0.25 : 1));
+      traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/stepWorld", () => {
+        "worklet";
+        stepWorld(w, dt * (slowM.value ? 0.25 : 1));
+      });
       if (diagnostics) {
         const p = perf.value; const ms = performance.now() - start;
         p.physics += ms; p.physicsMax = Math.max(p.physicsMax, ms); p.count++;
@@ -229,7 +256,15 @@ export function GlassShatter({
         }
       }
     }
+    if (diagnostics && (QUIESCE_PHYSICS_MESH || TRACE_PHASES) && !reduceM.value) reachedTerminal = allShardsGone(w);
+    if (diagnostics && TRACE_PHASES && reachedTerminal && !terminalObserved.value) {
+      traceShatterSection(true, "SHATTER/allGone", () => { "worklet"; });
+      terminalObserved.value = true;
+    }
+    // Always invalidate the all-gone frame once so fillMesh parks the last
+    // vertices and the paths clear. Only subsequent callbacks are skipped.
     frame.value = frame.value + 1;
+    if (QUIESCE_PHYSICS_MESH && reachedTerminal) terminal.value = true;
   });
 
   // Triangle fans, one per shard, rebuilt only when the pane breaks or resets.
@@ -255,22 +290,36 @@ export function GlassShatter({
     const path = Skia.Path.Make();
     if (!w) return { xy: [], tex: [], tint: [], path };
     const meshStart = diagnostics ? performance.now() : 0;
-    fillMesh(w, imageScale);
+    traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/fillMesh", () => {
+      "worklet";
+      fillMesh(w, imageScale);
+    });
     const filled = diagnostics ? performance.now() : 0;
     const xy = w.mxy as { x: number; y: number }[];
     const start = w.mstart as number[];
-    for (let i = 0; i < w.bodies.length; i++) {
-      const b = w.bodies[i];
-      if (b.gone) continue;
-      const n = b.local.length;
-      const s0 = start[i];
-      path.moveTo(xy[s0].x, xy[s0].y);
-      for (let k = 1; k < n; k++) path.lineTo(xy[s0 + k].x, xy[s0 + k].y);
-      path.close();
-    }
+    traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/path", () => {
+      "worklet";
+      for (let i = 0; i < w.bodies.length; i++) {
+        const b = w.bodies[i];
+        if (b.gone) continue;
+        const n = b.local.length;
+        const s0 = start[i];
+        path.moveTo(xy[s0].x, xy[s0].y);
+        for (let k = 1; k < n; k++) path.lineTo(xy[s0 + k].x, xy[s0 + k].y);
+        path.close();
+      }
+    });
     const pathed = diagnostics ? performance.now() : 0;
     // Copies of the reused buffers, so Skia sees a changed value every frame.
-    const result = { xy: xy.slice(), tex: (w.mtex as { x: number; y: number }[]).slice(), tint: (w.mtint as { x: number; y: number }[]).slice(), path };
+    const result = traceShatterSection(diagnostics && TRACE_PHASES, "SHATTER/copies", () => {
+      "worklet";
+      return { xy: xy.slice(), tex: (w.mtex as { x: number; y: number }[]).slice(), tint: (w.mtint as { x: number; y: number }[]).slice(), path };
+    });
+    // This marks completed CPU mesh preparation, NOT GPU presentation.
+    if (diagnostics && TRACE_PHASES && !finalMeshObserved.value && allShardsGone(w)) {
+      traceShatterSection(true, "SHATTER/finalMeshParked", () => { "worklet"; });
+      finalMeshObserved.value = true;
+    }
     if (diagnostics) { const p = perf.value; p.mesh += filled - meshStart; p.path += pathed - filled; p.copies += performance.now() - pathed; }
     return result;
   });

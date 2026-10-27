@@ -671,3 +671,9 @@ export function fillMesh(w: World, imageScale: number) {
     }
   }
 }
+
+/** Diagnostic terminal condition, distinct from sleeping or a timing report. */
+export function allShardsGone(w: Pick<World, "bodies">): boolean {
+  'worklet';
+  return w.bodies.length > 0 && w.bodies.every((b) => b.gone);
+}
