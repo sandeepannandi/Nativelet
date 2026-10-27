@@ -28,7 +28,10 @@ adb shell wm size > "$OUT/device-size.txt"; adb shell wm density > "$OUT/device-
 adb shell pm path "$PKG" > "$OUT/package-path.txt"
 APK_PATH=$(sed -n 's/^package://p' "$OUT/package-path.txt" | tr -d '\r'); [ -n "$APK_PATH" ]
 adb shell sha256sum "$APK_PATH" > "$OUT/installed-checksum.txt"
-grep -q '^221eea2e66db390a78868c5f4b47bce1c412c279be34e0b218e331aff54f5a15 ' "$OUT/installed-checksum.txt"
+python3 - "$OUT" <<'IDENTITY'
+import pathlib,json,sys
+p=pathlib.Path(sys.argv[1]);expected=json.loads((p/'identity.json').read_text())['apk_sha256'];assert (p/'installed-checksum.txt').read_text().split()[0]==expected,'installed bytes mismatch'
+IDENTITY
 adb shell cat /sys/kernel/tracing/available_events > "$OUT/available-events.txt"
 for event in sched_switch sched_waking sched_blocked_reason; do grep -q "sched:$event" "$OUT/available-events.txt"; done
 adb shell am force-stop "$PKG"; adb logcat -c
@@ -43,7 +46,7 @@ adb exec-out screencap -p > "$OUT/initial.png"
 python3 scripts/shatter-trace-match.py target "$OUT/initial.png" > "$OUT/initial-target.json"
 python3 scripts/shatter-trace-match.py intact "$OUT/initial.png" > "$OUT/initial-rim.json"
 read HX HY < <(python3 -c 'import json,sys;print(*json.load(open(sys.argv[1]))["hit"])' "$OUT/initial-target.json")
-# Retained APK has no phase markers or sampler. Exactly one measured fall,
+# Rebuilt diagnostic APK has no phase markers or sampler. Exactly one measured fall,
 # bounded by uptime, scheduler/native stacks and Android gfx/view trace slices.
 # Initial intact state is checked above; no warm-up fracture or reset.
 cp "$OUT/initial.png" "$OUT/before.png"

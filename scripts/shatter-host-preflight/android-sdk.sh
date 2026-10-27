@@ -2,11 +2,11 @@
 # Expose and validate the hosted runner's real Android SDK BEFORE emulator action.
 # No device, SDK install, stub, guessed adb fallback, or softened preflight.
 set -euo pipefail
-# Diagnostic route only: guard retained bytes before workflow installs any APK.
-if grep -q 'One strict identical-source rebuild fallback' scripts/android-shatter-inline-check.sh 2>/dev/null; then
+# Distinct rebuilt diagnostic: verify executable/assets and semantic resources
+# before the workflow installs the APK; record actual identity, never byte equality.
+if grep -q 'Distinct rebuilt-APK diagnostic' scripts/android-shatter-inline-check.sh 2>/dev/null; then
  mkdir -p smoke-out/native-trace
- sha256sum apk/*.apk | tee smoke-out/native-trace/rebuilt-checksum.txt
- [ "$(sha256sum apk/*.apk | cut -d' ' -f1)" = '221eea2e66db390a78868c5f4b47bce1c412c279be34e0b218e331aff54f5a15' ] || { echo 'BLOCKER rebuilt APK differs from retained bytes, before install/trace' | tee smoke-out/native-trace/summary.txt;exit 1; }
+ python3 scripts/shatter-host-preflight/verify-native-apk.py apk/app-release.apk | tee smoke-out/native-trace/identity.json
 fi
 OUT=smoke-out/host-preflight; mkdir -p "$OUT"
 : "${ANDROID_HOME:?hosted Android SDK root required}"

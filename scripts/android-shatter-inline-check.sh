@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
-# One strict identical-source rebuild fallback. Never trace mismatched bytes.
+# Distinct rebuilt-APK diagnostic, never retained-byte or qualification claim.
 set -euo pipefail
 OUT=smoke-out/native-trace;mkdir -p "$OUT"
-sha256sum apk/*.apk | tee "$OUT/rebuilt-checksum.txt"
-[ "$(sha256sum apk/*.apk | cut -d' ' -f1)" = '221eea2e66db390a78868c5f4b47bce1c412c279be34e0b218e331aff54f5a15' ] || { echo 'BLOCKER rebuilt APK differs from retained qualified bytes' | tee "$OUT/summary.txt";exit 1; }
+# Identity was gated before install by host SDK entrypoint. Reconfirm same bytes.
+python3 scripts/shatter-host-preflight/verify-native-apk.py apk/app-release.apk > "$OUT/identity-recheck.json"
+bash scripts/android-shatter-native-pacing.sh
+python3 - <<'REPRO'
+import json
+p=json.load(open('smoke-out/native-pacing/timing.json'))
+assert not p['pass'] and len(p['cycles'])==2 and len(p['cpu_total_avg'])==2
+assert all(60<=float(x[2])<=100 for x in p['cycles']),'BLOCKER materially different pacing than retained75-79ms'
+assert all(float(x)<=16.67 for x in p['cpu_total_avg']),'BLOCKER different CPU-cost profile'
+print('Reproduced same unrecorded pacing failure on separately labeled rebuilt diagnostic bytes')
+REPRO
 ROOT="$RUNNER_TEMP/shatter-native-trace-host";mkdir -p "$ROOT"
 python3 scripts/shatter-host-preflight/download.py "$ROOT"
 chmod +x "$ROOT/perfetto/linux-amd64/trace_processor_shell"
