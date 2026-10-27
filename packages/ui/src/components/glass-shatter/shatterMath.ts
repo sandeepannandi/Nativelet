@@ -453,34 +453,6 @@ function prep(ct: Contact, dt: number) {
   ct.bias = Math.max(bounce, push);
 }
 
-function solve(ct: Contact) {
-  'worklet';
-  const a = ct.a, b = ct.b;
-  const nx = ct.nx, ny = ct.ny, tx = -ny, ty = nx;
-  const rax = ct.rax, ray = ct.ray, rbx = ct.rbx, rby = ct.rby;
-  const am = ct.am, ai = ct.ai, bm = ct.bm, bi = ct.bi;
-  let avx = a.vx, avy = a.vy, aw = a.w;
-  let bvx = b.vx, bvy = b.vy, bw = b.w;
-  let rx = (bvx - bw * rby) - (avx - aw * ray);
-  let ry = (bvy + bw * rbx) - (avy + aw * rax);
-  const old = ct.jn;
-  const next = Math.max(old + ct.mn * (ct.bias - (rx * nx + ry * ny)), 0);
-  ct.jn = next;
-  const dj = next - old;
-  let jx = nx * dj, jy = ny * dj;
-  avx -= am * jx; avy -= am * jy; aw -= ai * ct.rnA * dj;
-  bvx += bm * jx; bvy += bm * jy; bw += bi * ct.rnB * dj;
-  rx = (bvx - bw * rby) - (avx - aw * ray);
-  ry = (bvy + bw * rbx) - (avy + aw * rax);
-  const maxF = FRICTION * next;
-  const oldT = ct.jt;
-  const nextT = Math.max(-maxF, Math.min(maxF, oldT - ct.mt * (rx * tx + ry * ty)));
-  ct.jt = nextT;
-  const djt = nextT - oldT;
-  jx = tx * djt; jy = ty * djt;
-  a.vx = avx - am * jx; a.vy = avy - am * jy; a.w = aw - ai * ct.rtA * djt;
-  b.vx = bvx + bm * jx; b.vy = bvy + bm * jy; b.w = bw + bi * ct.rtB * djt;
-}
 
 const SUB = 3;
 const FIXED = 1 / 180;
@@ -559,7 +531,36 @@ function stepFixed(w: World, dt: number) {
     const ct = contacts[ci];
     ct.am = ct.a.invM; ct.ai = ct.a.invI; ct.bm = ct.b.invM; ct.bi = ct.b.invI;
   }
-  for (let it = 0; it < 14; it++) for (let ci = 0; ci < contacts.length; ci++) solve(contacts[ci]);
+  // Inline the scalar solve to avoid a cross-worklet invocation for every contact.
+  for (let it = 0; it < 14; it++) for (let ci = 0; ci < contacts.length; ci++) {
+    const ct = contacts[ci];
+  const a = ct.a, b = ct.b;
+  const nx = ct.nx, ny = ct.ny, tx = -ny, ty = nx;
+  const rax = ct.rax, ray = ct.ray, rbx = ct.rbx, rby = ct.rby;
+  const am = ct.am, ai = ct.ai, bm = ct.bm, bi = ct.bi;
+  let avx = a.vx, avy = a.vy, aw = a.w;
+  let bvx = b.vx, bvy = b.vy, bw = b.w;
+  let rx = (bvx - bw * rby) - (avx - aw * ray);
+  let ry = (bvy + bw * rbx) - (avy + aw * rax);
+  const old = ct.jn;
+  const next = Math.max(old + ct.mn * (ct.bias - (rx * nx + ry * ny)), 0);
+  ct.jn = next;
+  const dj = next - old;
+  let jx = nx * dj, jy = ny * dj;
+  avx -= am * jx; avy -= am * jy; aw -= ai * ct.rnA * dj;
+  bvx += bm * jx; bvy += bm * jy; bw += bi * ct.rnB * dj;
+  rx = (bvx - bw * rby) - (avx - aw * ray);
+  ry = (bvy + bw * rbx) - (avy + aw * rax);
+  const maxF = FRICTION * next;
+  const oldT = ct.jt;
+  const nextT = Math.max(-maxF, Math.min(maxF, oldT - ct.mt * (rx * tx + ry * ty)));
+  ct.jt = nextT;
+  const djt = nextT - oldT;
+  jx = tx * djt; jy = ty * djt;
+  a.vx = avx - am * jx; a.vy = avy - am * jy; a.w = aw - ai * ct.rtA * djt;
+  b.vx = bvx + bm * jx; b.vy = bvy + bm * jy; b.w = bw + bi * ct.rtB * djt;
+
+  }
   for (let q = 0; q < anchored.length; q++) { anchored[q].invM = am[q]; anchored[q].invI = ai[q]; }
   for (let bi = 0; bi < bodies.length; bi++) {
     const b = bodies[bi];
