@@ -3,6 +3,7 @@ import { join } from "node:path";
 import NativeletSite from "./components/nativelet-site";
 
 const components = {
+  shatter: { dir: "packages/ui/src/components/glass-shatter", files: ["GlassShatter.tsx", "shatterMath.ts", "shatterDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   crumple: { dir: "packages/ui/src/components/paper-crumple", files: ["PaperCrumple.tsx", "crumpleMath.ts", "crumpleDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   flow: { dir: "packages/ui/src/components/flow-field", files: ["FlowField.tsx", "flowMath.ts", "flowDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   player: { dir: "packages/ui/src/components/mini-player", files: ["MiniPlayer.tsx", "playerMath.ts", "Example.tsx", "README.md", "LICENSE"] },
@@ -60,6 +61,7 @@ function read(dir: string, files: readonly string[]) {
 
 export default function Home() {
   const sources = {
+    shatter: read(components.shatter.dir, components.shatter.files),
     crumple: read(components.crumple.dir, components.crumple.files),
     flow: read(components.flow.dir, components.flow.files),
     player: read(components.player.dir, components.player.files),
