@@ -183,7 +183,9 @@ export function GlassShatterPreview() {
       }
       // Impact point: crushed glass glows white for a moment, then fades.
       if (struckAt >= 0) {
-        const t = (now - struckAt) / 1000;
+        // A queued RAF timestamp can predate an input handler on a busy frame.
+        // Negative ages make the impact gradient radius invalid and kill the loop.
+        const t = Math.max(0, (now - struckAt) / 1000);
         if (t < 0.55) {
           const flash = 0.5 * Math.exp(-t * 6);
           const radius = 22 + 58 * (1 - Math.exp(-t * 7));
