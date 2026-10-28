@@ -123,24 +123,30 @@ export function GlassShatterPreview() {
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    const down = (ev: PointerEvent) => {
+    const strike = (x: number, y: number) => {
       if (worldRef.current) return;
-      const rect = canvas.getBoundingClientRect();
-      const x = ((ev.clientX - rect.left) / rect.width) * PANE_W;
-      const y = ((ev.clientY - rect.top) / rect.height) * PANE_H;
       hits++;
       worldRef.current = createWorld({ width: PANE_W, height: PANE_H, hitX: Math.max(2, Math.min(PANE_W - 2, x)), hitY: Math.max(2, Math.min(PANE_H - 2, y)), seed: (hits * 7919) % 100000, target: 360 });
     };
+    const down = (ev: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      strike(((ev.clientX - rect.left) / rect.width) * PANE_W, ((ev.clientY - rect.top) / rect.height) * PANE_H);
+    };
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); strike(PANE_W / 2, PANE_H / 2); }
+    };
+    canvas.addEventListener("keydown", key);
     canvas.addEventListener("pointerdown", down);
     return () => {
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", down);
+      canvas.removeEventListener("keydown", key);
     };
   }, []);
 
   return (
     <div className={styles.stage}>
-      <canvas ref={canvasRef} className={styles.canvas} style={{ width: PANE_W, height: PANE_H }} role="img" aria-label="Glass shatter web preview: tap the pane to break it; about 360 shards fall away, colliding as they go" />
+      <canvas ref={canvasRef} className={styles.canvas} style={{ width: PANE_W, height: PANE_H }} role="button" tabIndex={0} aria-label="Glass shatter web preview: tap the pane to break it; about 360 shards fall away, colliding as they go" />
       <div className={styles.row}>
         <button type="button" className={styles.chipPrimary} onClick={() => { worldRef.current = null; }}>Reset glass</button>
         <button type="button" className={slow ? styles.chipPrimary : styles.chip} onClick={() => setSlow((v) => !v)} aria-pressed={slow}>Slow motion: {slow ? "on" : "off"}</button>

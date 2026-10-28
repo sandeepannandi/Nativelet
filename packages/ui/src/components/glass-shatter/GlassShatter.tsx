@@ -172,13 +172,13 @@ export function GlassShatter({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetToken]);
 
+  const hit = (x: number, y: number) => {
+    if (brokenJS.current) return;
+    brokenJS.current = true;
+    push(0, Math.max(2, Math.min(width - 2, x)), Math.max(2, Math.min(height - 2, y)));
+    latest.current.onFeedback?.("hit");
+  };
   const pan = useMemo(() => {
-    const hit = (x: number, y: number) => {
-      if (brokenJS.current) return;
-      brokenJS.current = true;
-      push(0, Math.max(2, Math.min(width - 2, x)), Math.max(2, Math.min(height - 2, y)));
-      latest.current.onFeedback?.("hit");
-    };
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderTerminationRequest: () => false,
@@ -273,7 +273,10 @@ export function GlassShatter({
     <View
       style={[{ width, height, borderRadius: 18, overflow: "hidden", backgroundColor: "#0b1426" }, style]}
       accessibilityLabel={label}
-      accessibilityRole="image"
+      accessibilityRole="button"
+      accessibilityHint="Activate to break the glass."
+      accessibilityActions={[{ name: "activate", label: "Break the glass" }]}
+      onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === "activate") hit(width / 2, height / 2); }}
       {...pan.panHandlers}
     >
       {!reduce ? <CanvasKeepAlive /> : null}
