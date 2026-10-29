@@ -91,6 +91,8 @@ box() { python3 -c "
 mx, my, s = $MX, $MY, $SC
 print('%d %d %d %d' % (mx + $1 * s, my + $2 * s, mx + $3 * s, my + $4 * s))"; }
 
+open recorder; sleep 2; shot rec-idle
+
 # Anchor everything to the mic disc found in the idle frame. dp offsets are
 # relative to the mic center (MIC_CX, MIC_CY) from recorderMath geometry:
 # dot (-288,0), timer text x -270..-230 y +/-12, waveform x -210..-34
