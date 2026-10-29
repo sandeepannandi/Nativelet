@@ -92,7 +92,7 @@ function RecordDot({ sim, frame }: { sim: { value: RecorderState }; frame: { val
   const opacity = useDerivedValue(() => {
     frame.value;
     const s = sim.value;
-    if (s.phase === "idle" || s.phase === "pressing") return 0;
+    if (s.phase === "idle" || s.phase === "pressing" || s.phase === "locked") return 0;
     if (s.phase === "sending" || s.phase === "cancelling") return 1 - clamp01(s.anim);
     return 0.55 + 0.45 * Math.sin(s.t * 4.2);
   });
@@ -195,7 +195,7 @@ function CancelChevrons({ sim, frame }: { sim: { value: RecorderState }; frame: 
     return clamp01(1 - s.cancel * 1.6) * 0.9;
   });
   return (
-    <Group opacity={opacity} transform={[{ translateX: TIMER_X + 52 }, { translateY: MIC_CY }]}>
+    <Group opacity={opacity} transform={[{ translateX: TIMER_X + 48 }, { translateY: MIC_CY }]}>
       <Path path="M 3 -5 L -3 0 L 3 5" color={REC_TEXT_FAINT} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" />
       <Path path="M 3 -5 L -3 0 L 3 5" color={REC_TEXT_FAINT} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" opacity={0.5} transform={[{ translateX: 9 }]} />
     </Group>
@@ -231,7 +231,26 @@ function CancelHint({ sim }: { sim: { value: RecorderState } }) {
     transform: [{ translateX: -sim.value.cancel * 28 }],
   }));
   return (
-    <Animated.Text pointerEvents="none" style={[{ position: "absolute", left: TIMER_X + 66, top: MIC_CY - 8, color: REC_TEXT_FAINT, fontSize: 12 }, style]}>
+    <Animated.Text
+      pointerEvents="none"
+      style={[
+        {
+          position: "absolute",
+          left: TIMER_X + 66,
+          top: MIC_CY - 10,
+          color: REC_TEXT_FAINT,
+          fontSize: 12,
+          // Opaque chip: the label floats over the waveform instead of
+          // colliding with the bars.
+          backgroundColor: REC_BAR_BG,
+          paddingHorizontal: 8,
+          paddingVertical: 2,
+          borderRadius: 10,
+          overflow: "hidden",
+        },
+        style,
+      ]}
+    >
       slide to cancel
     </Animated.Text>
   );
@@ -399,7 +418,19 @@ export function VoiceRecorder({
         </Text>
       ) : null}
       {recording && ui.phase !== "sending" && ui.phase !== "cancelling" ? (
-        <Text pointerEvents="none" style={{ position: "absolute", left: TIMER_X, top: MIC_CY - 8, color: "#1d2b23", fontSize: 13, fontVariant: ["tabular-nums"] }}>
+        <Text
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            // Locked mode has the discard circle at the left; the timer sits
+            // right of it instead of overlapping its edge.
+            left: ui.phase === "locked" ? BAR_X + 68 : TIMER_X,
+            top: MIC_CY - 8,
+            color: "#1d2b23",
+            fontSize: 13,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
           {formatClock(ui.seconds)}
         </Text>
       ) : null}

@@ -69,19 +69,21 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
   if (recording) {
     ctx.save();
     ctx.globalAlpha = contentAlpha;
-    // Pulsing record dot
-    const pulse = fading ? 1 : 0.55 + 0.45 * Math.sin(s.t * 4.2);
-    ctx.fillStyle = RED;
-    ctx.globalAlpha = contentAlpha * pulse;
-    ctx.beginPath();
-    ctx.arc(DOT_X, MIC_CY, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = contentAlpha;
+    // Pulsing record dot (hidden in locked mode: the discard circle sits there)
+    if (s.phase !== "locked") {
+      const pulse = fading ? 1 : 0.55 + 0.45 * Math.sin(s.t * 4.2);
+      ctx.fillStyle = RED;
+      ctx.globalAlpha = contentAlpha * pulse;
+      ctx.beginPath();
+      ctx.arc(DOT_X, MIC_CY, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = contentAlpha;
+    }
     // Timer
     ctx.fillStyle = "#1d2b23";
     ctx.font = "13px Geist, ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "middle";
-    ctx.fillText(formatClock(s.seconds), TIMER_X, WAVE_CY + 1);
+    ctx.fillText(formatClock(s.seconds), s.phase === "locked" ? BAR_X + 68 : TIMER_X, WAVE_CY + 1);
     // Waveform
     ctx.strokeStyle = WAVE;
     ctx.lineWidth = 2.6;
@@ -99,7 +101,7 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
       ctx.globalAlpha = contentAlpha * a * 0.9;
       ctx.strokeStyle = FAINT;
       ctx.lineWidth = 2;
-      const cx = TIMER_X + 52 - s.cancel * 28;
+      const cx = TIMER_X + 48 - s.cancel * 28;
       for (const off of [0, 9]) {
         ctx.beginPath();
         ctx.moveTo(cx + off + 3, MIC_CY - 5);
@@ -107,9 +109,16 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
         ctx.lineTo(cx + off + 3, MIC_CY + 5);
         ctx.stroke();
       }
-      ctx.fillStyle = FAINT;
       ctx.font = "12px Geist, ui-sans-serif, system-ui, sans-serif";
-      ctx.fillText("slide to cancel", cx + 22 - s.cancel * 28, WAVE_CY + 1);
+      const tx = cx + 22 - s.cancel * 28;
+      const tw = ctx.measureText("slide to cancel").width;
+      // Opaque chip: the label floats over the waveform instead of
+      // colliding with the bars.
+      ctx.fillStyle = "#ffffff";
+      roundRect(ctx, tx - 7, MIC_CY - 11, tw + 14, 20, 10);
+      ctx.fill();
+      ctx.fillStyle = FAINT;
+      ctx.fillText("slide to cancel", tx, WAVE_CY + 1);
     }
     ctx.restore();
   }
