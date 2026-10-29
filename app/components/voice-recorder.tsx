@@ -7,6 +7,7 @@ import {
   recorderLockedCancel, recorderLockedSend, recorderPressEnd, recorderPressMove, recorderPressStart,
   stepRecorder, type RecorderState,
 } from "../../packages/ui/src/components/voice-recorder/recorderMath";
+import { mixColor } from "../../packages/ui/src/components/voice-recorder/recorderDesign";
 import styles from "./voice-recorder.module.css";
 
 // Thread region above the bar; the bar scene keeps the math's coordinates
@@ -53,11 +54,13 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
   ctx.stroke();
 
   const wash = cancelWash(s);
-  if (wash.alpha > 0) {
+  // The bar tints red as the cancel slide charges, then flushes on release.
+  const washAlpha = s.phase === "recording" || s.phase === "pressing" ? s.cancel * 0.12 : wash.alpha;
+  if (washAlpha > 0) {
     ctx.save();
     roundRect(ctx, BAR_X, BAR_Y, BAR_W, BAR_H, 30);
     ctx.clip();
-    ctx.fillStyle = `rgba(229,72,77,${wash.alpha})`;
+    ctx.fillStyle = `rgba(229,72,77,${washAlpha})`;
     ctx.fillRect(BAR_X, BAR_Y, BAR_W, BAR_H);
     ctx.restore();
   }
@@ -72,8 +75,12 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
     // Pulsing record dot (hidden in locked mode: the discard circle sits there)
     if (s.phase !== "locked") {
       const pulse = fading ? 1 : 0.75 + 0.25 * Math.sin(s.t * 4.2);
-      ctx.fillStyle = RED;
+      ctx.fillStyle = RED_SOFT;
       ctx.globalAlpha = contentAlpha * pulse;
+      ctx.beginPath();
+      ctx.arc(DOT_X, MIC_CY, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = RED;
       ctx.beginPath();
       ctx.arc(DOT_X, MIC_CY, 5, 0, Math.PI * 2);
       ctx.fill();
@@ -81,27 +88,46 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
     }
     // Timer
     ctx.fillStyle = "#1d2b23";
-    ctx.font = "13px Geist, ui-sans-serif, system-ui, sans-serif";
+    ctx.font = "600 13px Geist, ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "middle";
     ctx.fillText(formatClock(s.seconds), s.phase === "locked" ? BAR_X + 68 : TIMER_X, WAVE_CY + 1);
-    // Waveform
+    // Waveform: newest bars full strength, the tail fades back
     ctx.strokeStyle = WAVE;
     ctx.lineWidth = 2.6;
     ctx.lineCap = "round";
-    ctx.beginPath();
     for (let i = 0; i < BAR_COUNT; i++) {
       const seg = barSegment(s, i);
+      ctx.globalAlpha = contentAlpha * (0.42 + 0.58 * (i / (BAR_COUNT - 1)));
+      ctx.beginPath();
       ctx.moveTo(seg.x + wash.dx, seg.y0);
       ctx.lineTo(seg.x + wash.dx, seg.y1);
+      ctx.stroke();
     }
-    ctx.stroke();
+    ctx.globalAlpha = contentAlpha;
     // Slide-to-cancel hint with chevrons
     if (s.phase === "recording") {
       const a = clamp01(1 - s.cancel * 1.6);
       ctx.globalAlpha = contentAlpha * a * 0.9;
       ctx.strokeStyle = FAINT;
       ctx.lineWidth = 2;
-      const cx = TIMER_X + 48 - s.cancel * 28;
+      const drift = s.reduced ? 0 : Math.sin(s.t * 2.4) * 2;
+      // Chevrons live inside the hint chip's left padding: dot, timer, one
+      // hint chip, waveform - not loose glyphs.
+      const cx = TIMER_X + 84 - drift - s.cancel * 28;
+      const tx = TIMER_X + 102 - s.cancel * 28;
+      ctx.font = "12px Geist, ui-sans-serif, system-ui, sans-serif";
+      const tw = ctx.measureText("slide to cancel").width;
+      // Opaque chip: the label floats over the waveform instead of
+      // colliding with the bars.
+      ctx.fillStyle = "#ffffff";
+      roundRect(ctx, TIMER_X + 72 - s.cancel * 28, MIC_CY - 11, tw + 38, 20, 10);
+      ctx.fill();
+      ctx.strokeStyle = "#d5e1d2";
+      ctx.lineWidth = 1;
+      roundRect(ctx, TIMER_X + 72 - s.cancel * 28, MIC_CY - 11, tw + 38, 20, 10);
+      ctx.stroke();
+      ctx.strokeStyle = FAINT;
+      ctx.lineWidth = 2;
       for (const off of [0, 9]) {
         ctx.beginPath();
         ctx.moveTo(cx + off + 3, MIC_CY - 5);
@@ -109,29 +135,49 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
         ctx.lineTo(cx + off + 3, MIC_CY + 5);
         ctx.stroke();
       }
-      ctx.font = "12px Geist, ui-sans-serif, system-ui, sans-serif";
-      const tx = cx + 22 - s.cancel * 28;
-      const tw = ctx.measureText("slide to cancel").width;
-      // Opaque chip: the label floats over the waveform instead of
-      // colliding with the bars.
-      ctx.fillStyle = "#ffffff";
-      roundRect(ctx, tx - 7, MIC_CY - 11, tw + 14, 20, 10);
-      ctx.fill();
-      ctx.fillStyle = FAINT;
+      ctx.fillStyle = mixColor(FAINT, RED, clamp01(s.cancel * 1.35));
       ctx.fillText("slide to cancel", tx, WAVE_CY + 1);
     }
     ctx.restore();
   }
 
   // Mic / send button
+  if (recording) {
+    // Two soft rings breathe around the mic while a take is running.
+    const haloVis = fading ? 1 - clamp01(s.anim) : 1;
+    const r1 = MIC_R + 4 + (s.reduced ? 0 : 2 * Math.sin(s.t * 3.2));
+    const r2 = MIC_R + 9 + (s.reduced ? 0 : 2 * Math.sin(s.t * 3.2 - 1.1));
+    ctx.strokeStyle = GREEN;
+    ctx.globalAlpha = haloVis * 0.14;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(MIC_CX, MIC_CY, r1, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = haloVis * 0.07;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(MIC_CX, MIC_CY, r2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   const scale = s.micScale;
   ctx.save();
   ctx.translate(MIC_CX, MIC_CY);
   ctx.scale(scale, scale);
-  ctx.fillStyle = s.phase === "cancelling" ? RED : GREEN;
+  ctx.fillStyle = GREEN;
   ctx.beginPath();
   ctx.arc(0, 0, MIC_R, 0, Math.PI * 2);
   ctx.fill();
+  // The mic flushes red progressively with the cancel slide.
+  const micRed = s.phase === "cancelling" ? 1 : s.phase === "recording" || s.phase === "pressing" ? clamp01(s.cancel * 1.15) : 0;
+  if (micRed > 0) {
+    ctx.globalAlpha = micRed;
+    ctx.fillStyle = RED;
+    ctx.beginPath();
+    ctx.arc(0, 0, MIC_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   const sendFade = s.phase === "sending" ? clamp01(s.anim * 1.6) : 0;
   ctx.strokeStyle = "#ffffff";
   ctx.fillStyle = "#ffffff";
@@ -199,6 +245,9 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
     const pop = 1 + s.lockPop * 0.35;
     ctx.scale(pop, pop);
     ctx.globalAlpha = s.phase === "pressing" ? 0.4 : 1;
+    roundRect(ctx, -LOCK_W / 2 + 1, -LOCK_H / 2 + 3, LOCK_W, LOCK_H, 22);
+    ctx.fillStyle = "rgba(25,63,48,0.10)";
+    ctx.fill();
     roundRect(ctx, -LOCK_W / 2, -LOCK_H / 2, LOCK_W, LOCK_H, 22);
     ctx.fillStyle = "rgba(25,63,48,0.12)";
     ctx.fill();
@@ -208,7 +257,7 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
     if (s.lock > 0) {
       const h = (LOCK_H - 8) * s.lock;
       roundRect(ctx, -LOCK_W / 2 + 4, LOCK_H / 2 - 4 - h, LOCK_W - 8, h, Math.min(18, h / 2));
-      ctx.fillStyle = GREEN_SOFT;
+      ctx.fillStyle = mixColor(GREEN_SOFT, GREEN, clamp01((s.lock - 0.45) / 0.45));
       ctx.fill();
     }
     // Chevron up
@@ -219,8 +268,9 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
     ctx.lineTo(0, -LOCK_H / 2 + 13);
     ctx.lineTo(5, -LOCK_H / 2 + 19);
     ctx.stroke();
-    // Lock glyph
-    ctx.strokeStyle = GREEN;
+    // Lock glyph: green until the rising fill covers it, then white
+    const glyph = mixColor(GREEN, "#ffffff", clamp01((s.lock - 0.55) / 0.3));
+    ctx.strokeStyle = glyph;
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.moveTo(-4.5, LOCK_H / 2 - 21);
@@ -229,7 +279,7 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
     ctx.lineTo(4.5, LOCK_H / 2 - 21);
     ctx.stroke();
     roundRect(ctx, -7, LOCK_H / 2 - 21, 14, 11, 3);
-    ctx.fillStyle = GREEN;
+    ctx.fillStyle = glyph;
     ctx.fill();
     ctx.restore();
   }
@@ -249,9 +299,13 @@ function drawThread(ctx: CanvasRenderingContext2D, pills: Pill[]) {
   ctx.fillText("send the voice note when it works", 22, 28);
   pills.slice(-3).forEach((pill, i) => {
     const { x, y, w, h } = pillRect(i, pill);
-    roundRect(ctx, x, y, w, h, 20);
+    roundRect(ctx, x, y, w, h, 22);
     ctx.fillStyle = GREEN_SOFT;
     ctx.fill();
+    ctx.strokeStyle = "rgba(25,63,48,0.14)";
+    ctx.lineWidth = 1;
+    roundRect(ctx, x, y, w, h, 22);
+    ctx.stroke();
     // Play / pause
     const pcx = x + 24;
     const pcy = y + h / 2;

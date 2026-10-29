@@ -27,7 +27,7 @@ function VoicePill({ msg }: { msg: Sent }) {
   const bars = msg.samples.filter((_, i) => i % 2 === 0).slice(-24);
   const progress = msg.seconds > 0 ? played / msg.seconds : 0;
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, alignSelf: "flex-end", backgroundColor: REC_GREEN_SOFT, borderRadius: 20, paddingVertical: 10, paddingHorizontal: 14, maxWidth: 280 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, alignSelf: "flex-end", backgroundColor: REC_GREEN_SOFT, borderRadius: 22, borderWidth: 1, borderColor: "rgba(25,63,48,0.14)", paddingVertical: 10, paddingHorizontal: 14, maxWidth: 280 }}>
       <Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause voice message" : "Play voice message"} onPress={() => setPlaying((v) => !v)} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: REC_GREEN, alignItems: "center", justifyContent: "center" }}>
         {playing ? (
           <View style={{ flexDirection: "row", gap: 3 }}>
