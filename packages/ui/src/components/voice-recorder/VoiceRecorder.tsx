@@ -75,6 +75,7 @@ function Waveform({ sim, frame }: { sim: { value: RecorderState }; frame: { valu
     return barsToPoints(sim.value);
   });
   const opacity = useDerivedValue(() => {
+    frame.value; // re-evaluate every frame: nested sim mutations don't notify
     const s = sim.value;
     if (s.phase === "idle" || s.phase === "pressing") return 0;
     if (s.phase === "sending" || s.phase === "cancelling") return 1 - clamp01(s.anim);
