@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Voice Recorder behavior evidence: hold to record (recording label appears,
-# timer ADVANCES, waveform region changes), hold-release sends a playable
-# pill, slide-left cancels (placeholder returns, no pill), tap locks (real
-# Send/Discard buttons), locked send adds a pill. Assertions read the
-# accessibility tree and region pixel diffs, not just whole-screen md5.
+# Voice Recorder behavior evidence, asserted on pixels at measured regions:
+# hold to record (red dot appears, timer digits ADVANCE, waveform churns),
+# hold-release sends a playable pill (pill region changes), slide-left cancels
+# (bar returns to idle, no new pill), tap locks (trash + running timer),
+# locked Send adds a pill, locked Discard returns to idle. No accessibility
+# dumps: uiautomator's wait-for-idle never settles on this animating Skia
+# screen and returned empty trees, so assertions read regions of screenshots.
 set -u
 OUT=smoke-out/recorder; mkdir -p "$OUT"
 PKG=com.anonymous.nativeletshowcase
@@ -23,18 +25,6 @@ open() {
   sleep 2
 }
 shot() { adb exec-out screencap -p > "$OUT/$1.png"; }
-dumpui() { # uiautomator dump is flaky on animating screens; retry
-  for i in 1 2 3; do
-    adb shell uiautomator dump /sdcard/rec.xml >/dev/null 2>&1
-    adb shell cat /sdcard/rec.xml > "$OUT/$1.xml" 2>/dev/null
-    grep -q "hierarchy" "$OUT/$1.xml" 2>/dev/null && return 0
-    sleep 1
-  done
-  return 1
-}
-# clock seconds from the bar's recording label: "Recording voice message, 0:01. ..."
-reclock() { grep -o "Recording voice message, [0-9]*:[0-9][0-9]" "$OUT/$1.xml" 2>/dev/null | head -1 | sed 's/.*, //' | awk -F: '{print $1*60+$2}'; }
-pills() { grep -o "Play voice message" "$OUT/$1.xml" 2>/dev/null | wc -l | tr -d ' '; }
 crashline() {
   CR=no; adb logcat -d | grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" | grep -q . && CR=yes
   [ "$CR" = yes ] && adb logcat -d > "$OUT/$1.crash.logcat.txt"
@@ -47,79 +37,111 @@ expect() { # name condition-detail pass?
 }
 
 python3 -m pip install -q pillow >/dev/null 2>&1 || true
-wavediff() { python3 - "$OUT/$1.png" "$OUT/$2.png" <<'PY'
+# px FILE X Y -> "R G B"
+px() { python3 - "$OUT/$1.png" "$2" "$3" <<'PY'
 import sys
 from PIL import Image
-A = Image.open(sys.argv[1]).crop((380, 1345, 800, 1470))
-B = Image.open(sys.argv[2]).crop((380, 1345, 800, 1470))
-pa, pb = A.convert("L").tobytes(), B.convert("L").tobytes()
-print(sum(abs(x - y) for x, y in zip(pa, pb)) / len(pa))
+im = Image.open(sys.argv[1]).convert("RGB")
+r, g, b = im.getpixel((int(sys.argv[2]), int(sys.argv[3])))
+print(r, g, b)
 PY
 }
+# regdiff A B x0 y0 x1 y1 -> mean abs grayscale diff
+regdiff() { python3 - "$OUT/$1.png" "$OUT/$2.png" "$3" "$4" "$5" "$6" <<'PY'
+import sys
+from PIL import Image, ImageChops
+box = tuple(int(v) for v in sys.argv[3:7])
+A = Image.open(sys.argv[1]).convert("L").crop(box)
+B = Image.open(sys.argv[2]).convert("L").crop(box)
+d = ImageChops.difference(A, B)
+h = d.histogram()
+print(sum(i * v for i, v in enumerate(h)) / (A.size[0] * A.size[1]))
+PY
+}
+gt() { python3 -c "import sys; sys.exit(0 if float('$1') > float('$2') else 1)"; }
+lt() { python3 -c "import sys; sys.exit(0 if float('$1') < float('$2') else 1)"; }
+reddot() { # FILE -> yes if the recording dot pixel is red
+  read R G B <<<"$(px "$1" 157 1363)"
+  [ "$R" -gt 190 ] && [ "$G" -lt 170 ] && echo yes || echo no
+}
+trash() { # FILE -> yes if the locked-mode discard glyph pixel is pink/red
+  read R G B <<<"$(px "$1" 175 1355)"
+  [ "$R" -gt 225 ] && [ $((R - G)) -gt 10 ] && echo yes || echo no
+}
 
-# Bar + mic land here on the Pixel-6-class AVD (verified via screenshots).
-MICX=870; MICY=1450
+# Measured regions on the Pixel-6-class AVD (1080x2400), from artifact frames:
+# mic center (913,1363); red dot (157,1363); trash glyph (175,1355);
+# timer digits (200,1335)-(290,1380); waveform (330,1290)-(820,1420);
+# bar (89,1275)-(991,1433); sent-pill area (400,800)-(1000,1040).
+MICX=913; MICY=1363; DISX=175; DISY=1360
 
-open recorder; sleep 2; shot rec-idle; dumpui ui-idle
+open recorder; sleep 2; shot rec-idle
 
-# Hold the mic: a 4 s swipe with a small drift is a real long-press (a
+# Hold the mic: a 5 s swipe with a small drift is a real long-press (a
 # zero-length swipe collapses to a tap on the emulator).
-adb shell input swipe $MICX $MICY $((MICX - 3)) $((MICY + 1)) 4000 &
-sleep 2.2; shot rec-hold-a; dumpui ui-hold-a
-sleep 1.4; shot rec-hold-b; dumpui ui-hold-b
+adb shell input swipe $MICX $MICY $((MICX - 3)) $((MICY + 1)) 5000 &
+sleep 2; shot rec-hold-a
+sleep 1.8; shot rec-hold-b
 wait
 CR=$(crashline recorder-hold)
-REC_LABEL=no; grep -q "Recording voice message" "$OUT/ui-hold-a.xml" && REC_LABEL=yes
-DIFF_A=$(wavediff rec-idle rec-hold-a)
-DIFF_B=$(wavediff rec-hold-a rec-hold-b)
-T1=$(reclock ui-hold-a); T2=$(reclock ui-hold-b)
-T1=${T1:-0}; T2=${T2:-0}
-# Timer must visibly advance during the hold. Event delivery can lag on a
-# loaded emulator, so accept one late sample: re-dump once if not yet ahead.
-ADV=no
-if [ "$T2" -gt "$T1" ]; then ADV=yes; else
-  sleep 1.2; dumpui ui-hold-c; T3=$(reclock ui-hold-c); T3=${T3:-0}
-  [ "$T3" -gt "$T1" ] && ADV=yes && T2=$T3
-fi
-WAVE=no; python3 -c "import sys;sys.exit(0 if float('$DIFF_A')>1.0 or float('$DIFF_B')>1.0 else 1)" && WAVE=yes
-expect recorder-records "crash=$CR label=$REC_LABEL t1=${T1}s" "$([ "$CR" = no ] && [ "$REC_LABEL" = yes ] && echo yes || echo no)"
-expect recorder-timer-advances "t1=${T1}s t2=${T2}s" "$ADV"
-expect recorder-waveform-moves "diff_idle_a=$DIFF_A diff_a_b=$DIFF_B" "$WAVE"
+DOT=$(reddot rec-hold-a)
+T_A=$(regdiff rec-idle rec-hold-a 200 1335 290 1380)
+T_B=$(regdiff rec-hold-a rec-hold-b 200 1335 290 1380)
+WAVE_D=$(regdiff rec-hold-a rec-hold-b 330 1290 820 1420)
+REC_OK=no; { [ "$CR" = no ] && [ "$DOT" = yes ] && gt "$T_A" 3; } && REC_OK=yes
+ADV=no; gt "$T_B" 3 && ADV=yes
+WAVE=no; gt "$WAVE_D" 1 && WAVE=yes
+expect recorder-records "crash=$CR red_dot=$DOT timer_vs_idle=$T_A" "$REC_OK"
+expect recorder-timer-advances "timer_a_vs_b=$T_B" "$ADV"
+expect recorder-waveform-moves "wave_a_vs_b=$WAVE_D" "$WAVE"
 
 # Release at the same spot: the take sends and a playable pill lands.
-sleep 1.5; shot rec-sent; dumpui ui-sent
-P1=$(pills ui-sent); P1=${P1:-0}
+sleep 1.5; shot rec-sent
+PILL=$(regdiff rec-idle rec-sent 400 800 1000 1040)
 CR=$(crashline recorder-send)
-expect recorder-send-pill "crash=$CR pills=$P1" "$([ "$CR" = no ] && [ "$P1" -ge 1 ] && echo yes || echo no)"
+SENT=no; { [ "$CR" = no ] && gt "$PILL" 5; } && SENT=yes
+expect recorder-send-pill "crash=$CR pill_diff=$PILL" "$SENT"
 
 # Hold and slide left past the cancel distance in one gesture: the take
 # flushes, the placeholder returns, no new pill.
 adb shell input swipe $MICX $MICY 300 $MICY 3500
-sleep 1.5; shot rec-cancelled; dumpui ui-cancelled
-P2=$(pills ui-cancelled); P2=${P2:-0}
-IDLE_BACK=no; grep -q "text=\"Message\"" "$OUT/ui-cancelled.xml" && IDLE_BACK=yes
+sleep 2; shot rec-cancelled
+PILL2=$(regdiff rec-sent rec-cancelled 400 800 1000 1040)
+BAR_BACK=$(regdiff rec-idle rec-cancelled 89 1275 991 1433)
+DOT2=$(reddot rec-cancelled)
 CR=$(crashline recorder-cancel)
-expect recorder-cancel-returns "crash=$CR idle=$IDLE_BACK pills=$P2->$P2(was $P1)" "$([ "$CR" = no ] && [ "$IDLE_BACK" = yes ] && [ "$P2" = "$P1" ] && echo yes || echo no)"
+CXL=no; { [ "$CR" = no ] && [ "$DOT2" = no ] && lt "$PILL2" 2 && lt "$BAR_BACK" 2; } && CXL=yes
+expect recorder-cancel-returns "crash=$CR bar_vs_idle=$BAR_BACK new_pill_diff=$PILL2 dot=$DOT2" "$CXL"
 
-# Tap (short press) starts a locked recording with real Send/Discard buttons.
+# Tap (short press) starts a locked recording: trash glyph + running timer.
 adb shell input tap $MICX $MICY
-sleep 1.6; shot rec-locked; dumpui ui-locked
-SEND=no; DISCARD=no
-grep -q "Send voice message" "$OUT/ui-locked.xml" && SEND=yes
-grep -q "Discard recording" "$OUT/ui-locked.xml" && DISCARD=yes
+sleep 1.8; shot rec-locked
+TR=$(trash rec-locked)
+T_L=$(regdiff rec-idle rec-locked 200 1335 290 1380)
 CR=$(crashline recorder-tap-lock)
-expect recorder-tap-locks "crash=$CR send=$SEND discard=$DISCARD" "$([ "$CR" = no ] && [ "$SEND" = yes ] && [ "$DISCARD" = yes ] && echo yes || echo no)"
+LOCK=no; { [ "$CR" = no ] && [ "$TR" = yes ] && gt "$T_L" 3; } && LOCK=yes
+expect recorder-tap-locks "crash=$CR trash=$TR timer_vs_idle=$T_L" "$LOCK"
 
-# Send from locked mode: buttons clear and another pill lands.
+# Send from locked mode (mic becomes the Send button): another pill lands,
+# the bar returns to idle.
 adb shell input tap $MICX $MICY
-sleep 1.5; shot rec-lock-sent; dumpui ui-lock-sent
-P3=$(pills ui-lock-sent); P3=${P3:-0}
-SEND_GONE=no; grep -q "Send voice message" "$OUT/ui-lock-sent.xml" || SEND_GONE=yes
+sleep 1.5; shot rec-lock-sent
+PILL3=$(regdiff rec-cancelled rec-lock-sent 400 800 1000 1040)
+BAR_IDLE2=$(regdiff rec-idle rec-lock-sent 89 1275 991 1433)
 CR=$(crashline recorder-locked-send)
-expect recorder-locked-send "crash=$CR pills=$P2->$P3 send_gone=$SEND_GONE" "$([ "$CR" = no ] && [ "$P3" -gt "$P2" ] && [ "$SEND_GONE" = yes ] && echo yes || echo no)"
+LS=no; { [ "$CR" = no ] && gt "$PILL3" 5 && lt "$BAR_IDLE2" 2; } && LS=yes
+expect recorder-locked-send "crash=$CR new_pill_diff=$PILL3 bar_vs_idle=$BAR_IDLE2" "$LS"
 
-adb logcat -d > "$OUT/recorder-session.logcat.txt"
-CR=no; grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" "$OUT/recorder-session.logcat.txt" | grep -q . && CR=yes
-echo "recorder-session crash=$CR" | tee -a "$OUT/summary.txt"
-[ "$CR" = yes ] && FAIL=1
+# Lock again, then Discard: no new pill, bar returns to idle.
+adb shell input tap $MICX $MICY
+sleep 1.4
+adb shell input tap $DISX $DISY
+sleep 1.5; shot rec-discarded
+PILL4=$(regdiff rec-lock-sent rec-discarded 400 800 1000 1040)
+BAR_IDLE3=$(regdiff rec-idle rec-discarded 89 1275 991 1433)
+CR=$(crashline recorder-discard)
+DIS=no; { [ "$CR" = no ] && lt "$PILL4" 2 && lt "$BAR_IDLE3" 2; } && DIS=yes
+expect recorder-discard-returns "crash=$CR new_pill_diff=$PILL4 bar_vs_idle=$BAR_IDLE3" "$DIS"
+
+echo "recorder-session crash=$(crashline recorder-session)" | tee -a "$OUT/summary.txt"
 exit $FAIL

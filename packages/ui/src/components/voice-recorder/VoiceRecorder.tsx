@@ -256,6 +256,7 @@ export function VoiceRecorder({
   // the frame loop applies them on the UI thread (crumple pattern), and
   // coarse UI state + events come back via runOnJS.
   const inputs = useSharedValue<RecInput[]>([]);
+  const seen = useSharedValue(0);
   const sync = useSharedValue({ phase: "idle" as RecorderPhase, seconds: -1 });
   const ring = useRef<RecInput[]>([]);
   const counter = useRef(0);
@@ -285,7 +286,7 @@ export function VoiceRecorder({
   }, [slowMotion, slowM]);
   const push = (k: RecInput["k"], dx?: number, dy?: number, v?: boolean) => {
     counter.current += 1;
-    const next = ring.current.concat({ id: counter.current, k, dx, dy, v }).slice(-24);
+    const next = ring.current.concat({ id: counter.current, k, dx, dy, v }).slice(-128);
     ring.current = next;
     inputs.value = next;
   };
@@ -343,17 +344,19 @@ export function VoiceRecorder({
   useFrameCallback((info) => {
     const s = sim.value;
     const evs = inputs.value;
-    if (evs.length) {
-      inputs.value = [];
-      for (let i = 0; i < evs.length; i++) {
-        const e = evs[i];
-        if (e.k === "start") recorderPressStart(s);
-        else if (e.k === "move") recorderPressMove(s, e.dx ?? 0, e.dy ?? 0);
-        else if (e.k === "end") recorderPressEnd(s);
-        else if (e.k === "send") recorderLockedSend(s);
-        else if (e.k === "cancel") recorderLockedCancel(s);
-        else if (e.k === "reduced") s.reduced = !!e.v;
-      }
+    // Idempotent replay (crumple pattern): events carry monotonic ids and the
+    // loop tracks a cursor, so a JS assignment racing this frame can never
+    // wipe an unread event. Never clear the array from the UI thread.
+    for (let i = 0; i < evs.length; i++) {
+      const e = evs[i];
+      if (e.id <= seen.value) continue;
+      seen.value = e.id;
+      if (e.k === "start") recorderPressStart(s);
+      else if (e.k === "move") recorderPressMove(s, e.dx ?? 0, e.dy ?? 0);
+      else if (e.k === "end") recorderPressEnd(s);
+      else if (e.k === "send") recorderLockedSend(s);
+      else if (e.k === "cancel") recorderLockedCancel(s);
+      else if (e.k === "reduced") s.reduced = !!e.v;
     }
     const dt = Math.min(48, info.timeSincePreviousFrame ?? 16.7) / 1000;
     stepRecorder(s, dt * (slowM.value ? 0.25 : 1));
