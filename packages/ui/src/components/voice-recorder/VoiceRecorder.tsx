@@ -94,7 +94,7 @@ function RecordDot({ sim, frame }: { sim: { value: RecorderState }; frame: { val
     const s = sim.value;
     if (s.phase === "idle" || s.phase === "pressing" || s.phase === "locked") return 0;
     if (s.phase === "sending" || s.phase === "cancelling") return 1 - clamp01(s.anim);
-    return 0.55 + 0.45 * Math.sin(s.t * 4.2);
+    return 0.75 + 0.25 * Math.sin(s.t * 4.2); // gentle pulse: the dot stays clearly visible through the cycle
   });
   return <Circle cx={DOT_X} cy={MIC_CY} r={5} color={REC_RED} opacity={opacity} />;
 }

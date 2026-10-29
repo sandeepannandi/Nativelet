@@ -71,7 +71,7 @@ function drawBarScene(ctx: CanvasRenderingContext2D, s: RecorderState) {
     ctx.globalAlpha = contentAlpha;
     // Pulsing record dot (hidden in locked mode: the discard circle sits there)
     if (s.phase !== "locked") {
-      const pulse = fading ? 1 : 0.55 + 0.45 * Math.sin(s.t * 4.2);
+      const pulse = fading ? 1 : 0.75 + 0.25 * Math.sin(s.t * 4.2);
       ctx.fillStyle = RED;
       ctx.globalAlpha = contentAlpha * pulse;
       ctx.beginPath();
