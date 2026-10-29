@@ -78,9 +78,10 @@ jobs:
             bash scripts/android-flowfield.sh
             bash scripts/android-crumple.sh
             bash scripts/android-shatter.sh
+            bash scripts/android-recorder.sh
       - name: Fail closed on crash or missing evidence
         if: always()
-        run: python3 scripts/check-android-results.py smoke-out --routes index,fold,genie,blossom,capsule,cards,carousel,chart,curl,glass,gooey,light,lens,morph,orbit,pinch,ripple,sort,swipe,toasts,mosaic,bubbles,flap,banner,fog,pendulum,blackhole,coin,reveal,prism,hourglass,strings,range,wheel,timeline,path,flowfield --require-summary fog --require-summary pendulum --require-summary blackhole --require-summary coin --require-summary reveal --require-summary prism --require-summary hourglass --require-summary strings --require-summary range --require-summary wheel --require-summary gestures --require-summary core --require-summary slowmotion --require-summary railstress --require-summary railbehavior --require-summary core2 --require-summary timeline --require-summary flowfield --require-summary crumple --require-summary shatter
+        run: python3 scripts/check-android-results.py smoke-out --routes index,fold,genie,blossom,capsule,cards,carousel,chart,curl,glass,gooey,light,lens,morph,orbit,pinch,ripple,sort,swipe,toasts,mosaic,bubbles,flap,banner,fog,pendulum,blackhole,coin,reveal,prism,hourglass,strings,range,wheel,timeline,path,flowfield,recorder --require-summary fog --require-summary pendulum --require-summary blackhole --require-summary coin --require-summary reveal --require-summary prism --require-summary hourglass --require-summary strings --require-summary range --require-summary wheel --require-summary gestures --require-summary core --require-summary slowmotion --require-summary railstress --require-summary railbehavior --require-summary core2 --require-summary timeline --require-summary flowfield --require-summary crumple --require-summary shatter --require-summary recorder
       - uses: actions/upload-artifact@v4
         if: always()
         with:
