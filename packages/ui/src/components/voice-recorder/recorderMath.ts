@@ -163,14 +163,23 @@ export function recorderPressStart(s: RecorderState): void {
 export function recorderPressMove(s: RecorderState, dx: number, dy: number): void {
   'worklet';
   if (s.phase !== "pressing" && s.phase !== "recording") return;
+  // NOTE: this worklet is invoked directly from JS (PanResponder), and a
+  // worklet called on the JS thread cannot call other worklets (their
+  // closure refs resolve to undefined in release builds). Inline the math.
+  const c01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
   if (-dy > -dx) {
-    s.lock = clamp01(-dy / LOCK_DISTANCE);
-    s.cancel = clamp01(s.cancel - 0.12);
+    s.lock = c01(-dy / LOCK_DISTANCE);
+    s.cancel = c01(s.cancel - 0.12);
   } else {
-    s.cancel = clamp01(-dx / CANCEL_DISTANCE);
-    s.lock = clamp01(s.lock - 0.12);
+    s.cancel = c01(-dx / CANCEL_DISTANCE);
+    s.lock = c01(s.lock - 0.12);
   }
-  if (s.phase === "recording" && s.lock >= 1) lockRecording(s);
+  if (s.phase === "recording" && s.lock >= 1) {
+    s.phase = "locked";
+    s.lockPop = 0.6;
+    s.lockPopVel = 0;
+    s.events.push({ type: "lock" });
+  }
 }
 
 function lockRecording(s: RecorderState): void {
@@ -201,18 +210,34 @@ export function recorderPressEnd(s: RecorderState): void {
     return;
   }
   if (s.phase !== "recording") return;
-  if (s.cancel >= 1) cancelRecording(s);
-  else sendRecording(s);
+  // Inlined: JS-thread invoked worklets cannot call other worklets.
+  if (s.cancel >= 1) {
+    s.phase = "cancelling";
+    s.anim = 0;
+    s.events.push({ type: "cancel", seconds: s.seconds });
+  } else {
+    s.phase = "sending";
+    s.anim = 0;
+    s.events.push({ type: "send", seconds: s.seconds, samples: s.levels.slice() });
+  }
 }
 
 export function recorderLockedSend(s: RecorderState): void {
   'worklet';
-  if (s.phase === "locked") sendRecording(s);
+  // Inlined: JS-thread invoked worklets cannot call other worklets.
+  if (s.phase !== "locked") return;
+  s.phase = "sending";
+  s.anim = 0;
+  s.events.push({ type: "send", seconds: s.seconds, samples: s.levels.slice() });
 }
 
 export function recorderLockedCancel(s: RecorderState): void {
   'worklet';
-  if (s.phase === "locked") cancelRecording(s);
+  // Inlined: JS-thread invoked worklets cannot call other worklets.
+  if (s.phase !== "locked") return;
+  s.phase = "cancelling";
+  s.anim = 0;
+  s.events.push({ type: "cancel", seconds: s.seconds });
 }
 
 function sendRecording(s: RecorderState): void {

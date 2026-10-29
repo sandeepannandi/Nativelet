@@ -34,8 +34,9 @@ MICX=870; MICY=1450
 open recorder; sleep 2; shot rec-idle
 
 # Hold the mic in place: recording starts after the press delay, the
-# waveform grows and moves. A 4 s stationary swipe is a press-and-hold.
-adb shell input swipe $MICX $MICY $MICX $MICY 4000 &
+# waveform grows and moves. A 4 s swipe with a 3 px drift is a press-and-hold
+# (a zero-length swipe collapses to a tap on the emulator).
+adb shell input swipe $MICX $MICY $((MICX - 3)) $((MICY + 1)) 4000 &
 sleep 2.2; shot rec-hold-a
 sleep 1.2; shot rec-hold-b
 wait
