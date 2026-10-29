@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, PanResponder, Pressable, Text, View, type ViewStyle } from "react-native";
 import { Canvas, Circle, Group, Path, Points, RoundedRect } from "@shopify/react-native-skia";
-import Animated, { useAnimatedStyle, useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import {
   BAR_COUNT, BAR_H, BAR_W, BAR_X, BAR_Y, LOCK_CX, LOCK_CY, LOCK_H, LOCK_W, MIC_CX, MIC_CY, MIC_R,
   REC_H, REC_W, TIMER_X, WAVE_CY, DOT_X, barSegment, cancelWash, clamp01, createRecorder,
@@ -14,6 +14,14 @@ import {
 } from "./recorderDesign";
 
 export type VoiceMessage = { seconds: number; samples: number[] };
+
+type RecInput = {
+  id: number;
+  k: "start" | "move" | "end" | "send" | "cancel" | "reduced";
+  dx?: number;
+  dy?: number;
+  v?: boolean;
+};
 
 export type VoiceRecorderProps = {
   onSend?: (message: VoiceMessage) => void;
@@ -242,6 +250,15 @@ export function VoiceRecorder({
   const sim = useSharedValue<RecorderState>(createRecorder());
   const frame = useSharedValue(0);
   const slowM = useSharedValue(false);
+  // Cross-thread rule: the sim lives on the UI thread. JS only ever ASSIGNS
+  // whole values (nested mutation of a shared object from JS never reaches
+  // the UI copy). Gesture intents travel through this queue by assignment,
+  // the frame loop applies them on the UI thread (crumple pattern), and
+  // coarse UI state + events come back via runOnJS.
+  const inputs = useSharedValue<RecInput[]>([]);
+  const sync = useSharedValue({ phase: "idle" as RecorderPhase, seconds: -1 });
+  const ring = useRef<RecInput[]>([]);
+  const counter = useRef(0);
   const [ui, setUi] = useState<{ phase: RecorderPhase; seconds: number }>({ phase: "idle", seconds: 0 });
   const latest = useRef({ reduce, onSend, onCancel, onFeedback });
   latest.current.reduce = reduce;
@@ -266,68 +283,91 @@ export function VoiceRecorder({
   useEffect(() => {
     slowM.value = slowMotion;
   }, [slowMotion, slowM]);
-  useEffect(() => {
-    sim.value.reduced = reduce;
-  }, [reduce, sim]);
+  const push = (k: RecInput["k"], dx?: number, dy?: number, v?: boolean) => {
+    counter.current += 1;
+    const next = ring.current.concat({ id: counter.current, k, dx, dy, v }).slice(-24);
+    ring.current = next;
+    inputs.value = next;
+  };
 
-  // Mirror coarse UI (phase + whole seconds) and drain sim events into the
-  // callbacks. Polling on a light interval keeps the worklet loop free of
-  // runOnJS chatter; the frame clock above drives the fine animation.
   useEffect(() => {
-    const id = setInterval(() => {
-      const s = sim.value;
-      if (s.events.length) {
-        const events = s.events.splice(0, s.events.length) as RecorderEvent[];
-        for (const ev of events) {
-          if (ev.type === "start") latest.current.onFeedback?.("start");
-          else if (ev.type === "lock") latest.current.onFeedback?.("lock");
-          else if (ev.type === "cancel") {
-            latest.current.onCancel?.();
-            latest.current.onFeedback?.("cancel");
-          } else {
-            latest.current.onSend?.({ seconds: ev.seconds, samples: ev.samples });
-            latest.current.onFeedback?.("send");
-          }
-        }
+    push("reduced", undefined, undefined, reduce);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reduce]);
+
+  // Delivered from the UI thread via runOnJS: sim events drive the caller's
+  // thread/callbacks, coarse state drives the timer and the locked controls.
+  const deliverEvents = (events: RecorderEvent[]) => {
+    for (const ev of events) {
+      if (ev.type === "start") latest.current.onFeedback?.("start");
+      else if (ev.type === "lock") latest.current.onFeedback?.("lock");
+      else if (ev.type === "cancel") {
+        latest.current.onCancel?.();
+        latest.current.onFeedback?.("cancel");
+      } else {
+        latest.current.onSend?.({ seconds: ev.seconds, samples: ev.samples });
+        latest.current.onFeedback?.("send");
       }
-      setUi((prev) => {
-        const seconds = Math.floor(s.seconds);
-        return prev.phase === s.phase && prev.seconds === seconds ? prev : { phase: s.phase, seconds };
-      });
-    }, 80);
-    return () => clearInterval(id);
-  }, [sim]);
+    }
+  };
+  const deliverUi = (phase: RecorderPhase, seconds: number) => {
+    setUi((prev) => (prev.phase === phase && prev.seconds === seconds ? prev : { phase, seconds }));
+  };
 
   const pan = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: (evt) => {
-          if (sim.value.phase !== "idle") return false;
+          if (sync.value.phase !== "idle") return false;
           return evt.nativeEvent.locationX > MIC_CX - MIC_R - 14;
         },
         onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
-          recorderPressStart(sim.value);
+          push("start");
           latest.current.onFeedback?.("touch");
         },
         onPanResponderMove: (evt, gesture) => {
-          recorderPressMove(sim.value, gesture.dx, gesture.dy);
+          push("move", gesture.dx, gesture.dy);
         },
         onPanResponderRelease: () => {
-          recorderPressEnd(sim.value);
+          push("end");
         },
         onPanResponderTerminate: () => {
-          recorderPressEnd(sim.value);
+          push("end");
         },
       }),
-    [sim],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sync],
   );
 
   useFrameCallback((info) => {
     const s = sim.value;
+    const evs = inputs.value;
+    if (evs.length) {
+      inputs.value = [];
+      for (let i = 0; i < evs.length; i++) {
+        const e = evs[i];
+        if (e.k === "start") recorderPressStart(s);
+        else if (e.k === "move") recorderPressMove(s, e.dx ?? 0, e.dy ?? 0);
+        else if (e.k === "end") recorderPressEnd(s);
+        else if (e.k === "send") recorderLockedSend(s);
+        else if (e.k === "cancel") recorderLockedCancel(s);
+        else if (e.k === "reduced") s.reduced = !!e.v;
+      }
+    }
     const dt = Math.min(48, info.timeSincePreviousFrame ?? 16.7) / 1000;
     stepRecorder(s, dt * (slowM.value ? 0.25 : 1));
     frame.value = frame.value + 1;
+    if (s.events.length) {
+      const out = s.events;
+      s.events = [];
+      runOnJS(deliverEvents)(out);
+    }
+    const sec = Math.floor(s.seconds);
+    if (s.phase !== sync.value.phase || sec !== sync.value.seconds) {
+      sync.value = { phase: s.phase, seconds: sec };
+      runOnJS(deliverUi)(s.phase, sec);
+    }
   });
 
   const recording = ui.phase === "recording" || ui.phase === "locked" || ui.phase === "cancelling" || ui.phase === "sending";
@@ -365,14 +405,14 @@ export function VoiceRecorder({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Discard recording"
-            onPress={() => recorderLockedCancel(sim.value)}
+            onPress={() => push("cancel")}
             style={{ position: "absolute", left: BAR_X + 34 - 24, top: MIC_CY - 24, width: 48, height: 48 }}
             hitSlop={6}
           />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Send voice message"
-            onPress={() => recorderLockedSend(sim.value)}
+            onPress={() => push("send")}
             style={{ position: "absolute", left: MIC_CX - 26, top: MIC_CY - 26, width: 52, height: 52 }}
             hitSlop={6}
           />
