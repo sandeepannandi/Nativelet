@@ -323,3 +323,8 @@
   linear-gradient(74deg, transparent 49.2%, rgba(255,255,255,0.7) 49.5%, transparent 50.2%),
   linear-gradient(158deg, transparent 49.2%, rgba(255,255,255,0.7) 49.5%, transparent 50.2%); }
 .miniShatter b { position: absolute; left: 44px; top: 36px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.75); box-shadow: 0 0 0 10px rgba(255,255,255,0.12); }
+.miniRecorder { display: flex; align-items: center; gap: 8px; width: 72%; height: 34px; padding: 0 10px; border-radius: 17px; background: #fdfef9; border: 1px solid rgba(25,63,48,0.14); box-shadow: 0 4px 10px rgba(13,31,22,0.14); }
+.miniRecorder i { width: 6px; height: 6px; border-radius: 50%; background: #e5484d; }
+.miniRecorder b { flex: 1; height: 14px; border-radius: 3px; background: repeating-linear-gradient(90deg, rgba(49,83,62,0.85) 0 2.5px, transparent 2.5px 6px); -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%); mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%); }
+.miniRecorder em { width: 20px; height: 20px; border-radius: 50%; background: #193f30; position: relative; }
+.miniRecorder em::after { content: ""; position: absolute; left: 7.5px; top: 4px; width: 5px; height: 8px; border-radius: 2.5px; background: #fff; }

@@ -20,6 +20,7 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 
 ## Components
 
+- Voice Recorder: hold the mic to record a voice note - live waveform, slide left to cancel, drag up to lock, release to send a playable pill.
 - Glass Shatter: tap a glass pane and it breaks into about 360 shards that fall, spin and collide with real polygon contact.
 - Paper Crumple: crumple a sheet of paper into a creased ball with a corner drag or pinch, flick it to roll and bounce, smooth it back open.
 - Mini Player: drag a mini player bar into a full now-playing screen - artwork morphs, waveform scrubs, release velocity decides.
