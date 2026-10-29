@@ -10,7 +10,7 @@ import {
   stepRecorder, formatClock, type RecorderEvent, type RecorderPhase, type RecorderState,
 } from "./recorderMath";
 import {
-  REC_BAR_BG, REC_BAR_BORDER, REC_GREEN, REC_GREEN_SOFT, REC_RED, REC_RED_SOFT, REC_TEXT_FAINT, REC_WAVE,
+  REC_BAR_BG, REC_BAR_BORDER, REC_GREEN, REC_GREEN_SOFT, REC_RED, REC_RED_SOFT, REC_TEXT_FAINT, REC_WAVE, mixColor,
 } from "./recorderDesign";
 
 export type VoiceMessage = { seconds: number; samples: number[] };
@@ -69,11 +69,27 @@ function barsToPoints(s: RecorderState): { x: number; y: number }[] {
   return out;
 }
 
+// Newest bars read full strength, the tail fades back: the waveform gets a
+// leading edge instead of a flat fence.
+const WAVE_BUCKETS = [0.42, 0.62, 0.82, 1];
+
 function Waveform({ sim, frame }: { sim: { value: RecorderState }; frame: { value: number } }) {
-  const points = useDerivedValue(() => {
+  const buckets = useDerivedValue(() => {
     frame.value;
-    return barsToPoints(sim.value);
+    const s = sim.value;
+    const wash = cancelWash(s);
+    const out: { x: number; y: number }[][] = [[], [], [], []];
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const seg = barSegment(s, i);
+      const b = Math.min(3, Math.floor((i / BAR_COUNT) * 4));
+      out[b].push({ x: seg.x + wash.dx, y: seg.y0 }, { x: seg.x + wash.dx, y: seg.y1 });
+    }
+    return out;
   });
+  const points0 = useDerivedValue(() => buckets.value[0]);
+  const points1 = useDerivedValue(() => buckets.value[1]);
+  const points2 = useDerivedValue(() => buckets.value[2]);
+  const points3 = useDerivedValue(() => buckets.value[3]);
   const opacity = useDerivedValue(() => {
     frame.value; // re-evaluate every frame: nested sim mutations don't notify
     const s = sim.value;
@@ -83,7 +99,18 @@ function Waveform({ sim, frame }: { sim: { value: RecorderState }; frame: { valu
   });
   return (
     <Group opacity={opacity}>
-      <Points points={points} mode="lines" color={REC_WAVE} style="stroke" strokeWidth={2.6} strokeCap="round" />
+      <Group opacity={WAVE_BUCKETS[0]}>
+        <Points points={points0} mode="lines" color={REC_WAVE} style="stroke" strokeWidth={2.6} strokeCap="round" />
+      </Group>
+      <Group opacity={WAVE_BUCKETS[1]}>
+        <Points points={points1} mode="lines" color={REC_WAVE} style="stroke" strokeWidth={2.6} strokeCap="round" />
+      </Group>
+      <Group opacity={WAVE_BUCKETS[2]}>
+        <Points points={points2} mode="lines" color={REC_WAVE} style="stroke" strokeWidth={2.6} strokeCap="round" />
+      </Group>
+      <Group opacity={WAVE_BUCKETS[3]}>
+        <Points points={points3} mode="lines" color={REC_WAVE} style="stroke" strokeWidth={2.6} strokeCap="round" />
+      </Group>
     </Group>
   );
 }
@@ -96,7 +123,12 @@ function RecordDot({ sim, frame }: { sim: { value: RecorderState }; frame: { val
     if (s.phase === "sending" || s.phase === "cancelling") return 1 - clamp01(s.anim);
     return 0.75 + 0.25 * Math.sin(s.t * 4.2); // gentle pulse: the dot stays clearly visible through the cycle
   });
-  return <Circle cx={DOT_X} cy={MIC_CY} r={5} color={REC_RED} opacity={opacity} />;
+  return (
+    <Group>
+      <Circle cx={DOT_X} cy={MIC_CY} r={9} color={REC_RED_SOFT} opacity={opacity} />
+      <Circle cx={DOT_X} cy={MIC_CY} r={5} color={REC_RED} opacity={opacity} />
+    </Group>
+  );
 }
 
 function LockCapsule({ sim, frame }: { sim: { value: RecorderState }; frame: { value: number } }) {
@@ -115,17 +147,29 @@ function LockCapsule({ sim, frame }: { sim: { value: RecorderState }; frame: { v
     frame.value;
     return [{ translateX: LOCK_CX }, { translateY: LOCK_CY }, { scale: 1 + sim.value.lockPop * 0.35 }];
   });
+  // The lock glyph starts green and turns white once the rising fill
+  // covers it, so the capsule reads as "charged" right before it clicks.
+  const glyphCover = useDerivedValue(() => {
+    frame.value;
+    return clamp01((sim.value.lock - 0.55) / 0.3);
+  });
+  const glyphGreen = useDerivedValue(() => 1 - glyphCover.value);
   return (
     <Group opacity={opacity} transform={transform}>
+      <RoundedRect x={-LOCK_W / 2 + 1} y={-LOCK_H / 2 + 3} width={LOCK_W} height={LOCK_H} r={22} color={REC_GREEN} opacity={0.1} />
       <RoundedRect x={-LOCK_W / 2} y={-LOCK_H / 2} width={LOCK_W} height={LOCK_H} r={22} color={REC_GREEN} opacity={0.12} />
       <RoundedRect x={-LOCK_W / 2 + 4} y={-LOCK_H / 2 + 4} width={LOCK_W - 8} height={LOCK_H - 8} r={18} color={REC_BAR_BG} />
       <LockFill fill={fill} />
       <Group transform={[{ translateY: -LOCK_H / 2 + 15 }]}>
         <Path path="M -5 4 L 0 -2 L 5 4" color={REC_TEXT_FAINT} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" />
       </Group>
-      <Group transform={[{ translateY: LOCK_H / 2 - 21 }]}>
+      <Group transform={[{ translateY: LOCK_H / 2 - 21 }]} opacity={glyphGreen}>
         <Path path="M -4.5 0 L -4.5 -3.5 A 4.5 4.5 0 0 1 4.5 -3.5 L 4.5 0" color={REC_GREEN} style="stroke" strokeWidth={1.8} strokeCap="round" />
         <RoundedRect x={-7} y={0} width={14} height={11} r={3} color={REC_GREEN} />
+      </Group>
+      <Group transform={[{ translateY: LOCK_H / 2 - 21 }]} opacity={glyphCover}>
+        <Path path="M -4.5 0 L -4.5 -3.5 A 4.5 4.5 0 0 1 4.5 -3.5 L 4.5 0" color="#ffffff" style="stroke" strokeWidth={1.8} strokeCap="round" />
+        <RoundedRect x={-7} y={0} width={14} height={11} r={3} color="#ffffff" />
       </Group>
     </Group>
   );
@@ -135,7 +179,18 @@ function LockFill({ fill }: { fill: { value: number } }) {
   const height = useDerivedValue(() => (LOCK_H - 8) * fill.value);
   const y = useDerivedValue(() => LOCK_H / 2 - 4 - height.value);
   const r = useDerivedValue(() => Math.min(18, height.value / 2));
-  return <RoundedRect x={-LOCK_W / 2 + 4} y={y} width={LOCK_W - 8} height={height} r={r} color={REC_GREEN_SOFT} />;
+  const charge = useDerivedValue(() => clamp01((fill.value - 0.45) / 0.45));
+  const softOpacity = useDerivedValue(() => 1 - charge.value);
+  return (
+    <Group>
+      <Group opacity={softOpacity}>
+        <RoundedRect x={-LOCK_W / 2 + 4} y={y} width={LOCK_W - 8} height={height} r={r} color={REC_GREEN_SOFT} />
+      </Group>
+      <Group opacity={charge}>
+        <RoundedRect x={-LOCK_W / 2 + 4} y={y} width={LOCK_W - 8} height={height} r={r} color={REC_GREEN} />
+      </Group>
+    </Group>
+  );
 }
 
 function MicGlyph({ sending }: { sending: { value: number } }) {
@@ -176,7 +231,10 @@ function MicButton({ sim, frame }: { sim: { value: RecorderState }; frame: { val
   });
   const redOpacity = useDerivedValue(() => {
     frame.value;
-    return sim.value.phase === "cancelling" ? 1 : 0;
+    const s = sim.value;
+    if (s.phase === "cancelling") return 1;
+    if (s.phase === "recording" || s.phase === "pressing") return clamp01(s.cancel * 1.15);
+    return 0;
   });
   return (
     <Group transform={transform}>
@@ -192,12 +250,48 @@ function CancelChevrons({ sim, frame }: { sim: { value: RecorderState }; frame: 
     frame.value;
     const s = sim.value;
     if (s.phase !== "recording" && s.phase !== "pressing") return 0;
-    return clamp01(1 - s.cancel * 1.6) * 0.9;
+    return clamp01(1 - s.cancel * 1.6);
   });
+  const drift = useDerivedValue(() => {
+    frame.value;
+    const s = sim.value;
+    return s.reduced ? 0 : Math.sin(s.t * 2.4) * 2;
+  });
+  // The chevrons live inside the hint chip's left padding, so the recording
+  // row reads as: dot, timer, one hint chip, waveform - not loose glyphs.
+  const transform = useDerivedValue(() => [{ translateX: TIMER_X + 82 - drift.value - sim.value.cancel * 28 }, { translateY: MIC_CY }]);
   return (
-    <Group opacity={opacity} transform={[{ translateX: TIMER_X + 48 }, { translateY: MIC_CY }]}>
+    <Group opacity={opacity} transform={transform}>
       <Path path="M 3 -5 L -3 0 L 3 5" color={REC_TEXT_FAINT} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" />
       <Path path="M 3 -5 L -3 0 L 3 5" color={REC_TEXT_FAINT} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" opacity={0.5} transform={[{ translateX: 9 }]} />
+    </Group>
+  );
+}
+
+// Two soft rings breathe around the mic while a take is running, so the
+// button reads as live without moving any layout.
+function MicHalo({ sim, frame }: { sim: { value: RecorderState }; frame: { value: number } }) {
+  const vis = useDerivedValue(() => {
+    frame.value;
+    const s = sim.value;
+    if (s.phase === "recording" || s.phase === "locked") return 1;
+    if (s.phase === "sending" || s.phase === "cancelling") return 1 - clamp01(s.anim);
+    return 0;
+  });
+  const r1 = useDerivedValue(() => {
+    frame.value;
+    const s = sim.value;
+    return MIC_R + 4 + (s.reduced ? 0 : 2 * Math.sin(s.t * 3.2));
+  });
+  const r2 = useDerivedValue(() => {
+    frame.value;
+    const s = sim.value;
+    return MIC_R + 9 + (s.reduced ? 0 : 2 * Math.sin(s.t * 3.2 - 1.1));
+  });
+  return (
+    <Group opacity={vis} transform={[{ translateX: MIC_CX }, { translateY: MIC_CY }]}>
+      <Circle cx={0} cy={0} r={r1} color={REC_GREEN} style="stroke" strokeWidth={2} opacity={0.14} />
+      <Circle cx={0} cy={0} r={r2} color={REC_GREEN} style="stroke" strokeWidth={1.5} opacity={0.07} />
     </Group>
   );
 }
@@ -205,7 +299,9 @@ function CancelChevrons({ sim, frame }: { sim: { value: RecorderState }; frame: 
 function RedWash({ sim, frame }: { sim: { value: RecorderState }; frame: { value: number } }) {
   const opacity = useDerivedValue(() => {
     frame.value;
-    return cancelWash(sim.value).alpha;
+    const s = sim.value;
+    if (s.phase === "recording" || s.phase === "pressing") return s.cancel * 0.12;
+    return cancelWash(s).alpha;
   });
   return <RoundedRect x={BAR_X} y={BAR_Y} width={BAR_W} height={BAR_H} r={30} color={REC_RED} opacity={opacity} />;
 }
@@ -229,6 +325,7 @@ function CancelHint({ sim }: { sim: { value: RecorderState } }) {
   const style = useAnimatedStyle(() => ({
     opacity: clamp01(1 - sim.value.cancel * 1.6),
     transform: [{ translateX: -sim.value.cancel * 28 }],
+    color: mixColor(REC_TEXT_FAINT, REC_RED, clamp01(sim.value.cancel * 1.35)),
   }));
   return (
     <Animated.Text
@@ -236,15 +333,19 @@ function CancelHint({ sim }: { sim: { value: RecorderState } }) {
       style={[
         {
           position: "absolute",
-          left: TIMER_X + 66,
+          left: TIMER_X + 72,
           top: MIC_CY - 10,
           color: REC_TEXT_FAINT,
           fontSize: 12,
           // Opaque chip: the label floats over the waveform instead of
           // colliding with the bars.
           backgroundColor: REC_BAR_BG,
-          paddingHorizontal: 8,
-          paddingVertical: 2,
+          borderColor: REC_BAR_BORDER,
+          borderWidth: 1,
+          // Left padding makes room for the chevrons drawn inside the chip.
+          paddingLeft: 30,
+          paddingRight: 9,
+          paddingVertical: 1,
           borderRadius: 10,
           overflow: "hidden",
         },
@@ -409,6 +510,7 @@ export function VoiceRecorder({
         <Waveform sim={sim} frame={frame} />
         <CancelChevrons sim={sim} frame={frame} />
         <LockedGlyphs sim={sim} frame={frame} />
+        <MicHalo sim={sim} frame={frame} />
         <MicButton sim={sim} frame={frame} />
         <LockCapsule sim={sim} frame={frame} />
       </Canvas>
@@ -428,6 +530,7 @@ export function VoiceRecorder({
             top: MIC_CY - 8,
             color: "#1d2b23",
             fontSize: 13,
+            fontWeight: "600",
             fontVariant: ["tabular-nums"],
           }}
         >
