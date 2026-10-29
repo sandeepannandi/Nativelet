@@ -36,7 +36,7 @@ expect() { # name condition-detail pass?
   else echo "$1 FAIL $2" | tee -a "$OUT/summary.txt"; FAIL=1; fi
 }
 
-python3 -m pip install -q pillow >/dev/null 2>&1 || true
+python3 -m pip install -q pillow numpy >/dev/null 2>&1 || true
 # locate FILE -> "mx my scale": centroid and px-per-dp of the dark-green mic
 # disc in the lower half of the frame. The bar's absolute position drifts
 # between runs, so every assertion is anchored to the mic, not fixed pixels.
@@ -96,7 +96,7 @@ print('%d %d %d %d' % (mx + $1 * s, my + $2 * s, mx + $3 * s, my + $4 * s))"; }
 # dot (-288,0), timer text x -270..-230 y +/-12, waveform x -210..-34
 # y +/-16, trash (-280,-3), bar x -314..+30 y -30..+30, pill area above.
 read MX MY SC <<<"$(locate rec-idle)"
-[ "$MX" = 0 ] && { echo "recorder-records FAIL mic_not_found" | tee -a "$OUT/summary.txt"; exit 1; }
+{ [ -z "$MX" ] || [ "$MX" = 0 ]; } && { echo "recorder-records FAIL mic_not_found" | tee -a "$OUT/summary.txt"; exit 1; }
 MICX=$(python3 -c "print(int($MX))"); MICY=$(python3 -c "print(int($MY))")
 DOTX=$(python3 -c "print(int($MX - 288 * $SC))"); DOTY=$MICY
 TRX=$(python3 -c "print(int($MX - 280 * $SC))"); TRY=$(python3 -c "print(int($MY - 3 * $SC))")
