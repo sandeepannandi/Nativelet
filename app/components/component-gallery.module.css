@@ -328,3 +328,10 @@
 .miniRecorder b { flex: 1; height: 14px; border-radius: 3px; background: repeating-linear-gradient(90deg, rgba(49,83,62,0.85) 0 2.5px, transparent 2.5px 6px); -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%); mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%); }
 .miniRecorder em { width: 20px; height: 20px; border-radius: 50%; background: #193f30; position: relative; }
 .miniRecorder em::after { content: ""; position: absolute; left: 7.5px; top: 4px; width: 5px; height: 8px; border-radius: 2.5px; background: #fff; }
+.miniGradient { position: relative; width: 74%; height: 76px; border-radius: 14px; background: linear-gradient(90deg, #ff9966, #c2509c 52%, #3a3d9e); box-shadow: 0 6px 14px rgba(13,31,22,0.18); border: 1px solid rgba(25,63,48,0.12); }
+.miniGradient b { position: absolute; left: 12px; right: 12px; bottom: 12px; height: 7px; border-radius: 4px; background: rgba(255,255,255,0.55); }
+.miniGradient b i { position: absolute; top: -5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(13,31,22,0.3); border: 4px solid #fff; background-clip: padding-box; }
+.miniGradient b i:nth-child(1) { left: -4px; background-color: #ff9966; }
+.miniGradient b i:nth-child(2) { left: 46%; background-color: #c2509c; outline: 2px solid #193f30; outline-offset: 1px; }
+.miniGradient b i:nth-child(3) { right: -4px; background-color: #3a3d9e; }
+.miniGradient em { position: absolute; right: 24px; top: -14px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #fff; box-shadow: 0 3px 8px rgba(13,31,22,0.3); background-image: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
