@@ -567,51 +567,51 @@ export default function NativeletSite({
               </button>
               <button className={gallery.tile} hidden={!matches("Paper Crumple", "Crumple a sheet into a ball · flick it, roll it, smooth it out")} onClick={(event) => openComponent(event, "crumple")} aria-haspopup="dialog" aria-label="Open Paper Crumple web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniCrumple}><i /><b /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 42</span><strong>Paper Crumple</strong><small>Crumple a sheet into a ball · flick it, roll it, smooth it out</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 40</span><strong>Paper Crumple</strong><small>Crumple a sheet into a ball · flick it, roll it, smooth it out</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Voice Recorder", "Hold to record · slide to cancel, drag up to lock")} onClick={(event) => openComponent(event, "recorder")} aria-haspopup="dialog" aria-label="Open Voice Recorder web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniRecorder}><i /><b /><em /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 44</span><strong>Voice Recorder</strong><small>Hold to record · slide to cancel, drag up to lock</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 42</span><strong>Voice Recorder</strong><small>Hold to record · slide to cancel, drag up to lock</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Glass Shatter", "Break a pane of glass · 360 shards fall, spin and collide")} onClick={(event) => openComponent(event, "shatter")} aria-haspopup="dialog" aria-label="Open Glass Shatter web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniShatter}><i /><b /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 43</span><strong>Glass Shatter</strong><small>Break a pane of glass · 360 shards fall, spin and collide</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 41</span><strong>Glass Shatter</strong><small>Break a pane of glass · 360 shards fall, spin and collide</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Flow Field", "1,400 particles ride a live fluid current · drag to stir, watch it heal")} onClick={(event) => openComponent(event, "flow")} aria-haspopup="dialog" aria-label="Open Flow Field web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniFlow}><i /><i /><i /><i /><i /><i /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 41</span><strong>Flow Field</strong><small>1,400 particles ride a live fluid current · drag to stir, watch it heal</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 39</span><strong>Flow Field</strong><small>1,400 particles ride a live fluid current · drag to stir, watch it heal</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Mini Player", "Drag the bar into a full player · artwork morphs, waveform scrubs")} onClick={(event) => openComponent(event, "player")} aria-haspopup="dialog" aria-label="Open Mini Player web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniPlayer}><i /><b /><em /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 40</span><strong>Mini Player</strong><small>Drag the bar into a full player · artwork morphs, waveform scrubs</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 38</span><strong>Mini Player</strong><small>Drag the bar into a full player · artwork morphs, waveform scrubs</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Signature Ink", "Your signature · drawn by you, replayed in ink")} onClick={(event) => openComponent(event, "path")} aria-haspopup="dialog" aria-label="Open Signature Ink web preview">
                 <div className={gallery.study} aria-hidden="true"><svg viewBox="0 0 340 220" width="78%" height="78%"><path d="M38 150 C75 130 100 58 115 65 C135 75 58 173 80 172 C100 176 145 115 151 122 C165 143 116 166 139 166 C155 165 170 146 173 143 C177 160 195 172 213 145 C218 134 217 123 220 119 M76 188 C150 168 242 177 293 145" fill="none" stroke="#294b38" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 39</span><strong>Signature Ink</strong><small>Your signature · drawn by you, replayed in ink</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 37</span><strong>Signature Ink</strong><small>Your signature · drawn by you, replayed in ink</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Timeline Trim", "Pinch to zoom · trim, scrub and snap in source time")} onClick={(event) => openComponent(event, "timeline")} aria-haspopup="dialog" aria-label="Open Timeline Trim web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniTimeline}><i/><b/><em/></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 38</span><strong>Timeline Trim</strong><small>Pinch to zoom · trim, scrub and snap in source time</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 36</span><strong>Timeline Trim</strong><small>Pinch to zoom · trim, scrub and snap in source time</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Wheel Time Picker", "Spin three glass drums · real inertia, ticks sharpen as they slow")} onClick={(event) => openComponent(event, "wheel")} aria-haspopup="dialog" aria-label="Open Wheel Time Picker web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniWheel}><i /><b /><em /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 37</span><strong>Wheel Time Picker</strong><small>Spin three glass drums · real inertia, ticks sharpen as they slow</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 35</span><strong>Wheel Time Picker</strong><small>Spin three glass drums · real inertia, ticks sharpen as they slow</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Range Stack", "Pick two dates · a photo stack reloads and fans out")} onClick={(event) => openComponent(event, "range")} aria-haspopup="dialog" aria-label="Open Range Stack web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniRange}><i /><b /><em /><span /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 36</span><strong>Range Stack</strong><small>Pick two dates · a photo stack reloads and fans out</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 34</span><strong>Range Stack</strong><small>Pick two dates · a photo stack reloads and fans out</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Plucked Strings", "Drag and release copper strings · waves reflect and fade")} onClick={(event) => openComponent(event, "strings")} aria-haspopup="dialog" aria-label="Open Plucked Strings web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniStrings}><i /><b /><em /><span /><strong /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 34</span><strong>Plucked Strings</strong><small>Drag and release copper strings · waves reflect and fade</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 33</span><strong>Plucked Strings</strong><small>Drag and release copper strings · waves reflect and fade</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Sand Hourglass", "Tilt and flip a glass hourglass · real granular physics")} onClick={(event) => openComponent(event, "hourglass")} aria-haspopup="dialog" aria-label="Open Sand Hourglass web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniHourglass}><i /><b /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 33</span><strong>Sand Hourglass</strong><small>Tilt and flip a glass hourglass · real granular physics</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 32</span><strong>Sand Hourglass</strong><small>Tilt and flip a glass hourglass · real granular physics</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Prism", "Drag a glass prism through a light beam · real refraction splits a rainbow")} onClick={(event) => openComponent(event, "prism")} aria-haspopup="dialog" aria-label="Open Prism web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniPrism}><i /><b /><em /></div></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 32</span><strong>Prism</strong><small>Drag a glass prism through a light beam · real refraction splits a rainbow</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 31</span><strong>Prism</strong><small>Drag a glass prism through a light beam · real refraction splits a rainbow</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Code Reveal", "Drag across a picture · it turns into glyphs under your finger")} onClick={(event) => openComponent(event, "reveal")} aria-haspopup="dialog" aria-label="Open Code Reveal web preview">
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniReveal}><i /><b>@#x+=:.</b></div></div>
