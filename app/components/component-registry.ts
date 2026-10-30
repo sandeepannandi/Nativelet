@@ -59,4 +59,7 @@ export const META = {
     footer: "Preview: React · Framer Motion. Source: React Native",
   },
 } as const;
-export const COMPONENT_COUNT = Object.keys(META).length;
+/* Preview Rail and Morph Capsule have their own dialogs and are not in META,
+   but they are real cards on the page, so they count toward the total. */
+export const UNLISTED_COMPONENTS = ["Preview Rail", "Morph Capsule"] as const;
+export const COMPONENT_COUNT = Object.keys(META).length + UNLISTED_COMPONENTS.length;
