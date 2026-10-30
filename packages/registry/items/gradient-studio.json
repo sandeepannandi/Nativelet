@@ -1,0 +1,28 @@
+{
+  "slug": "gradient-studio",
+  "title": "Gradient Studio",
+  "category": "interaction",
+  "files": [
+    "GradientStudio.tsx",
+    "gradientMath.ts",
+    "gradientDesign.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia"
+  ],
+  "optionalDependencies": [
+    "expo-haptics (demo adapter only)"
+  ],
+  "tested": {
+    "expo": "57.0.27",
+    "reactNative": "0.86.3",
+    "web": "0.21.2",
+    "skia": "2.6.2"
+  },
+  "nativeDeviceVerified": false
+}
