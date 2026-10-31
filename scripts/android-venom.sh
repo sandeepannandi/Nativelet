@@ -102,11 +102,13 @@ CR=$(crashline venom-grab)
 OK=no; { [ "$CR" = no ] && gt "$G2" 2 && gt "$T" 2; } && OK=yes
 expect venom-grab-wraps "crash=$CR bridge_diff=$G2 tip_diff=$T" "$OK"
 
-# 3. after release the bridge melts back toward the idle frame.
-M=$(regdiff vn-sense vn-sense-released $BRIDGE)
+# 3. after release the bridge melts back: the region returns to the idle
+# frame (MELT tiny) after visibly changing from the held frame (BACK ~= D).
+M=$(regdiff vn-idle vn-sense-released $BRIDGE)
+BACK=$(regdiff vn-sense vn-sense-released $BRIDGE)
 CR=$(crashline venom-release)
-OK=no; { [ "$CR" = no ] && lt "$M" "$D"; } && OK=yes
-expect venom-release-melts "crash=$CR bridge_after_release_diff=$M bridge_during_diff=$D" "$OK"
+OK=no; { [ "$CR" = no ] && lt "$M" 2 && gt "$BACK" "$(python3 -c "print($D * 0.8)")"; } && OK=yes
+expect venom-release-melts "crash=$CR bridge_after_release_vs_idle=$M bridge_returned=$BACK bridge_during_diff=$D" "$OK"
 
 # 4. a quick tap on the pill presses: no tendril bridge, pill still there.
 shot vn-before-tap
