@@ -1,0 +1,8 @@
+.stage { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.canvas { border-radius: 16px; background: #f6f8f4; border: 1px solid #d5e1d2; cursor: pointer; touch-action: none; display: block; max-width: 100%; height: auto; }
+.canvas:focus-visible { outline: 2px solid #193f30; outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.chip { min-height: 44px; padding: 0 16px; border-radius: 14px; background: #ffffff; border: 1px solid #d5e1d2; color: #31533e; font-size: 13px; cursor: pointer; }
+.chipPrimary { composes: chip; background: #193f30; border-color: #193f30; color: #fff; }
+.hint { color: #4b6053; font-size: 12px; text-align: center; margin: 0; max-width: 340px; }
+.readout { color: #193f30; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 0; }
