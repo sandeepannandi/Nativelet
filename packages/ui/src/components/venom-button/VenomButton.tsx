@@ -111,7 +111,7 @@ export function VenomButton({ label = "Hold me", onPress, onFeedback, reducedMot
       }}
     >
       <Canvas pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <Group layer={<Paint><Blur blur={4} /><ColorMatrix matrix={matrix} /></Paint>} color={VENOM_INK}>
+        <Group layer={<Paint><Blur blur={3.5} /><ColorMatrix matrix={matrix} /></Paint>} color={VENOM_INK}>
           <RoundedRect x={pill.cx - pill.rx} y={pill.cy - pill.ry} width={pill.rx * 2} height={pill.ry * 2} r={Math.min(PILL_H / 2, pill.ry)} />
           {circles.map((c, i) => <Circle key={i} cx={c.x} cy={c.y} r={Math.max(0.01, c.r)} />)}
         </Group>
@@ -124,7 +124,7 @@ export function VenomButton({ label = "Hold me", onPress, onFeedback, reducedMot
             <Blur blur={6} />
           </Circle>
           <Circle cx={-PILL_W / 2 + 52} cy={-PILL_H / 2 + 10} r={4} color="rgba(255,255,255,0.65)">
-            <Blur blur={4} />
+            <Blur blur={3.5} />
           </Circle>
         </Group>
       </Canvas>

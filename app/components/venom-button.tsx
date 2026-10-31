@@ -151,7 +151,7 @@ export function VenomButtonPreview() {
       <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
         <defs>
           <filter id="venom-goo">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="5" />
             <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11" />
           </filter>
         </defs>

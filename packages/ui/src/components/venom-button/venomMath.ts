@@ -22,7 +22,7 @@ export const GRAB = 92;
 /** Edge distance where a grabbed hold tears loose. */
 export const TEAR = 150;
 /** Goo circles per strand. */
-export const CHAIN = 9;
+export const CHAIN = 15;
 export const BASE_R = 6.5;
 export const TIP_R = 2;
 export const HAIR_BASE_R = 3.2;
