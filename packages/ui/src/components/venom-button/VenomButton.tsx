@@ -4,7 +4,7 @@ import { AccessibilityInfo, PanResponder, StyleSheet, Text, View, type ViewStyle
 import { Blur, Circle, ColorMatrix, Group, Paint, RoundedRect, LinearGradient, vec, Canvas } from "@shopify/react-native-skia";
 import {
   PILL_CX, PILL_CY, PILL_H, PILL_W, VENOM_H, VENOM_W,
-  createVenom, drainEvents, gooMatrix, isAnimating, pillFrame, pointerDown, pointerMove, pointerUp,
+  clampFinger, createVenom, drainEvents, gooMatrix, isAnimating, pillFrame, pointerDown, pointerMove, pointerUp,
   spikeCircles, stepVenom, strandCircles, type Venom, type VenomEvent,
 } from "./venomMath";
 import { VENOM_BG, VENOM_GLOSS, VENOM_INK, VENOM_RIM, VENOM_TEXT } from "./venomDesign";
@@ -82,8 +82,8 @@ export function VenomButton({ label = "Hold me", onPress, onFeedback, reducedMot
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (evt) => { commit(pointerDown(ref.current, evt.nativeEvent.locationX, evt.nativeEvent.locationY)); kick(); },
-      onPanResponderMove: (evt) => { commit(pointerMove(ref.current, evt.nativeEvent.locationX, evt.nativeEvent.locationY)); kick(); },
+      onPanResponderGrant: (evt) => { const p = clampFinger(evt.nativeEvent.locationX, evt.nativeEvent.locationY); commit(pointerDown(ref.current, p.x, p.y)); kick(); },
+      onPanResponderMove: (evt) => { const p = clampFinger(evt.nativeEvent.locationX, evt.nativeEvent.locationY); commit(pointerMove(ref.current, p.x, p.y)); kick(); },
       onPanResponderRelease: () => { commit(pointerUp(ref.current)); kick(); },
       onPanResponderTerminate: () => { commit(pointerUp(ref.current)); kick(); },
     }),
@@ -111,7 +111,7 @@ export function VenomButton({ label = "Hold me", onPress, onFeedback, reducedMot
       }}
     >
       <Canvas pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <Group layer={<Paint><Blur blur={7} /><ColorMatrix matrix={matrix} /></Paint>} color={VENOM_INK}>
+        <Group layer={<Paint><Blur blur={4} /><ColorMatrix matrix={matrix} /></Paint>} color={VENOM_INK}>
           <RoundedRect x={pill.cx - pill.rx} y={pill.cy - pill.ry} width={pill.rx * 2} height={pill.ry * 2} r={Math.min(PILL_H / 2, pill.ry)} />
           {circles.map((c, i) => <Circle key={i} cx={c.x} cy={c.y} r={Math.max(0.01, c.r)} />)}
         </Group>

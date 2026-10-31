@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
 import {
   GRAB, PILL_CX, PILL_CY, PILL_H, PILL_W, SENSE, VENOM_H, VENOM_W,
-  createVenom, drainEvents, edgeDist, isAnimating, pillFrame, pointerDown, pointerMove, pointerUp,
+  clampFinger, createVenom, drainEvents, edgeDist, isAnimating, pillFrame, pointerDown, pointerMove, pointerUp,
   spikeCircles, stepVenom, strandCircles, type Venom, type VenomEvent,
 } from "../../packages/ui/src/components/venom-button/venomMath";
 import { VENOM_GLOSS, VENOM_INK, VENOM_RIM, VENOM_TEXT } from "../../packages/ui/src/components/venom-button/venomDesign";
@@ -63,9 +63,11 @@ export function VenomButtonPreview() {
         goo.fill();
       }
       goo.restore();
-      // Goo pass: blur then contrast merges overlapping blobs into one surface.
+      // Goo pass: blur then an alpha-gain colour matrix merges overlapping
+      // blobs into one crisp surface (same recipe as the native Skia filter;
+      // CSS contrast() would only clip RGB and leave the alpha soft).
       ctx.save();
-      ctx.filter = "blur(7px) contrast(24)";
+      ctx.filter = "url(#venom-goo)";
       ctx.drawImage(off, 0, 0);
       ctx.restore();
       // Crisp gloss, rim and label above the goo.
@@ -104,7 +106,7 @@ export function VenomButtonPreview() {
 
     const local = (ev: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
-      return { x: ((ev.clientX - r.left) * VENOM_W) / r.width, y: ((ev.clientY - r.top) * VENOM_H) / r.height };
+      return clampFinger(((ev.clientX - r.left) * VENOM_W) / r.width, ((ev.clientY - r.top) * VENOM_H) / r.height);
     };
     const down = (ev: PointerEvent) => {
       const p = local(ev);
@@ -146,6 +148,14 @@ export function VenomButtonPreview() {
 
   return (
     <div className={styles.stage}>
+      <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+        <defs>
+          <filter id="venom-goo">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" />
+            <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11" />
+          </filter>
+        </defs>
+      </svg>
       <canvas
         ref={canvasRef}
         className={styles.canvas}

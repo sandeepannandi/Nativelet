@@ -23,13 +23,23 @@ export const GRAB = 92;
 export const TEAR = 150;
 /** Goo circles per strand. */
 export const CHAIN = 9;
-export const BASE_R = 10;
-export const TIP_R = 3;
-export const HAIR_BASE_R = 5;
-export const HAIR_TIP_R = 1.8;
-export const BULB_R = 7.5;
+export const BASE_R = 6.5;
+export const TIP_R = 2;
+export const HAIR_BASE_R = 3.2;
+export const HAIR_TIP_R = 1.1;
+export const BULB_R = 5;
 /** How far the pill stretches toward a held finger. */
 export const MAX_PULL = 16;
+/** Input layers clamp the finger this far inside the stage so stretched goo stays visible. */
+export const FINGER_MARGIN = 22;
+/** Clamp a raw input point into the stage. Used by the native control and the web preview. */
+export function clampFinger(x: number, y: number): Vec {
+  "worklet";
+  return {
+    x: clamp(x, FINGER_MARGIN, VENOM_W - FINGER_MARGIN),
+    y: clamp(y, FINGER_MARGIN, VENOM_H - FINGER_MARGIN),
+  };
+}
 
 export type Vec = { x: number; y: number };
 export type Mode = "idle" | "sense" | "grab" | "snap";
@@ -96,7 +106,7 @@ export function anchorAng(finger: Vec, i: number) {
   const base = Math.atan2(finger.y - PILL_CY, finger.x - PILL_CX);
   const hair = i % 2 === 1;
   const k = Math.floor(i / 2);
-  const spread = hair ? 2.4 : 1.9;
+  const spread = hair ? 2.7 : 2.1;
   const t = STRAND_COUNT < 2 ? 0 : k / (STRAND_COUNT - 1) - 0.5;
   return base + t * spread + (hash(i, 5) - 0.5) * 0.3;
 }
@@ -233,7 +243,7 @@ export function stepVenom(v: Venom, dt: number): Venom {
       if (s.mode === "grab") {
         // Wrapped: the tip orbits the fingertip slowly, thicker strands wider.
         const dir = Math.atan2(s.finger.y - a.y, s.finger.x - a.x);
-        const wob = (hair ? 4 : 9) * Math.sin(s.time * 3.1 + i * 1.7);
+        const wob = (hair ? 6.5 : 14) * Math.sin(s.time * 3.1 + i * 1.7);
         const target = { x: s.finger.x + Math.cos(dir + Math.PI / 2) * wob, y: s.finger.y + Math.sin(dir + Math.PI / 2) * wob };
         springTo(st.tip, st.vel, target, 260, 18, h);
       } else if (s.mode === "sense") {
