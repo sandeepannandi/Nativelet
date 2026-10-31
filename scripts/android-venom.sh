@@ -76,9 +76,12 @@ read CX CY SC <<<"$(locate vn-idle)"
 CR=$(crashline venom-open)
 expect venom-renders "crash=$CR pill_scale=$SC" "$([ "$CR" = no ] && echo yes || echo no)"
 
-# 1. a far touch (edge distance ~115 dp: inside sense, outside grab) grows a
-# tendril bridge but leaves a gap at the fingertip.
-read FX FY <<<"$(P 0 -150)"
+# 1. a far touch grows a tendril bridge but leaves a gap at the fingertip.
+# The finger clamp (FINGER_MARGIN=22) caps the reachable edge distance from
+# the top at ~97 dp, which is near-grab territory where strands are designed
+# to nearly touch. A corner touch at stage dp (22,22) sits at edge distance
+# ~133 (reach 0.29): a genuine far sense with a wide, stable gap.
+read FX FY <<<"$(P -158 -128)"
 adb shell input swipe $FX $FY $((FX + 1)) $FY 2600 &
 sleep 1.6; shot vn-sense
 # The snap is underdamped: root bumps can linger ~1-2s (they always settle -
@@ -86,8 +89,11 @@ sleep 1.6; shot vn-sense
 # later probes measure a pixel-identical idle). 2.5s shoots the steady state
 # the melt assertion means, not the mid-settle tail.
 wait; sleep 2.5; shot vn-sense-released
-BRIDGE=$(B -40 -140 40 -60)
-GAP=$(B -18 -158 18 -136)
+# Bridge mass fans along the up-left diagonal from the pill edge toward the
+# corner fingertip; the gap box wraps the fingertip with ~18dp to spare
+# (steady strands stop 50+ dp short, overshoot under 12dp).
+BRIDGE=$(B -120 -95 -55 -35)
+GAP=$(B -176 -146 -140 -110)
 D=$(regdiff vn-idle vn-sense $BRIDGE)
 G=$(regdiff vn-idle vn-sense $GAP)
 CR=$(crashline venom-sense)
