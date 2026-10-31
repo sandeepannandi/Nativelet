@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Venom Button behavior evidence, asserted on pixels at measured regions:
-# a far touch grows a tendril bridge without connecting, a close touch wraps
-# the finger and stretches the pill, release melts the bridge back, a tap
+# a far touch grows a tendril bridge without connecting, a near-grab hold
+# nearly touches without wrapping, a close touch wraps the finger and keeps
+# wobbling while held, release melts the bridge back, a tap
 # presses without a bridge, and nothing crashes. Anchored to the dark pill
 # (the largest near-black blob in the middle band); no accessibility dumps
 # because uiautomator never idles on animating Skia.
@@ -100,19 +101,53 @@ CR=$(crashline venom-sense)
 OK=no; { [ "$CR" = no ] && gt "$D" 2 && lt "$G" 1.5; } && OK=yes
 expect venom-sense-reaches "crash=$CR bridge_diff=$D gap_diff=$G" "$OK"
 
-# 2. a close touch (edge distance ~55 dp) wraps the finger: the gap fills in.
+# 2. near-grab: a hold at the top-edge clamp point (180,22), edge distance
+# 97 - just outside GRAB=92 - must nearly touch WITHOUT wrapping. This keeps
+# the near-grab coverage the top-edge probe had before 0a238f9 moved the far
+# sense probe to the corner; the old failure (run 41199175646, gap_diff=
+# 11.53) was the probe asserting a gap the design closes at this distance,
+# not a component bug. Assertions: bridge and near-tip regions fill (reach
+# 0.91 nearly touches: venomMath simulation shows 158 and 19 goo circles in
+# the two boxes, min steady tip-finger gap 5.4dp), the held frame is frozen
+# between 2.0s and 2.6s (settled sense, simulated tip drift 0.0001dp; a grab
+# wobbles forever - probe 3 asserts that wobble is alive), and release melts
+# back to the idle frame.
+read NX NY <<<"$(P 0 -128)"
+adb shell input swipe $NX $NY $((NX + 1)) $NY 3000 &
+sleep 2.0; shot vn-neargrab-a
+sleep 0.6; shot vn-neargrab-b
+wait; sleep 2.5; shot vn-neargrab-released
+NBRIDGE=$(B -30 -115 30 -40)
+NEAR=$(B -12 -124 12 -110)
+ND=$(regdiff vn-idle vn-neargrab-a $NBRIDGE)
+NN=$(regdiff vn-idle vn-neargrab-a $NEAR)
+STILLB=$(regdiff vn-neargrab-a vn-neargrab-b $NBRIDGE)
+STILLN=$(regdiff vn-neargrab-a vn-neargrab-b $NEAR)
+NM=$(regdiff vn-idle vn-neargrab-released $NBRIDGE)
+NBACK=$(regdiff vn-neargrab-b vn-neargrab-released $NBRIDGE)
+CR=$(crashline venom-neargrab)
+OK=no; { [ "$CR" = no ] && gt "$ND" 2 && gt "$NN" 2 && lt "$STILLB" 2 && lt "$STILLN" 2 && lt "$NM" 2 && gt "$NBACK" "$(python3 -c "print($ND * 0.8)")"; } && OK=yes
+expect venom-near-grab-reaches-not-wraps "crash=$CR bridge_diff=$ND near_tip_diff=$NN held_drift_bridge=$STILLB held_drift_tip=$STILLN melt=$NM returned=$NBACK" "$OK"
+
+# 3. a close touch (edge distance ~55 dp) wraps the finger: the gap fills in
+# and the wrapped tips keep wobbling (they orbit the fingertip at 3.1 rad/s,
+# so two held frames 0.5s apart differ; simulation shows 8-11dp of thick
+# strand motion over that window). A frozen held frame here would mean the
+# wrap animation died.
 read GX GY <<<"$(P 0 -86)"
 adb shell input swipe $GX $GY $((GX + 1)) $GY 2600 &
 sleep 1.6; shot vn-grab
+sleep 0.5; shot vn-grab-wob
 wait; sleep 1.4; shot vn-grab-released
 G2=$(regdiff vn-idle vn-grab $BRIDGE)
 TIP=$(B -20 -100 20 -72)
 T=$(regdiff vn-idle vn-grab $TIP)
+WOB=$(regdiff vn-grab vn-grab-wob $TIP)
 CR=$(crashline venom-grab)
-OK=no; { [ "$CR" = no ] && gt "$G2" 2 && gt "$T" 2; } && OK=yes
-expect venom-grab-wraps "crash=$CR bridge_diff=$G2 tip_diff=$T" "$OK"
+OK=no; { [ "$CR" = no ] && gt "$G2" 2 && gt "$T" 2 && gt "$WOB" 2; } && OK=yes
+expect venom-grab-wraps "crash=$CR bridge_diff=$G2 tip_diff=$T wobble_diff=$WOB" "$OK"
 
-# 3. after release the bridge melts back: the region returns to the idle
+# 4. after release the bridge melts back: the region returns to the idle
 # frame (MELT tiny) after visibly changing from the held frame (BACK ~= D).
 M=$(regdiff vn-idle vn-sense-released $BRIDGE)
 BACK=$(regdiff vn-sense vn-sense-released $BRIDGE)
@@ -120,7 +155,7 @@ CR=$(crashline venom-release)
 OK=no; { [ "$CR" = no ] && lt "$M" 2 && gt "$BACK" "$(python3 -c "print($D * 0.8)")"; } && OK=yes
 expect venom-release-melts "crash=$CR bridge_after_release_vs_idle=$M bridge_returned=$BACK bridge_during_diff=$D" "$OK"
 
-# 4. a quick tap on the pill presses: no tendril bridge, pill still there.
+# 5. a quick tap on the pill presses: no tendril bridge, pill still there.
 shot vn-before-tap
 read TX TY <<<"$(P 0 0)"
 adb shell input tap $TX $TY
