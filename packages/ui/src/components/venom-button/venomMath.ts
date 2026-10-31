@@ -23,10 +23,10 @@ export const GRAB = 92;
 export const TEAR = 150;
 /** Goo circles per strand. */
 export const CHAIN = 15;
-export const BASE_R = 4.5;
-export const TIP_R = 1.4;
-export const HAIR_BASE_R = 2.1;
-export const HAIR_TIP_R = 0.8;
+export const BASE_R = 5;
+export const TIP_R = 2.2;
+export const HAIR_BASE_R = 2.6;
+export const HAIR_TIP_R = 1.3;
 export const BULB_R = 4;
 /** How far the pill stretches toward a held finger. */
 export const MAX_PULL = 16;
