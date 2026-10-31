@@ -106,28 +106,39 @@ expect venom-sense-reaches "crash=$CR bridge_diff=$D gap_diff=$G" "$OK"
 # the near-grab coverage the top-edge probe had before 0a238f9 moved the far
 # sense probe to the corner; the old failure (run 41199175646, gap_diff=
 # 11.53) was the probe asserting a gap the design closes at this distance,
-# not a component bug. Assertions: bridge and near-tip regions fill (reach
-# 0.91 nearly touches: venomMath simulation shows 158 and 19 goo circles in
-# the two boxes, min steady tip-finger gap 5.4dp), the held frame is frozen
-# between 2.0s and 2.6s (settled sense, simulated tip drift 0.0001dp; a grab
-# wobbles forever - probe 3 asserts that wobble is alive), and release melts
-# back to the idle frame.
+# not a component bug. Assertions: the held frame FREEZES (settled sense;
+# a grab wobbles forever at 3.1 rad/s and never freezes - probe 3 asserts
+# that wobble is alive), then the converged frame fills the bridge and
+# near-tip regions (reach 0.91 nearly touches: venomMath simulation shows
+# 158 and 19 goo circles in the two boxes, min steady tip-finger gap 5.4dp),
+# and release melts back to the idle frame. Frozen is detected by polling
+# consecutive frames, not a fixed delay: the emulator's rAF slows under the
+# full strand cone (dt clamps at 50ms), so sim time lags wall clock and the
+# springs are still converging at a fixed 2.0s/2.6s shot (run 41204477063:
+# drift 35/52 with every behavioral metric passing).
 read NX NY <<<"$(P 0 -128)"
-adb shell input swipe $NX $NY $((NX + 1)) $NY 3000 &
+adb shell input swipe $NX $NY $((NX + 1)) $NY 16000 &
+SW=$!
 sleep 2.0; shot vn-neargrab-a
-sleep 0.6; shot vn-neargrab-b
-wait; sleep 2.5; shot vn-neargrab-released
 NBRIDGE=$(B -30 -115 30 -40)
 NEAR=$(B -12 -124 12 -110)
-ND=$(regdiff vn-idle vn-neargrab-a $NBRIDGE)
-NN=$(regdiff vn-idle vn-neargrab-a $NEAR)
-STILLB=$(regdiff vn-neargrab-a vn-neargrab-b $NBRIDGE)
-STILLN=$(regdiff vn-neargrab-a vn-neargrab-b $NEAR)
+FROZEN=no; STILLB=na; STILLN=na
+for i in 1 2 3 4 5 6; do
+  kill -0 $SW 2>/dev/null || break
+  sleep 0.5; shot vn-neargrab-b
+  STILLB=$(regdiff vn-neargrab-a vn-neargrab-b $NBRIDGE)
+  STILLN=$(regdiff vn-neargrab-a vn-neargrab-b $NEAR)
+  if lt "$STILLB" 2 && lt "$STILLN" 2; then FROZEN=yes; break; fi
+  cp "$OUT/vn-neargrab-b.png" "$OUT/vn-neargrab-a.png"
+done
+wait $SW; sleep 3.5; shot vn-neargrab-released
+ND=$(regdiff vn-idle vn-neargrab-b $NBRIDGE)
+NN=$(regdiff vn-idle vn-neargrab-b $NEAR)
 NM=$(regdiff vn-idle vn-neargrab-released $NBRIDGE)
 NBACK=$(regdiff vn-neargrab-b vn-neargrab-released $NBRIDGE)
 CR=$(crashline venom-neargrab)
-OK=no; { [ "$CR" = no ] && gt "$ND" 2 && gt "$NN" 2 && lt "$STILLB" 2 && lt "$STILLN" 2 && lt "$NM" 2 && gt "$NBACK" "$(python3 -c "print($ND * 0.8)")"; } && OK=yes
-expect venom-near-grab-reaches-not-wraps "crash=$CR bridge_diff=$ND near_tip_diff=$NN held_drift_bridge=$STILLB held_drift_tip=$STILLN melt=$NM returned=$NBACK" "$OK"
+OK=no; { [ "$CR" = no ] && [ "$FROZEN" = yes ] && gt "$ND" 2 && gt "$NN" 2 && lt "$NM" 2 && gt "$NBACK" "$(python3 -c "print($ND * 0.8)")"; } && OK=yes
+expect venom-near-grab-reaches-not-wraps "crash=$CR frozen=$FROZEN last_drift_bridge=$STILLB last_drift_tip=$STILLN bridge_diff=$ND near_tip_diff=$NN melt=$NM returned=$NBACK" "$OK"
 
 # 3. a close touch (edge distance ~55 dp) wraps the finger: the gap fills in
 # and the wrapped tips keep wobbling (they orbit the fingertip at 3.1 rad/s,
