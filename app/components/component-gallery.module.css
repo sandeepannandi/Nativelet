@@ -334,10 +334,3 @@
 .miniVenom i:nth-child(1) { transform: translateY(-13px) rotate(-24deg); }
 .miniVenom i:nth-child(2) { transform: translateY(-2px); width: 32px; }
 .miniVenom i:nth-child(3) { transform: translateY(9px) rotate(22deg); }
-.miniGradient { position: relative; width: 74%; height: 76px; border-radius: 14px; background: linear-gradient(90deg, #ff9966, #c2509c 52%, #3a3d9e); box-shadow: 0 6px 14px rgba(13,31,22,0.18); border: 1px solid rgba(25,63,48,0.12); }
-.miniGradient b { position: absolute; left: 12px; right: 12px; bottom: 12px; height: 7px; border-radius: 4px; background: rgba(255,255,255,0.55); }
-.miniGradient b i { position: absolute; top: -5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(13,31,22,0.3); border: 4px solid #fff; background-clip: padding-box; }
-.miniGradient b i:nth-child(1) { left: -4px; background-color: #ff9966; }
-.miniGradient b i:nth-child(2) { left: 46%; background-color: #c2509c; outline: 2px solid #193f30; outline-offset: 1px; }
-.miniGradient b i:nth-child(3) { right: -4px; background-color: #3a3d9e; }
-.miniGradient em { position: absolute; right: 24px; top: -14px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid #fff; box-shadow: 0 3px 8px rgba(13,31,22,0.3); background-image: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
