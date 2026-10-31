@@ -572,7 +572,7 @@ export default function NativeletSite({
                 <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 40</span><strong>Paper Crumple</strong><small>Crumple a sheet into a ball · flick it, roll it, smooth it out</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Venom Button", "Tendrils reach out, grab your finger and snap back")} onClick={(event) => openComponent(event, "venom")} aria-haspopup="dialog" aria-label="Open Venom Button web preview">
-                <div className={gallery.study} aria-hidden="true"><div className={gallery.miniVenom}><i /><i /><i /><b /></div></div>
+                <div className={gallery.study} aria-hidden="true"><div className={gallery.miniVenom}><i /><i /><i /><i /><i /><b /><em /></div></div>
                 <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 43</span><strong>Venom Button</strong><small>Tendrils reach out, grab your finger and snap back</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Voice Recorder", "Hold to record · slide to cancel, drag up to lock")} onClick={(event) => openComponent(event, "recorder")} aria-haspopup="dialog" aria-label="Open Voice Recorder web preview">
