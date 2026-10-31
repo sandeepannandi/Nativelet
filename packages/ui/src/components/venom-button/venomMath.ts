@@ -320,6 +320,32 @@ export function strandCircles(s: Venom, i: number): GooCircle[] {
   if (s.mode === "grab") out.push({ x: st.tip.x, y: st.tip.y, r: hair ? 4 : BULB_R });
   return out;
 }
+/** Root circles that join a strand to the pill in the goo pass; the rest of
+ * the strand draws as a crisp ribbon so thin tips survive the goo threshold. */
+export const GOO_ROOT = 5;
+/** A tapered ribbon polygon for one strand: left edge out, right edge back.
+ * Drawn crisp (no blur) so every filament keeps its full length and taper. */
+export function strandRibbon(s: Venom, i: number): Vec[] {
+  "worklet";
+  const cs = strandCircles(s, i);
+  const n = cs.length;
+  const pts: Vec[] = [];
+  for (let k = 0; k < n; k++) {
+    const p = cs[k];
+    const q = cs[Math.min(n - 1, k + 1)];
+    const d = Math.max(0.001, dist(p, q));
+    const px = (-(q.y - p.y) / d) * p.r, py = ((q.x - p.x) / d) * p.r;
+    pts.push({ x: p.x + px, y: p.y + py });
+  }
+  for (let k = n - 1; k >= 0; k--) {
+    const p = cs[k];
+    const q = cs[Math.max(0, k - 1)];
+    const d = Math.max(0.001, dist(p, q));
+    const px = (-(q.y - p.y) / d) * p.r, py = ((q.x - p.x) / d) * p.r;
+    pts.push({ x: p.x - px, y: p.y - py });
+  }
+  return pts;
+}
 /** The goo circles that draw every live spike: short tapers off the pill edge. */
 export function spikeCircles(s: Venom): GooCircle[] {
   "worklet";

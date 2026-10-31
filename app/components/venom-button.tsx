@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
 import {
   GRAB, PILL_CX, PILL_CY, PILL_H, PILL_W, SENSE, VENOM_H, VENOM_W,
-  clampFinger, createVenom, drainEvents, edgeDist, isAnimating, pillFrame, pointerDown, pointerMove, pointerUp,
-  spikeCircles, stepVenom, strandCircles, type Venom, type VenomEvent,
+  GOO_ROOT, clampFinger, createVenom, drainEvents, edgeDist, isAnimating, pillFrame, pointerDown, pointerMove, pointerUp,
+  spikeCircles, stepVenom, strandCircles, strandRibbon, type Venom, type VenomEvent,
 } from "../../packages/ui/src/components/venom-button/venomMath";
 import { VENOM_GLOSS, VENOM_INK, VENOM_RIM, VENOM_TEXT } from "../../packages/ui/src/components/venom-button/venomDesign";
 import styles from "./venom-button.module.css";
@@ -54,8 +54,10 @@ export function VenomButtonPreview() {
       const pill = pillFrame(s);
       roundPill(goo, pill.cx, pill.cy, pill.rx, pill.ry);
       goo.fill();
+      // Only the thick root circles join the goo merge; thin tails would not
+      // survive the alpha threshold and are drawn crisp below instead.
       const all = [] as { x: number; y: number; r: number }[];
-      for (let i = 0; i < s.strands.length; i++) all.push(...strandCircles(s, i));
+      for (let i = 0; i < s.strands.length; i++) all.push(...strandCircles(s, i).slice(0, GOO_ROOT));
       all.push(...spikeCircles(s));
       for (const c of all) {
         goo.beginPath();
@@ -69,6 +71,20 @@ export function VenomButtonPreview() {
       ctx.save();
       ctx.filter = "url(#venom-goo)";
       ctx.drawImage(off, 0, 0);
+      ctx.restore();
+      // Crisp tapered ribbons: full-length filaments over the goo bridge.
+      ctx.save();
+      ctx.scale(SCALE, SCALE);
+      ctx.fillStyle = VENOM_INK;
+      for (let i = 0; i < s.strands.length; i++) {
+        const pts = strandRibbon(s, i);
+        if (pts.length < 3) continue;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y);
+        ctx.closePath();
+        ctx.fill();
+      }
       ctx.restore();
       // Crisp gloss, rim and label above the goo.
       ctx.save();
@@ -151,7 +167,7 @@ export function VenomButtonPreview() {
       <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
         <defs>
           <filter id="venom-goo">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="5" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="4" />
             <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11" />
           </filter>
         </defs>

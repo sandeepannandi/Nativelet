@@ -1,11 +1,12 @@
 // Nativelet Venom Button. MIT: retain the accompanying LICENSE.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, PanResponder, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import { Blur, Circle, ColorMatrix, Group, Paint, RoundedRect, LinearGradient, vec, Canvas } from "@shopify/react-native-skia";
+import { Blur, Circle, ColorMatrix, Group, Paint, Path, RoundedRect, LinearGradient, vec, Canvas } from "@shopify/react-native-skia";
+import { Skia } from "@shopify/react-native-skia";
 import {
   PILL_CX, PILL_CY, PILL_H, PILL_W, VENOM_H, VENOM_W,
-  clampFinger, createVenom, drainEvents, gooMatrix, isAnimating, pillFrame, pointerDown, pointerMove, pointerUp,
-  spikeCircles, stepVenom, strandCircles, type Venom, type VenomEvent,
+  GOO_ROOT, clampFinger, createVenom, drainEvents, gooMatrix, isAnimating, pillFrame, pointerDown, pointerMove, pointerUp,
+  spikeCircles, stepVenom, strandCircles, strandRibbon, type Venom, type VenomEvent,
 } from "./venomMath";
 import { VENOM_BG, VENOM_GLOSS, VENOM_INK, VENOM_RIM, VENOM_TEXT } from "./venomDesign";
 
@@ -91,9 +92,20 @@ export function VenomButton({ label = "Hold me", onPress, onFeedback, reducedMot
 
   const pill = pillFrame(view);
   const matrix = gooMatrix();
+  // Goo merges the pill with the thick strand roots; thin tails draw crisp.
   const circles: { x: number; y: number; r: number }[] = [];
-  for (let i = 0; i < view.strands.length; i++) circles.push(...strandCircles(view, i));
+  for (let i = 0; i < view.strands.length; i++) circles.push(...strandCircles(view, i).slice(0, GOO_ROOT));
   circles.push(...spikeCircles(view));
+  const ribbons = [];
+  for (let i = 0; i < view.strands.length; i++) {
+    const pts = strandRibbon(view, i);
+    if (pts.length < 3) continue;
+    const path = Skia.Path.Make();
+    path.moveTo(pts[0].x, pts[0].y);
+    for (let k = 1; k < pts.length; k++) path.lineTo(pts[k].x, pts[k].y);
+    path.close();
+    ribbons.push(path);
+  }
 
   return (
     <View
@@ -114,6 +126,10 @@ export function VenomButton({ label = "Hold me", onPress, onFeedback, reducedMot
         <Group layer={<Paint><Blur blur={3.5} /><ColorMatrix matrix={matrix} /></Paint>} color={VENOM_INK}>
           <RoundedRect x={pill.cx - pill.rx} y={pill.cy - pill.ry} width={pill.rx * 2} height={pill.ry * 2} r={Math.min(PILL_H / 2, pill.ry)} />
           {circles.map((c, i) => <Circle key={i} cx={c.x} cy={c.y} r={Math.max(0.01, c.r)} />)}
+        </Group>
+        {/* Crisp tapered filaments over the goo bridge. */}
+        <Group color={VENOM_INK}>
+          {ribbons.map((path, i) => <Path key={i} path={path} />)}
         </Group>
         {/* Gloss and rim stay crisp above the goo. */}
         <Group transform={[{ translateX: pill.cx }, { translateY: pill.cy }, { scaleX: view.squash }, { scaleY: 1 / view.squash }]}>
