@@ -81,7 +81,11 @@ expect venom-renders "crash=$CR pill_scale=$SC" "$([ "$CR" = no ] && echo yes ||
 read FX FY <<<"$(P 0 -150)"
 adb shell input swipe $FX $FY $((FX + 1)) $FY 2600 &
 sleep 1.6; shot vn-sense
-wait; sleep 1; shot vn-sense-released
+# The snap is underdamped: root bumps can linger ~1-2s (they always settle -
+# the spring keeps vel above the idle cutoff while any bump is visible, and
+# later probes measure a pixel-identical idle). 2.5s shoots the steady state
+# the melt assertion means, not the mid-settle tail.
+wait; sleep 2.5; shot vn-sense-released
 BRIDGE=$(B -40 -140 40 -60)
 GAP=$(B -18 -158 18 -136)
 D=$(regdiff vn-idle vn-sense $BRIDGE)

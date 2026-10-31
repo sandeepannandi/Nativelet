@@ -1,7 +1,7 @@
 // Nativelet Venom Button. MIT: retain the accompanying LICENSE.
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, PanResponder, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import { Blur, Circle, ColorMatrix, Group, Paint, Path, RoundedRect, LinearGradient, vec, Canvas } from "@shopify/react-native-skia";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, PanResponder, StyleSheet, View, type ViewStyle } from "react-native";
+import { Blur, Circle, ColorMatrix, Group, Paint, Path, RoundedRect, LinearGradient, Text as SkiaText, matchFont, vec, Canvas } from "@shopify/react-native-skia";
 import { Skia } from "@shopify/react-native-skia";
 import {
   PILL_CX, PILL_CY, PILL_H, PILL_W, VENOM_H, VENOM_W,
@@ -9,6 +9,7 @@ import {
   spikeCircles, stepVenom, strandCircles, strandRibbon, type Venom, type VenomEvent,
 } from "./venomMath";
 import { VENOM_BG, VENOM_GLOSS, VENOM_INK, VENOM_RIM, VENOM_TEXT } from "./venomDesign";
+export type { VenomEvent } from "./venomMath";
 
 export type VenomButtonProps = {
   /** Text on the pill. */
@@ -91,6 +92,17 @@ export function VenomButton({ label = "Hold me", onPress, onFeedback, reducedMot
   ).current;
 
   const pill = pillFrame(view);
+  // Label is drawn in Skia (system font via matchFont): sibling RN Text does
+  // not composite above the canvas on Android new arch (device-proven), and
+  // drawing it here keeps it glued to the pill through the squash transform.
+  const font = useMemo(() => {
+    try {
+      return matchFont({ fontFamily: "sans-serif", fontSize: 17, fontWeight: "600" });
+    } catch {
+      return null;
+    }
+  }, []);
+  const labelWidth = useMemo(() => (font ? font.measureText(label).width : 0), [font, label]);
   const matrix = gooMatrix();
   // Goo merges the pill with the thick strand roots; thin tails draw crisp.
   const circles: { x: number; y: number; r: number }[] = [];
@@ -143,16 +155,17 @@ export function VenomButton({ label = "Hold me", onPress, onFeedback, reducedMot
             <Blur blur={3.5} />
           </Circle>
         </Group>
+        {/* Label rides the pill squash, above goo and gloss. */}
+        {font ? (
+          <Group transform={[{ translateX: pill.cx }, { translateY: pill.cy }, { scaleX: view.squash }, { scaleY: 1 / view.squash }]}>
+            <SkiaText x={-labelWidth / 2} y={6} text={label} font={font} color={VENOM_TEXT} />
+          </Group>
+        ) : null}
       </Canvas>
-      <View pointerEvents="none" style={[styles.labelWrap, { transform: [{ translateX: pill.cx - PILL_CX }, { translateY: pill.cy - PILL_CY }, { scaleX: view.squash }, { scaleY: 1 / view.squash }] }]}>
-        <Text style={[styles.label, { color: VENOM_TEXT }]}>{label}</Text>
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   stage: { alignSelf: "center", borderRadius: 16, overflow: "hidden" },
-  labelWrap: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
-  label: { fontSize: 17, fontWeight: "600", letterSpacing: 0.4 },
 });
