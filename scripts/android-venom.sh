@@ -116,19 +116,27 @@ expect venom-sense-reaches "crash=$CR bridge_diff=$D gap_diff=$G" "$OK"
 # full strand cone (dt clamps at 50ms), so sim time lags wall clock and the
 # springs are still converging at a fixed 2.0s/2.6s shot (run 41204477063:
 # drift 35/52 with every behavioral metric passing).
+# Settling is bounded, not open-ended: venomMath simulation measures the
+# reach settling in 0.9s at 60fps and in 1.5s of sim time at the dt clamp
+# (<=20fps); below 20fps the clamp stretches wall time linearly (at 10fps,
+# 3s wall). The 16s hold therefore accepts at most roughly 3x the worst-case
+# sim settle at the emulator slowdown seen in CI - a build whose reach takes
+# genuinely longer FAILs instead of passing slowly. The wall second at which
+# the frame froze is recorded as frozen_at.
 read NX NY <<<"$(P 0 -128)"
+T0=$SECONDS
 adb shell input swipe $NX $NY $((NX + 1)) $NY 16000 &
 SW=$!
 sleep 2.0; shot vn-neargrab-a
 NBRIDGE=$(B -30 -115 30 -40)
 NEAR=$(B -12 -124 12 -110)
-FROZEN=no; STILLB=na; STILLN=na
+FROZEN=no; STILLB=na; STILLN=na; FROZEN_AT=na
 for i in 1 2 3 4 5 6; do
   kill -0 $SW 2>/dev/null || break
   sleep 0.5; shot vn-neargrab-b
   STILLB=$(regdiff vn-neargrab-a vn-neargrab-b $NBRIDGE)
   STILLN=$(regdiff vn-neargrab-a vn-neargrab-b $NEAR)
-  if lt "$STILLB" 2 && lt "$STILLN" 2; then FROZEN=yes; break; fi
+  if lt "$STILLB" 2 && lt "$STILLN" 2; then FROZEN=yes; FROZEN_AT="$((SECONDS - T0))s"; break; fi
   cp "$OUT/vn-neargrab-b.png" "$OUT/vn-neargrab-a.png"
 done
 wait $SW; sleep 3.5; shot vn-neargrab-released
@@ -138,7 +146,7 @@ NM=$(regdiff vn-idle vn-neargrab-released $NBRIDGE)
 NBACK=$(regdiff vn-neargrab-b vn-neargrab-released $NBRIDGE)
 CR=$(crashline venom-neargrab)
 OK=no; { [ "$CR" = no ] && [ "$FROZEN" = yes ] && gt "$ND" 2 && gt "$NN" 2 && lt "$NM" 2 && gt "$NBACK" "$(python3 -c "print($ND * 0.8)")"; } && OK=yes
-expect venom-near-grab-reaches-not-wraps "crash=$CR frozen=$FROZEN last_drift_bridge=$STILLB last_drift_tip=$STILLN bridge_diff=$ND near_tip_diff=$NN melt=$NM returned=$NBACK" "$OK"
+expect venom-near-grab-reaches-not-wraps "crash=$CR frozen=$FROZEN frozen_at=$FROZEN_AT last_drift_bridge=$STILLB last_drift_tip=$STILLN bridge_diff=$ND near_tip_diff=$NN melt=$NM returned=$NBACK" "$OK"
 
 # 3. a close touch (edge distance ~55 dp) wraps the finger: the gap fills in
 # and the wrapped tips keep wobbling (they orbit the fingertip at 3.1 rad/s,
