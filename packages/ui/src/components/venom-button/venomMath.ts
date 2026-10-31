@@ -32,6 +32,10 @@ export const BULB_R = 4;
 export const MAX_PULL = 16;
 /** Input layers clamp the finger this far inside the stage so stretched goo stays visible. */
 export const FINGER_MARGIN = 22;
+export function clamp(v: number, lo: number, hi: number) {
+  "worklet";
+  return Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : lo));
+}
 /** Clamp a raw input point into the stage. Used by the native control and the web preview. */
 export function clampFinger(x: number, y: number): Vec {
   "worklet";
@@ -64,10 +68,6 @@ export type Venom = {
   acc: number;
 };
 
-export function clamp(v: number, lo: number, hi: number) {
-  "worklet";
-  return Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : lo));
-}
 export function clamp01(v: number) {
   "worklet";
   return clamp(v, 0, 1);

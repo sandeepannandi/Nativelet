@@ -1,6 +1,7 @@
 // node --experimental-strip-types --test venomMath.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   CHAIN, GRAB, MAX_PULL, PILL_CX, PILL_CY, SENSE,
   anchorOf, createVenom, drainEvents, edgeDist, isAnimating,
@@ -110,5 +111,40 @@ test("strand ribbons have real fill area (regression: degenerate sliver)", () =>
     // A zero-area sliver means both polygon edges collapsed onto one line,
     // which renders strands as invisible hairlines.
     assert.ok(area > 60, `strand ${i} ribbon area ${area.toFixed(1)} should be well above a degenerate sliver`);
+  }
+});
+
+test("worklet functions never call worklets declared later in the file (regression: native TypeError)", () => {
+  // The react-native-worklets babel plugin rewrites every "worklet" function
+  // declaration into a const factory whose initializer captures same-file
+  // worklets at module-evaluation time. A forward reference captures undefined
+  // and only crashes natively the first time the function is called
+  // (TypeError: undefined is not a function in clampFinger on touch);
+  // node and web never transform the file, so they silently pass.
+  const src = readFileSync(new URL("./venomMath.ts", import.meta.url), "utf8");
+  const decls = [];
+  const re = /(?:export\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*(?::\s*[^{]+)?\s*\{/g;
+  let m;
+  while ((m = re.exec(src))) {
+    let depth = 1, i = re.lastIndex;
+    for (; i < src.length && depth; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") depth--;
+    }
+    const body = src.slice(re.lastIndex, i - 1);
+    if (/^\s*"worklet";/.test(body)) decls.push({ name: m[1], body });
+  }
+  assert.ok(decls.length > 0, "expected to find worklet functions in venomMath.ts");
+  const order = new Map(decls.map((d, k) => [d.name, k]));
+  for (const d of decls) {
+    for (const [name, k] of order) {
+      if (name === d.name) continue;
+      if (new RegExp(`\\b${name}\\s*\\(`).test(d.body)) {
+        assert.ok(
+          k < order.get(d.name),
+          `${d.name} calls ${name}, declared later in the file; the worklets babel transform captures it as undefined and crashes natively`,
+        );
+      }
+    }
   }
 });
