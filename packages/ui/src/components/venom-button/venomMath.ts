@@ -341,8 +341,10 @@ export function strandRibbon(s: Venom, i: number): Vec[] {
     const p = cs[k];
     const q = cs[Math.max(0, k - 1)];
     const d = Math.max(0.001, dist(p, q));
+    // Same left-perp convention as the forward pass; travelling back along
+    // the reversed tangent puts this on the opposite edge of the strand.
     const px = (-(q.y - p.y) / d) * p.r, py = ((q.x - p.x) / d) * p.r;
-    pts.push({ x: p.x - px, y: p.y - py });
+    pts.push({ x: p.x + px, y: p.y + py });
   }
   return pts;
 }
