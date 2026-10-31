@@ -23,11 +23,11 @@ export const GRAB = 92;
 export const TEAR = 150;
 /** Goo circles per strand. */
 export const CHAIN = 15;
-export const BASE_R = 6.5;
-export const TIP_R = 2;
-export const HAIR_BASE_R = 3.2;
-export const HAIR_TIP_R = 1.1;
-export const BULB_R = 5;
+export const BASE_R = 4.5;
+export const TIP_R = 1.4;
+export const HAIR_BASE_R = 2.1;
+export const HAIR_TIP_R = 0.8;
+export const BULB_R = 4;
 /** How far the pill stretches toward a held finger. */
 export const MAX_PULL = 16;
 /** Input layers clamp the finger this far inside the stage so stretched goo stays visible. */
@@ -106,9 +106,9 @@ export function anchorAng(finger: Vec, i: number) {
   const base = Math.atan2(finger.y - PILL_CY, finger.x - PILL_CX);
   const hair = i % 2 === 1;
   const k = Math.floor(i / 2);
-  const spread = hair ? 2.7 : 2.1;
+  const spread = hair ? 1.25 : 0.85;
   const t = STRAND_COUNT < 2 ? 0 : k / (STRAND_COUNT - 1) - 0.5;
-  return base + t * spread + (hash(i, 5) - 0.5) * 0.3;
+  return base + t * spread + (hash(i, 5) - 0.5) * 0.18;
 }
 export function anchorOf(finger: Vec, i: number): Vec {
   "worklet";
@@ -243,7 +243,7 @@ export function stepVenom(v: Venom, dt: number): Venom {
       if (s.mode === "grab") {
         // Wrapped: the tip orbits the fingertip slowly, thicker strands wider.
         const dir = Math.atan2(s.finger.y - a.y, s.finger.x - a.x);
-        const wob = (hair ? 6.5 : 14) * Math.sin(s.time * 3.1 + i * 1.7);
+        const wob = (hair ? 4 : 8) * Math.sin(s.time * 3.1 + i * 1.7);
         const target = { x: s.finger.x + Math.cos(dir + Math.PI / 2) * wob, y: s.finger.y + Math.sin(dir + Math.PI / 2) * wob };
         springTo(st.tip, st.vel, target, 260, 18, h);
       } else if (s.mode === "sense") {
@@ -304,7 +304,7 @@ export function strandCircles(s: Venom, i: number): GooCircle[] {
   const baseR = hair ? HAIR_BASE_R : BASE_R;
   const tipR = hair ? HAIR_TIP_R : TIP_R;
   const len = dist(a, st.tip);
-  const bow = (hash(i, 2) - 0.5) * 10 * clamp01(len / 60);
+  const bow = (hash(i, 2) - 0.5) * 16 * clamp01(len / 60);
   const dir = Math.atan2(st.tip.y - a.y, st.tip.x - a.x);
   const px = Math.cos(dir + Math.PI / 2), py = Math.sin(dir + Math.PI / 2);
   const out: GooCircle[] = [];
