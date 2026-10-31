@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   CHAIN, GRAB, MAX_PULL, PILL_CX, PILL_CY, SENSE,
   anchorOf, createVenom, drainEvents, edgeDist, isAnimating,
-  pointerDown, pointerMove, pointerUp, pillFrame, spikeCircles, stepVenom, strandCircles,
+  pointerDown, pointerMove, pointerUp, pillFrame, spikeCircles, stepVenom, strandCircles, strandRibbon,
 } from "./venomMath.ts";
 
 const step = (s, seconds) => { for (let i = 0; i < Math.round(seconds * 60); i++) stepVenom(s, 1 / 60); return s; };
@@ -93,4 +93,22 @@ test("reduced motion snaps straight to each pose", () => {
 test("same inputs give the same frame", () => {
   const run = () => { const s = createVenom(); pointerDown(s, PILL_CX, 40); pointerMove(s, PILL_CX + 30, 60); step(s, 0.5); return JSON.stringify(s.strands.map((t) => [t.tip.x.toFixed(4), t.tip.y.toFixed(4)])); };
   assert.equal(run(), run());
+});
+
+test("strand ribbons have real fill area (regression: degenerate sliver)", () => {
+  const s = createVenom();
+  pointerDown(s, 30, 50);
+  step(s, 1);
+  for (let i = 0; i < s.strands.length; i++) {
+    const pts = strandRibbon(s, i);
+    let twice = 0;
+    for (let k = 0; k < pts.length; k++) {
+      const a = pts[k], b = pts[(k + 1) % pts.length];
+      twice += a.x * b.y - b.x * a.y;
+    }
+    const area = Math.abs(twice) / 2;
+    // A zero-area sliver means both polygon edges collapsed onto one line,
+    // which renders strands as invisible hairlines.
+    assert.ok(area > 60, `strand ${i} ribbon area ${area.toFixed(1)} should be well above a degenerate sliver`);
+  }
 });
