@@ -72,10 +72,18 @@ CR=$(crashline cymatics-open)
 OK=no; { [ "$CR" = no ] && gt "$N0" 8000 && gt "$CX" 0; } && OK=yes
 expect cymatics-renders "crash=$CR sand_px=$N0 centroid=$CX,$CY" "$OK"
 
-# 1. the scattered sand settles onto the nodal lines. Sand pixel count
-# falls as grains stack on the figure; settle is detected by polling two
-# shots 4s apart until the count stabilizes (max ~64s), not a fixed wait,
-# because the emulator's rAF slows under load.
+# 1. the scattered sand settles onto the nodal lines. The open-time shot
+# is not an honest scattered baseline (the figure may already be forming
+# by the time the activity is up), so scatter the sand with a tap first
+# and measure the settle from that known scattered state. Sand pixel
+# count falls as grains stack on the figure; settle is detected by
+# polling two shots 8s apart until the count stabilizes (max ~64s), not
+# a fixed wait, because the emulator's rAF slows under load.
+W=$(python3 -c "from PIL import Image; print(Image.open('$OUT/cy-early.png').size[0])")
+H=$(python3 -c "from PIL import Image; print(Image.open('$OUT/cy-early.png').size[1])")
+adb shell input tap $((W / 2)) $((H / 2))
+sleep 2; shot cy-scattered
+read N0 _ _ <<<"$(sand cy-scattered)"
 PREV=$N0; SETTLED=no; T0=$SECONDS
 for i in 1 2 3 4 5 6 7 8; do
   sleep 8; shot cy-settle-$i
@@ -91,8 +99,6 @@ cp "$OUT/cy-settle-$i.png" "$OUT/cy-settled.png" 2>/dev/null || true
 SET=$NC
 
 # 2. a sideways drag retunes the drive: the figure visibly reorganizes.
-W=$(python3 -c "from PIL import Image; print(Image.open('$OUT/cy-settled.png').size[0])")
-H=$(python3 -c "from PIL import Image; print(Image.open('$OUT/cy-settled.png').size[1])")
 X0=$((W * 30 / 100)); X1=$((W * 70 / 100)); YC=$((H / 2))
 adb shell input swipe $X0 $YC $X1 $YC 1400
 sleep 3; shot cy-retuned

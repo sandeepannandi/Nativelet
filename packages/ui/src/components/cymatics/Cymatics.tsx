@@ -192,7 +192,7 @@ export function Cymatics({
     const p = pointer.value;
     cymPointer(s, p.x, p.y, p.down === 1);
     if (p.scatter) {
-      cymScatter(s);
+      cymScatter(s, CYM_DEFAULTS);
       pointer.value = { x: p.x, y: p.y, down: p.down, scatter: 0 };
     }
     const dt = Math.min(48, info.timeSincePreviousFrame ?? 16.7) / 1000;
