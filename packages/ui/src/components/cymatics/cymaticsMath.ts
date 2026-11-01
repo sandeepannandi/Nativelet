@@ -256,11 +256,12 @@ export function cymPointer(s: CymState, x: number, y: number, down: boolean) {
 // A tap: the whole plate gets one sharp kick. Grains jump off the nodal
 // lines (farther where the plate vibrates hardest), then the figure
 // reforms. Called from the frame callback when the pointer flags a tap.
-export function cymScatter(s: CymState, opts: CymOptions = CYM_DEFAULTS) {
+export function cymScatter(s: CymState, opts?: CymOptions) {
   'worklet';
+  const o = opts === undefined ? CYM_DEFAULTS : opts;
   for (let i = 0; i < s.n; i++) {
     const a = Math.abs(bilinear(s.amp, s.x[i], s.y[i]));
-    const mag = opts.scatter * (0.45 + 0.55 * Math.min(1, a));
+    const mag = o.scatter * (0.45 + 0.55 * Math.min(1, a));
     const ang = rand01(s) * 6.283185307179586;
     const q = 0.5 + rand01(s);
     s.vx[i] += Math.cos(ang) * mag * q;
@@ -268,13 +269,14 @@ export function cymScatter(s: CymState, opts: CymOptions = CYM_DEFAULTS) {
   }
 }
 
-export function stepCymatics(s: CymState, dt: number, opts: CymOptions = CYM_DEFAULTS) {
+export function stepCymatics(s: CymState, dt: number, opts?: CymOptions) {
   'worklet';
+  const o = opts === undefined ? CYM_DEFAULTS : opts;
   if (dt <= 0) return;
   const step = Math.min(dt, 0.05);
   s.t += step;
   cymRecomputeField(s);
-  const rl = 1 - Math.exp(-opts.response * step);
+  const rl = 1 - Math.exp(-o.response * step);
   const jscale = step * 60;
   const ex = s.excite;
   for (let i = 0; i < s.n; i++) {
@@ -291,19 +293,19 @@ export function stepCymatics(s: CymState, dt: number, opts: CymOptions = CYM_DEF
     // where the plate rings harder. Near a nodal line both the slope walk
     // and the kicks die out, so grains come to rest on the figure.
     const sgn = amp >= 0 ? 1 : -1;
-    const walk = opts.drift * Math.min(1, a * 1.35);
+    const walk = o.drift * Math.min(1, a * 1.35);
     const tvx = (-sgn * gx / gmag) * walk;
     const tvy = (-sgn * gy / gmag) * walk;
     vx += (tvx - vx) * rl;
     vy += (tvy - vy) * rl;
     // Vibration: random kicks that grow with local amplitude, plus the
     // not-yet-dissipated energy of the last retune.
-    const j = (opts.jitter0 + opts.jitter1 * a + opts.exciteKick * ex) * jscale;
+    const j = (o.jitter0 + o.jitter1 * a + o.exciteKick * ex) * jscale;
     vx += (rand01(s) - 0.5) * 2 * j;
     vy += (rand01(s) - 0.5) * 2 * j;
     const m2 = vx * vx + vy * vy;
-    if (m2 > opts.maxSpeed * opts.maxSpeed) {
-      const k = opts.maxSpeed / Math.sqrt(m2);
+    if (m2 > o.maxSpeed * o.maxSpeed) {
+      const k = o.maxSpeed / Math.sqrt(m2);
       vx *= k;
       vy *= k;
     }
@@ -317,7 +319,7 @@ export function stepCymatics(s: CymState, dt: number, opts: CymOptions = CYM_DEF
     s.vx[i] = vx;
     s.vy[i] = vy;
   }
-  s.excite *= Math.exp(-opts.exciteDecay * step);
+  s.excite *= Math.exp(-o.exciteDecay * step);
   if (s.excite < 1e-4) s.excite = 0;
 }
 
