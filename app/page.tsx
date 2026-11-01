@@ -3,6 +3,7 @@ import { join } from "node:path";
 import NativeletSite from "./components/nativelet-site";
 
 const components = {
+  cymatics: { dir: "packages/ui/src/components/cymatics", files: ["Cymatics.tsx", "cymaticsMath.ts", "cymaticsDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   venom: { dir: "packages/ui/src/components/venom-button", files: ["VenomButton.tsx", "venomMath.ts", "venomDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   recorder: { dir: "packages/ui/src/components/voice-recorder", files: ["VoiceRecorder.tsx", "recorderMath.ts", "recorderDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   shatter: { dir: "packages/ui/src/components/glass-shatter", files: ["GlassShatter.tsx", "shatterMath.ts", "shatterDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
@@ -63,6 +64,7 @@ function read(dir: string, files: readonly string[]) {
 
 export default function Home() {
   const sources = {
+    cymatics: read(components.cymatics.dir, components.cymatics.files),
     venom: read(components.venom.dir, components.venom.files),
     recorder: read(components.recorder.dir, components.recorder.files),
     shatter: read(components.shatter.dir, components.shatter.files),

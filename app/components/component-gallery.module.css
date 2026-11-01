@@ -329,6 +329,12 @@
 .miniRecorder em { width: 20px; height: 20px; border-radius: 50%; background: #193f30; position: relative; }
 .miniRecorder em::after { content: ""; position: absolute; left: 7.5px; top: 4px; width: 5px; height: 8px; border-radius: 2.5px; background: #fff; }
 
+.miniCymatics { position: relative; width: 74%; height: 76px; border-radius: 12px; background: linear-gradient(180deg, #2b303a 0%, #14171d 100%); box-shadow: 0 6px 14px rgba(4,8,16,0.35); border: 1px solid rgba(255,255,255,0.08); overflow: hidden; }
+.miniCymatics i { position: absolute; border: 2px solid rgba(240,216,166,0.85); border-radius: 50%; background: transparent; }
+.miniCymatics i:nth-child(1) { left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); }
+.miniCymatics i:nth-child(2) { left: -14px; top: -16px; width: 38px; height: 38px; }
+.miniCymatics i:nth-child(3) { right: -14px; bottom: -16px; width: 38px; height: 38px; }
+.miniCymatics b { position: absolute; inset: 0; background: linear-gradient(90deg, transparent calc(50% - 1px), rgba(240,216,166,0.75) calc(50% - 1px), rgba(240,216,166,0.75) calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(0deg, transparent calc(50% - 1px), rgba(240,216,166,0.75) calc(50% - 1px), rgba(240,216,166,0.75) calc(50% + 1px), transparent calc(50% + 1px)); }
 .miniVenom { position: relative; width: 74%; height: 76px; border-radius: 14px; background: linear-gradient(180deg, #f0f4ef 0%, #dbe5dc 100%); box-shadow: 0 6px 14px rgba(13,31,22,0.18); border: 1px solid rgba(25,63,48,0.14); overflow: hidden; }
 .miniVenom b { position: absolute; left: 14px; top: 50%; width: 62px; height: 26px; transform: translateY(-50%); border-radius: 13px; background: linear-gradient(180deg, #3d453f 0%, #111511 45%, #000 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.32), 0 3px 7px rgba(13,31,22,0.35); }
 .miniVenom i { position: absolute; left: 70px; top: 50%; width: 62px; height: 7px; transform-origin: left center; border-radius: 4px; background: linear-gradient(90deg, #0b0e0c 55%, rgba(11,14,12,0.05)); }
