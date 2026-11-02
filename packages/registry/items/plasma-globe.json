@@ -26,5 +26,5 @@
     "skia": "2.6.2",
     "reanimated": "4.5.1"
   },
-  "nativeDeviceVerified": false
+  "nativeDeviceVerified": true
 }
