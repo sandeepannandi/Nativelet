@@ -344,3 +344,11 @@
 .miniVenom i:nth-child(4) { transform: translateY(9px) rotate(9deg); width: 62px; }
 .miniVenom i:nth-child(5) { transform: translateY(17px) rotate(20deg); width: 46px; }
 .miniVenom em { position: absolute; right: 13px; top: 50%; width: 21px; height: 21px; transform: translateY(-50%); border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f6d9bd 0%, #e0a96f 70%, #cf9257 100%); border: 2px solid #fff; box-shadow: 0 2px 5px rgba(13,31,22,0.3); }
+
+.miniPlasma { position: relative; width: 76px; height: 76px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #3a1670 0%, #12071f 62%, #07030f 100%); box-shadow: 0 6px 14px rgba(4,2,12,0.45), inset 0 0 0 1px rgba(190,160,255,0.25); overflow: hidden; }
+.miniPlasma i { position: absolute; left: 50%; top: 50%; width: 34px; height: 2px; transform-origin: 0 50%; background: linear-gradient(90deg, #fff 0%, #f08cff 40%, rgba(140,50,255,0) 100%); box-shadow: 0 0 6px rgba(226,96,255,0.8); border-radius: 2px; }
+.miniPlasma i:nth-child(1) { transform: rotate(-24deg); }
+.miniPlasma i:nth-child(2) { transform: rotate(48deg); width: 30px; }
+.miniPlasma i:nth-child(3) { transform: rotate(150deg); }
+.miniPlasma i:nth-child(4) { transform: rotate(228deg); width: 28px; }
+.miniPlasma b { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: radial-gradient(circle, #fff 0%, #e9a8ff 55%, #7b2cff 100%); box-shadow: 0 0 10px rgba(226,96,255,0.9); }
