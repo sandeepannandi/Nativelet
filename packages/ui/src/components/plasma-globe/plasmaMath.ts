@@ -84,6 +84,11 @@ function wrapAngle(a: number) {
   return a;
 }
 
+function copyInto(dst: Float32Array, src: Float32Array) {
+  'worklet';
+  for (let i = 0; i < dst.length; i++) dst[i] = src[i];
+}
+
 function rollJag(s: PlasmaState, arr: Float32Array) {
   'worklet';
   for (let i = 0; i < arr.length; i++) arr[i] = rand01(s) * 2 - 1;
@@ -151,7 +156,7 @@ export function createPlasma(seed = 20261102, settled = false): PlasmaState {
   rollJag(s, s.jagB);
   rollBranches(s, s.bpB);
   rollJag(s, s.bjB);
-  s.jagA.set(s.jagB); s.bpA.set(s.bpB); s.bjA.set(s.bjB);
+  copyInto(s.jagA, s.jagB); copyInto(s.bpA, s.bpB); copyInto(s.bjA, s.bjB);
   rollJag(s, s.jagB);
   rollBranches(s, s.bpB);
   rollJag(s, s.bjB);
@@ -217,14 +222,14 @@ export function stepPlasma(s: PlasmaState, dt: number, _unused: number) {
   // Re-roll flicker, shifting B to A so the shape blends continuously.
   while (s.flickT >= FLICK) {
     s.flickT -= FLICK;
-    s.jagA.set(s.jagB);
+    copyInto(s.jagA, s.jagB);
     rollJag(s, s.jagB);
-    s.bjA.set(s.bjB);
+    copyInto(s.bjA, s.bjB);
     rollJag(s, s.bjB);
   }
   while (s.branchT >= BRANCH_ROLL) {
     s.branchT -= BRANCH_ROLL;
-    s.bpA.set(s.bpB);
+    copyInto(s.bpA, s.bpB);
     rollBranches(s, s.bpB);
   }
 

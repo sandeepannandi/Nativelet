@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, PanResponder, View, type ViewStyle } from "react-native";
 import {
-  Canvas, Circle, Fill, Group, LinearGradient, Oval, Points, RadialGradient, RoundedRect, vec,
+  Canvas, Circle, Fill, Group, LinearGradient, Points, RadialGradient, RoundedRect, vec,
 } from "@shopify/react-native-skia";
 import { useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import {
@@ -129,6 +129,18 @@ function Fingertip({ pointer, sim, frame }: { pointer: { value: Pointer }; sim: 
 
 const BOLT_KINDS = [0, 1];
 
+function Filaments({ sim, frame }: { sim: Sim; frame: Frame }) {
+  const glow = useDerivedValue(() => {
+    frame.value;
+    return sim.value.glow > 1 ? 1 : sim.value.glow;
+  });
+  return (
+    <Group opacity={glow}>
+      {BOLT_KINDS.map((k) => <BoltPass key={`b${k}`} sim={sim} frame={frame} kind={k} />)}
+    </Group>
+  );
+}
+
 export function PlasmaGlobe({
   slowMotion = false,
   reducedMotion,
@@ -207,11 +219,6 @@ export function PlasmaGlobe({
     frame.value = frame.value + 1;
   });
 
-  const glow = useDerivedValue(() => {
-    frame.value;
-    return sim.value.glow > 1 ? 1 : sim.value.glow;
-  });
-
   return (
     <View
       style={[{ width: PG_W, height: PG_H, borderRadius: 18, overflow: "hidden", backgroundColor: PG_BACKGROUND }, style]}
@@ -241,9 +248,7 @@ export function PlasmaGlobe({
           <RadialGradient c={vec(GL_CX, GL_CY)} r={GL_R * 0.62} colors={[PG_HAZE, "rgba(100,40,200,0)"]} />
         </Circle>
         <ElectrodeGlow sim={sim} frame={frame} />
-        <Group opacity={glow}>
-          {BOLT_KINDS.map((k) => <BoltPass key={`b${k}`} sim={sim} frame={frame} kind={k} />)}
-        </Group>
+        <Filaments sim={sim} frame={frame} />
         <Fingertip pointer={pointer} sim={sim} frame={frame} />
         {/* Electrode */}
         <Circle cx={GL_CX} cy={GL_CY} r={9}>
@@ -254,12 +259,12 @@ export function PlasmaGlobe({
           <RadialGradient c={vec(GL_CX, GL_CY)} r={GL_R} colors={["rgba(150,110,255,0)", "rgba(150,110,255,0)", PG_FRESNEL]} positions={[0, 0.82, 1]} />
         </Circle>
         <Circle cx={GL_CX} cy={GL_CY} r={GL_R - 0.5} color={PG_RIM} style="stroke" strokeWidth={1} />
-        <Oval x={GL_CX - 92} y={GL_CY - 112} width={110} height={52}>
+        <RoundedRect x={GL_CX - 92} y={GL_CY - 112} width={110} height={52} r={26}>
           <LinearGradient start={vec(0, GL_CY - 112)} end={vec(0, GL_CY - 60)} colors={[PG_SPECULAR, "rgba(255,255,255,0)"]} />
-        </Oval>
-        <Oval x={GL_CX + 58} y={GL_CY + 74} width={46} height={22}>
+        </RoundedRect>
+        <RoundedRect x={GL_CX + 58} y={GL_CY + 74} width={46} height={22} r={11}>
           <LinearGradient start={vec(0, GL_CY + 74)} end={vec(0, GL_CY + 96)} colors={["rgba(255,255,255,0)", "rgba(255,255,255,0.07)"]} />
-        </Oval>
+        </RoundedRect>
       </Canvas>
     </View>
   );
