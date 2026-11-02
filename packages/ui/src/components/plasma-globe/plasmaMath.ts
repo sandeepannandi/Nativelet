@@ -194,6 +194,8 @@ export function plasmaPointer(s: PlasmaState, x: number, y: number, down: boolea
   s.py = y;
 }
 
+// Declared before buildPlasma on purpose: worklets capture helpers when
+// they are defined, so a helper declared later would be undefined.
 function clampGlass(x: number, y: number, out: { x: number; y: number }) {
   'worklet';
   const dx = x - GL_CX;
@@ -207,78 +209,6 @@ function clampGlass(x: number, y: number, out: { x: number; y: number }) {
     out.x = x;
     out.y = y;
   }
-}
-
-export function stepPlasma(s: PlasmaState, dt: number, _unused: number) {
-  'worklet';
-  if (dt <= 0) return;
-  s.t += dt;
-  s.flickT += dt;
-  s.branchT += dt;
-  const target = s.pdown;
-  s.attract += (target - s.attract) * (1 - Math.exp(-dt * (target ? 9 : 4)));
-  s.flash *= Math.exp(-dt * 2.4);
-
-  // Re-roll flicker, shifting B to A so the shape blends continuously.
-  while (s.flickT >= FLICK) {
-    s.flickT -= FLICK;
-    copyInto(s.jagA, s.jagB);
-    rollJag(s, s.jagB);
-    copyInto(s.bjA, s.bjB);
-    rollJag(s, s.bjB);
-  }
-  while (s.branchT >= BRANCH_ROLL) {
-    s.branchT -= BRANCH_ROLL;
-    copyInto(s.bpA, s.bpB);
-    rollBranches(s, s.bpB);
-  }
-
-  const touch = { x: 0, y: 0 };
-  clampGlass(s.px, s.py, touch);
-  const ease = smooth(Math.min(1, Math.max(0, s.attract)));
-  const rate = 1 - Math.exp(-dt * 14);
-
-  for (let i = 0; i < PG_BOLTS; i++) {
-    // Wander: a random walk in angular speed, plus occasional re-strikes.
-    s.angVel[i] += (rand01(s) - 0.5) * dt * 9;
-    s.angVel[i] *= Math.exp(-dt * 0.9);
-    if (s.angVel[i] > 2.4) s.angVel[i] = 2.4;
-    else if (s.angVel[i] < -2.4) s.angVel[i] = -2.4;
-    s.ang[i] = wrapAngle(s.ang[i] + s.angVel[i] * dt);
-    if (rand01(s) < dt * 0.35) {
-      s.ang[i] = wrapAngle(s.ang[i] + (rand01(s) - 0.5) * 2.4);
-      s.reachTarget[i] = 0.62 + rand01(s) * 0.36;
-    }
-    // Free bolts keep apart so the globe fills out.
-    for (let j = 0; j < PG_BOLTS; j++) {
-      if (j === i) continue;
-      const d = wrapAngle(s.ang[i] - s.ang[j]);
-      const ad = Math.abs(d);
-      if (ad < 0.55) s.ang[i] = wrapAngle(s.ang[i] + (d >= 0 ? 1 : -1) * (0.55 - ad) * dt * 1.4);
-    }
-    s.reach[i] += (s.reachTarget[i] - s.reach[i]) * (1 - Math.exp(-dt * 2));
-
-    const wr = GL_R * s.reach[i];
-    const wx = GL_CX + Math.cos(s.ang[i]) * wr;
-    const wy = GL_CY + Math.sin(s.ang[i]) * wr;
-    const mix = ease * s.weight[i];
-    const spread = 9 * ease;
-    const fx = touch.x + s.spreadX[i] * (spread / 9);
-    const fy = touch.y + s.spreadY[i] * (spread / 9);
-    const dx = wx + (fx - wx) * mix;
-    const dy = wy + (fy - wy) * mix;
-    s.tipX[i] += (dx - s.tipX[i]) * rate;
-    s.tipY[i] += (dy - s.tipY[i]) * rate;
-    const c = { x: 0, y: 0 };
-    clampGlass(s.tipX[i], s.tipY[i], c);
-    s.tipX[i] = c.x;
-    s.tipY[i] = c.y;
-  }
-
-  s.pulse = 0.5 + 0.5 * Math.sin(s.t * 9.4) * Math.sin(s.t * 3.1);
-  s.glow = 0.78 + 0.22 * (0.5 + 0.5 * Math.sin(s.t * 23.0) * Math.sin(s.t * 7.3)) + 0.25 * s.flash;
-  if (s.glow > 1.15) s.glow = 1.15;
-  buildPlasma(s, ease);
 }
 
 function buildPlasma(s: PlasmaState, ease: number) {
@@ -368,6 +298,79 @@ function buildPlasma(s: PlasmaState, ease: number) {
     }
   }
 }
+
+export function stepPlasma(s: PlasmaState, dt: number, _unused: number) {
+  'worklet';
+  if (dt <= 0) return;
+  s.t += dt;
+  s.flickT += dt;
+  s.branchT += dt;
+  const target = s.pdown;
+  s.attract += (target - s.attract) * (1 - Math.exp(-dt * (target ? 9 : 4)));
+  s.flash *= Math.exp(-dt * 2.4);
+
+  // Re-roll flicker, shifting B to A so the shape blends continuously.
+  while (s.flickT >= FLICK) {
+    s.flickT -= FLICK;
+    copyInto(s.jagA, s.jagB);
+    rollJag(s, s.jagB);
+    copyInto(s.bjA, s.bjB);
+    rollJag(s, s.bjB);
+  }
+  while (s.branchT >= BRANCH_ROLL) {
+    s.branchT -= BRANCH_ROLL;
+    copyInto(s.bpA, s.bpB);
+    rollBranches(s, s.bpB);
+  }
+
+  const touch = { x: 0, y: 0 };
+  clampGlass(s.px, s.py, touch);
+  const ease = smooth(Math.min(1, Math.max(0, s.attract)));
+  const rate = 1 - Math.exp(-dt * 14);
+
+  for (let i = 0; i < PG_BOLTS; i++) {
+    // Wander: a random walk in angular speed, plus occasional re-strikes.
+    s.angVel[i] += (rand01(s) - 0.5) * dt * 9;
+    s.angVel[i] *= Math.exp(-dt * 0.9);
+    if (s.angVel[i] > 2.4) s.angVel[i] = 2.4;
+    else if (s.angVel[i] < -2.4) s.angVel[i] = -2.4;
+    s.ang[i] = wrapAngle(s.ang[i] + s.angVel[i] * dt);
+    if (rand01(s) < dt * 0.35) {
+      s.ang[i] = wrapAngle(s.ang[i] + (rand01(s) - 0.5) * 2.4);
+      s.reachTarget[i] = 0.62 + rand01(s) * 0.36;
+    }
+    // Free bolts keep apart so the globe fills out.
+    for (let j = 0; j < PG_BOLTS; j++) {
+      if (j === i) continue;
+      const d = wrapAngle(s.ang[i] - s.ang[j]);
+      const ad = Math.abs(d);
+      if (ad < 0.55) s.ang[i] = wrapAngle(s.ang[i] + (d >= 0 ? 1 : -1) * (0.55 - ad) * dt * 1.4);
+    }
+    s.reach[i] += (s.reachTarget[i] - s.reach[i]) * (1 - Math.exp(-dt * 2));
+
+    const wr = GL_R * s.reach[i];
+    const wx = GL_CX + Math.cos(s.ang[i]) * wr;
+    const wy = GL_CY + Math.sin(s.ang[i]) * wr;
+    const mix = ease * s.weight[i];
+    const spread = 9 * ease;
+    const fx = touch.x + s.spreadX[i] * (spread / 9);
+    const fy = touch.y + s.spreadY[i] * (spread / 9);
+    const dx = wx + (fx - wx) * mix;
+    const dy = wy + (fy - wy) * mix;
+    s.tipX[i] += (dx - s.tipX[i]) * rate;
+    s.tipY[i] += (dy - s.tipY[i]) * rate;
+    const c = { x: 0, y: 0 };
+    clampGlass(s.tipX[i], s.tipY[i], c);
+    s.tipX[i] = c.x;
+    s.tipY[i] = c.y;
+  }
+
+  s.pulse = 0.5 + 0.5 * Math.sin(s.t * 9.4) * Math.sin(s.t * 3.1);
+  s.glow = 0.78 + 0.22 * (0.5 + 0.5 * Math.sin(s.t * 23.0) * Math.sin(s.t * 7.3)) + 0.25 * s.flash;
+  if (s.glow > 1.15) s.glow = 1.15;
+  buildPlasma(s, ease);
+}
+
 
 // ---- measurements used by tests and the emulator checks ----
 
