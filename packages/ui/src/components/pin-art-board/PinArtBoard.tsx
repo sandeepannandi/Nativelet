@@ -7,17 +7,17 @@ export type PinArtBoardProps = { erase?: boolean; resetKey?: number; slowMotion?
 export function PinArtBoard({ erase = false, resetKey = 0, slowMotion = false, reducedMotion, onFeedback, style }: PinArtBoardProps) {
   // One owner for simulation, input and reset. Only finished geometry crosses to
   // Skia. Do not mutate nested objects shared between JS and the UI runtime.
-  const sim = useRef(createPins());
+  const [initial] = useState(() => { const state=createPins(); return {state,points:Array.from({length:6},(_,pass)=>pinPoints(state,pass))}; });
+  const sim = useRef(initial.state);
   const [systemReduce,setSystemReduce]=useState(false);
   const reduce=reducedMotion??systemReduce;
   const latest=useRef({erase,slowMotion,reduce,onFeedback});latest.current={erase,slowMotion,reduce,onFeedback};
   const pointer=useRef({x:0,y:0,down:false}),origin=useRef({x:0,y:0});
-  const p0=useSharedValue(pinPoints(sim.current,0)),p1=useSharedValue(pinPoints(sim.current,1)),p2=useSharedValue(pinPoints(sim.current,2)),p3=useSharedValue(pinPoints(sim.current,3)),p4=useSharedValue(pinPoints(sim.current,4)),p5=useSharedValue(pinPoints(sim.current,5));
+  const p0=useSharedValue(initial.points[0]),p1=useSharedValue(initial.points[1]),p2=useSharedValue(initial.points[2]),p3=useSharedValue(initial.points[3]),p4=useSharedValue(initial.points[4]),p5=useSharedValue(initial.points[5]);
   const passes=useMemo(()=>[p0,p1,p2,p3,p4,p5],[p0,p1,p2,p3,p4,p5]);
   const [beat,setBeat]=useState(0);
   const previous=useRef(resetKey);
-  const diagnostics=useRef({frames:0,press:0,move:0,release:0,wipe:0,wall:Date.now()});
-  const clear=()=>{diagnostics.current.wipe++;console.info('PIN_DIAG wipe',JSON.stringify(diagnostics.current));if(latest.current.reduce)sim.current=createPins(false);else wipePins(sim.current);};
+  const clear=()=>{if(latest.current.reduce)sim.current=createPins(false);else wipePins(sim.current);};
   useEffect(()=>{if(previous.current!==resetKey){previous.current=resetKey;clear();}},[resetKey]);
   useEffect(()=>{let alive=true;AccessibilityInfo.isReduceMotionEnabled().then(v=>{if(alive)setSystemReduce(v);}).catch(()=>{});const sub=AccessibilityInfo.addEventListener('reduceMotionChanged',setSystemReduce);return()=>{alive=false;sub.remove();};},[]);
   useEffect(()=>{
@@ -25,8 +25,6 @@ export function PinArtBoard({ erase = false, resetKey = 0, slowMotion = false, r
     const tick=(now:number)=>{
       if(!active)return;
       const s=sim.current,p=pointer.current,o=latest.current;
-      diagnostics.current.frames++;
-      if(diagnostics.current.frames%60===0)console.info('PIN_DIAG frame',JSON.stringify({...diagnostics.current,elapsed:Date.now()-diagnostics.current.wall,wiping:s.wiping,wipe:s.wipe,max:Math.max(...s.h),pointer:p}));
       if(p.down)pressPins(s,p.x,p.y,o.erase);
       const wall=Date.now();
       stepPins(s,Math.min(2,last?(wall-last)/1000:1/60)*(o.slowMotion?.25:1),o.reduce);last=wall;
@@ -43,9 +41,9 @@ export function PinArtBoard({ erase = false, resetKey = 0, slowMotion = false, r
   };
   const pan=useMemo(()=>PanResponder.create({
     onStartShouldSetPanResponder:()=>true,onMoveShouldSetPanResponder:()=>true,
-    onPanResponderGrant:e=>{diagnostics.current.press++;console.info('PIN_DIAG grant',e.nativeEvent.locationX,e.nativeEvent.locationY);origin.current={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};pointer.current={...origin.current,down:true};pressPins(sim.current,origin.current.x,origin.current.y,latest.current.erase);latest.current.onFeedback?.();},
-    onPanResponderMove:(_e,g)=>{diagnostics.current.move++;stroke(origin.current.x+g.dx,origin.current.y+g.dy);},
-    onPanResponderRelease:()=>{diagnostics.current.release++;console.info('PIN_DIAG release',JSON.stringify(pointer.current));pointer.current.down=false;},onPanResponderTerminate:()=>{pointer.current.down=false;},onPanResponderTerminationRequest:()=>false,
+    onPanResponderGrant:e=>{origin.current={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};pointer.current={...origin.current,down:true};pressPins(sim.current,origin.current.x,origin.current.y,latest.current.erase);latest.current.onFeedback?.();},
+    onPanResponderMove:(_e,g)=>{stroke(origin.current.x+g.dx,origin.current.y+g.dy);},
+    onPanResponderRelease:()=>{pointer.current.down=false;},onPanResponderTerminate:()=>{pointer.current.down=false;},onPanResponderTerminationRequest:()=>false,
   }),[]);
   return <View {...pan.panHandlers} style={[{width:PA_W,height:PA_H,borderRadius:20,overflow:'hidden',backgroundColor:'#10161b'},style]} accessible accessibilityRole="adjustable" accessibilityLabel="Pin art board. Drag to raise a lasting impression. Use erase mode to press pins flat, or Wipe flat to clear the board." accessibilityActions={[{name:'increment',label:'Make a centre impression'},{name:'decrement',label:'Flatten board'}]} onAccessibilityAction={e=>{if(e.nativeEvent.actionName==='increment')pressPins(sim.current,170,210);else clear();}}>
     <View pointerEvents="none" style={{position:'absolute',width:1,height:1,opacity:0,transform:[{translateX:beat%2}]}}/>
