@@ -28,11 +28,12 @@ print(int(x0+65*sx),int(y0+190*sy),int(x0+270*sx),int(y0+225*sy),int(x0+170*sx),
 PY
 read X Y EX EY WX WY BX BY RX RY < "$OUT/coords.txt"
 adb shell input swipe "$X" "$Y" "$EX" "$EY" 1800
-sleep 1;shot sculpted
-sleep 2;shot held
+sleep 2;shot sculpted
+sleep 4;shot held
 adb shell input tap "$WX" "$WY"
-sleep 3;shot flat
+sleep 6;shot flat
 adb logcat -d > "$OUT/logcat.txt"
+grep PIN_DIAG "$OUT/logcat.txt" > "$OUT/diagnostics.txt" || true
 if grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG|ReactNativeJS.*(Error|Exception)" "$OUT/logcat.txt";then echo 'pin-session FAIL crash_or_js_error' | tee "$OUT/summary.txt";exit 1;fi
 python3 - "$OUT" "$BX" "$BY" "$RX" "$RY" <<'PY'
 from PIL import Image,ImageChops,ImageStat
