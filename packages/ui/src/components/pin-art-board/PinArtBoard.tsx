@@ -40,6 +40,9 @@ export function PinArtBoard({ erase = false, resetKey = 0, slowMotion = false, r
     if(command.value===2){pressPins(s,170,210);command.value=0;}
     if (p.down) pressPins(s, p.x, p.y, p.erase);
     stepPins(s, Math.min(40, info.timeSincePreviousFrame ?? 16.7) / 1000 * (opts.slowMotion ? .25 : 1), opts.reduce);
+    // Publish the state explicitly. Nested mutations of a shareable object
+    // are not a durable write across successive frame worklets on Android.
+    sim.value = { h: s.h.slice(), v: s.v.slice(), target: s.target.slice(), wipe: s.wipe, wiping: s.wiping };
     frame.value++;
   });
   return <View {...pan.panHandlers} style={[{ width: PA_W, height: PA_H, borderRadius: 20, overflow: 'hidden', backgroundColor: '#10161b' }, style]} accessible accessibilityRole="adjustable" accessibilityLabel="Pin art board. Drag to raise a lasting impression. Use erase mode to press pins flat, or Wipe flat to clear the board." accessibilityActions={[{ name: 'increment', label: 'Make a centre impression' }, { name: 'decrement', label: 'Flatten board' }]} onAccessibilityAction={e => { command.value=e.nativeEvent.actionName==='increment'?2:1; }}>
