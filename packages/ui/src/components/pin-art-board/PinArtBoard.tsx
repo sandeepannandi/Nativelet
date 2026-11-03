@@ -17,28 +17,32 @@ export function PinArtBoard({ erase = false, resetKey = 0, slowMotion = false, r
   const settings = useSharedValue({ reduce, slowMotion });
   const latest = useRef({ erase, onFeedback }); latest.current = { erase, onFeedback };
   const previous = useRef(resetKey);
+  const command = useSharedValue(0);
+  const origin = useRef({x:0,y:0});
   // Canvas-only worklet changes can be missed by Android when its UI is idle.
   const [beat,setBeat]=useState(0);
   useEffect(()=>{let active=true,id=0;const tick=()=>{if(!active)return;setBeat(v=>v+1);id=requestAnimationFrame(tick);};id=requestAnimationFrame(tick);return()=>{active=false;cancelAnimationFrame(id);};},[]);
   useEffect(() => { let alive = true; AccessibilityInfo.isReduceMotionEnabled().then(v => { if (alive) setSystemReduce(v); }).catch(() => {}); const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setSystemReduce); return () => { alive = false; sub.remove(); }; }, []);
   useEffect(() => { settings.value = { reduce, slowMotion }; }, [reduce, slowMotion, settings]);
-  useEffect(() => { if (previous.current === resetKey) return; previous.current = resetKey; if (reduce) sim.value = createPins(false); else { const s = sim.value; wipePins(s); sim.value = { ...s }; } frame.value++; }, [resetKey, reduce, sim, frame]);
+  useEffect(() => { if (previous.current === resetKey) return; previous.current = resetKey; command.value = 1; }, [resetKey, command]);
   const pan = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: e => { pointer.value = { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY, down: true, erase: latest.current.erase }; latest.current.onFeedback?.(); },
-    onPanResponderMove: e => { pointer.value = { x: e.nativeEvent.locationX, y: e.nativeEvent.locationY, down: true, erase: latest.current.erase }; },
+    onPanResponderGrant: e => { origin.current={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY}; pointer.value = { ...origin.current, down: true, erase: latest.current.erase }; latest.current.onFeedback?.(); },
+    onPanResponderMove: (_e, gesture) => { pointer.value = { x: origin.current.x+gesture.dx, y: origin.current.y+gesture.dy, down: true, erase: latest.current.erase }; },
     onPanResponderRelease: () => { pointer.value = { ...pointer.value, down: false }; },
     onPanResponderTerminate: () => { pointer.value = { ...pointer.value, down: false }; },
     onPanResponderTerminationRequest: () => false,
   }), [pointer]);
   useFrameCallback(info => {
     const s = sim.value, p = pointer.value, opts = settings.value;
+    if(command.value===1){ if(opts.reduce){for(let i=0;i<s.h.length;i++){s.h[i]=0;s.target[i]=0;s.v[i]=0;}}else wipePins(s);command.value=0; }
+    if(command.value===2){pressPins(s,170,210);command.value=0;}
     if (p.down) pressPins(s, p.x, p.y, p.erase);
     stepPins(s, Math.min(40, info.timeSincePreviousFrame ?? 16.7) / 1000 * (opts.slowMotion ? .25 : 1), opts.reduce);
     frame.value++;
   });
-  return <View {...pan.panHandlers} style={[{ width: PA_W, height: PA_H, borderRadius: 20, overflow: 'hidden', backgroundColor: '#10161b' }, style]} accessible accessibilityRole="adjustable" accessibilityLabel="Pin art board. Drag to raise a lasting impression. Use erase mode to press pins flat, or Wipe flat to clear the board." accessibilityActions={[{ name: 'increment', label: 'Make a centre impression' }, { name: 'decrement', label: 'Flatten board' }]} onAccessibilityAction={e => { const s = sim.value; if (e.nativeEvent.actionName === 'increment') pressPins(s, 170, 210); else wipePins(s); sim.value = { ...s }; frame.value++; }}>
+  return <View {...pan.panHandlers} style={[{ width: PA_W, height: PA_H, borderRadius: 20, overflow: 'hidden', backgroundColor: '#10161b' }, style]} accessible accessibilityRole="adjustable" accessibilityLabel="Pin art board. Drag to raise a lasting impression. Use erase mode to press pins flat, or Wipe flat to clear the board." accessibilityActions={[{ name: 'increment', label: 'Make a centre impression' }, { name: 'decrement', label: 'Flatten board' }]} onAccessibilityAction={e => { command.value=e.nativeEvent.actionName==='increment'?2:1; }}}>
     <View pointerEvents="none" style={{position:"absolute",width:1,height:1,opacity:0,transform:[{translateX:beat%2}]}}/>
     <Canvas pointerEvents="none" style={{ width: PA_W, height: PA_H }}>
       <Fill color="#10161b" />
