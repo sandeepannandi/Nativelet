@@ -32,18 +32,20 @@ export function pressPins(s: PinState, x: number, y: number, erase = false) {
 export function wipePins(s: PinState) { 'worklet'; s.wiping = true; s.wipe = -18; }
 export function stepPins(s: PinState, elapsed: number, immediate = false) {
   'worklet';
-  const dt = Math.max(0, Math.min(0.04, elapsed));
+  const dt = Math.max(0, Math.min(2, elapsed));
   if (s.wiping) {
     s.wipe += dt * 390;
     for (let i = 0; i < PA_N; i++) if (pinBase(i).x < s.wipe) s.target[i] = 0;
     if (s.wipe > PA_W + 10) { s.wiping = false; s.wipe = -1; }
   }
-  // Substeps keep the stiff, strongly damped contact stable at a 25Hz frame.
-  const n = Math.max(1, Math.ceil(dt / 0.008)), t = dt / n;
+  // Closed-form critically damped response. Unlike a clipped fixed-step
+  // integrator this preserves elapsed time when a software renderer stalls.
+  const omega = 24, decay = Math.exp(-omega * dt);
   for (let i = 0; i < PA_N; i++) {
     if (immediate) { s.h[i] = s.target[i]; s.v[i] = 0; continue; }
-    let h = s.h[i], v = s.v[i];
-    for (let j = 0; j < n; j++) { v += ((s.target[i] - h) * 720 - 48 * v) * t; h += v * t; }
+    const delta = s.h[i] - s.target[i], c = s.v[i] + omega * delta;
+    let h = s.target[i] + (delta + c * dt) * decay;
+    let v = (s.v[i] - omega * c * dt) * decay;
     if (Math.abs(h - s.target[i]) < 0.005 && Math.abs(v) < 0.03) { h = s.target[i]; v = 0; }
     s.h[i] = Math.max(0, Math.min(32, h)); s.v[i] = v;
   }

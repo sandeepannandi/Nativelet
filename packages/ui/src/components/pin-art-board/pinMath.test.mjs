@@ -8,3 +8,5 @@ test('erase lowers only touched targets',()=>{const s=createPins();const before=
 test('wipe settles fully flat',()=>{const s=createPins();wipePins(s);run(s,3);assert.ok(s.h.every(h=>h===0));assert.equal(s.wiping,false);});
 test('geometry has no NaNs and correct batch sizes',()=>{const s=createPins();for(let p=0;p<6;p++){const a=pinPoints(s,p);assert.equal(a.length,PA_N*(p<2?2:1));assert.ok(a.every(q=>Number.isFinite(q.x)&&Number.isFinite(q.y)));}});
 test('reduced motion preserves direct interaction',()=>{const s=createPins(false);pressPins(s,170,210);stepPins(s,.016,true);assert.deepEqual(s.h,s.target);});
+
+test('long stalled frame catches up without instability',()=>{const s=createPins(false);pressPins(s,170,210);stepPins(s,1);assert.ok(Math.max(...s.h)>30);wipePins(s);stepPins(s,1);stepPins(s,1);assert.ok(s.h.every(h=>h===0));});
