@@ -28,17 +28,23 @@ export function PinArtBoard({ erase = false, resetKey = 0, slowMotion = false, r
       diagnostics.current.frames++;
       if(diagnostics.current.frames%60===0)console.info('PIN_DIAG frame',JSON.stringify({...diagnostics.current,elapsed:Date.now()-diagnostics.current.wall,wiping:s.wiping,wipe:s.wipe,max:Math.max(...s.h),pointer:p}));
       if(p.down)pressPins(s,p.x,p.y,o.erase);
-      stepPins(s,Math.min(.04,last?(now-last)/1000:1/60)*(o.slowMotion?.25:1),o.reduce);last=now;
+      const wall=Date.now();
+      stepPins(s,Math.min(2,last?(wall-last)/1000:1/60)*(o.slowMotion?.25:1),o.reduce);last=wall;
       for(let pass=0;pass<6;pass++)passes[pass].value=pinPoints(s,pass);
       // Android sometimes omits presentation on an otherwise idle screen.
       setBeat(v=>v+1);id=requestAnimationFrame(tick);
     };
     id=requestAnimationFrame(tick);return()=>{active=false;cancelAnimationFrame(id);};
   },[passes]);
+  const stroke=(x:number,y:number)=>{
+    const old=pointer.current,steps=Math.max(1,Math.ceil(Math.hypot(x-old.x,y-old.y)/6));
+    for(let i=1;i<=steps;i++)pressPins(sim.current,old.x+(x-old.x)*i/steps,old.y+(y-old.y)*i/steps,latest.current.erase);
+    pointer.current={x,y,down:true};
+  };
   const pan=useMemo(()=>PanResponder.create({
     onStartShouldSetPanResponder:()=>true,onMoveShouldSetPanResponder:()=>true,
-    onPanResponderGrant:e=>{diagnostics.current.press++;console.info('PIN_DIAG grant',e.nativeEvent.locationX,e.nativeEvent.locationY);origin.current={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};pointer.current={...origin.current,down:true};latest.current.onFeedback?.();},
-    onPanResponderMove:(_e,g)=>{diagnostics.current.move++;pointer.current={x:origin.current.x+g.dx,y:origin.current.y+g.dy,down:true};},
+    onPanResponderGrant:e=>{diagnostics.current.press++;console.info('PIN_DIAG grant',e.nativeEvent.locationX,e.nativeEvent.locationY);origin.current={x:e.nativeEvent.locationX,y:e.nativeEvent.locationY};pointer.current={...origin.current,down:true};pressPins(sim.current,origin.current.x,origin.current.y,latest.current.erase);latest.current.onFeedback?.();},
+    onPanResponderMove:(_e,g)=>{diagnostics.current.move++;stroke(origin.current.x+g.dx,origin.current.y+g.dy);},
     onPanResponderRelease:()=>{diagnostics.current.release++;console.info('PIN_DIAG release',JSON.stringify(pointer.current));pointer.current.down=false;},onPanResponderTerminate:()=>{pointer.current.down=false;},onPanResponderTerminationRequest:()=>false,
   }),[]);
   return <View {...pan.panHandlers} style={[{width:PA_W,height:PA_H,borderRadius:20,overflow:'hidden',backgroundColor:'#10161b'},style]} accessible accessibilityRole="adjustable" accessibilityLabel="Pin art board. Drag to raise a lasting impression. Use erase mode to press pins flat, or Wipe flat to clear the board." accessibilityActions={[{name:'increment',label:'Make a centre impression'},{name:'decrement',label:'Flatten board'}]} onAccessibilityAction={e=>{if(e.nativeEvent.actionName==='increment')pressPins(sim.current,170,210);else clear();}}>
