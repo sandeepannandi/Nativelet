@@ -352,3 +352,5 @@
 .miniPlasma i:nth-child(3) { transform: rotate(150deg); }
 .miniPlasma i:nth-child(4) { transform: rotate(228deg); width: 28px; }
 .miniPlasma b { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: radial-gradient(circle, #fff 0%, #e9a8ff 55%, #7b2cff 100%); box-shadow: 0 0 10px rgba(226,96,255,0.9); }
+
+.miniPins{width:220px;height:240px;border:9px solid #4c575f;border-radius:9px;background:radial-gradient(circle at 42% 39%,#e8f1f6 0 1.1px,#778a97 1.4px 2.3px,#152029 2.6px 4px,transparent 4.2px) 0 0/9px 9px,#0b1116;transform:perspective(600px) rotateX(12deg) rotateY(-10deg);box-shadow:12px 18px 26px #18263040;position:relative;overflow:hidden}.miniPins i{position:absolute;inset:43px 32px;border-radius:50%;border:19px solid #c7d6e055;box-shadow:8px 11px 9px #02060a99,inset 6px 8px 8px #010609cc;transform:rotate(-18deg)}

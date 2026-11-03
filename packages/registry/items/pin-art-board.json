@@ -1,0 +1,30 @@
+{
+  "slug": "pin-art-board",
+  "title": "Pin Art Board",
+  "category": "interaction",
+  "files": [
+    "PinArtBoard.tsx",
+    "pinMath.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-reanimated"
+  ],
+  "optionalDependencies": [
+    "expo-haptics (demo adapter only)"
+  ],
+  "tested": {
+    "expo": "57.0.27",
+    "reactNative": "0.86.3",
+    "web": "0.21.2",
+    "skia": "2.6.2",
+    "reanimated": "4.5.1"
+  },
+  "nativeDeviceVerified": false,
+  "description": "Persistent chrome pin relief with touch sculpting, erasing and a progressive wipe."
+}
