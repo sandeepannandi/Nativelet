@@ -42,7 +42,7 @@ export function PinArtBoard({ erase = false, resetKey = 0, slowMotion = false, r
     stepPins(s, Math.min(40, info.timeSincePreviousFrame ?? 16.7) / 1000 * (opts.slowMotion ? .25 : 1), opts.reduce);
     frame.value++;
   });
-  return <View {...pan.panHandlers} style={[{ width: PA_W, height: PA_H, borderRadius: 20, overflow: 'hidden', backgroundColor: '#10161b' }, style]} accessible accessibilityRole="adjustable" accessibilityLabel="Pin art board. Drag to raise a lasting impression. Use erase mode to press pins flat, or Wipe flat to clear the board." accessibilityActions={[{ name: 'increment', label: 'Make a centre impression' }, { name: 'decrement', label: 'Flatten board' }]} onAccessibilityAction={e => { command.value=e.nativeEvent.actionName==='increment'?2:1; }}}>
+  return <View {...pan.panHandlers} style={[{ width: PA_W, height: PA_H, borderRadius: 20, overflow: 'hidden', backgroundColor: '#10161b' }, style]} accessible accessibilityRole="adjustable" accessibilityLabel="Pin art board. Drag to raise a lasting impression. Use erase mode to press pins flat, or Wipe flat to clear the board." accessibilityActions={[{ name: 'increment', label: 'Make a centre impression' }, { name: 'decrement', label: 'Flatten board' }]} onAccessibilityAction={e => { command.value=e.nativeEvent.actionName==='increment'?2:1; }}>
     <View pointerEvents="none" style={{position:"absolute",width:1,height:1,opacity:0,transform:[{translateX:beat%2}]}}/>
     <Canvas pointerEvents="none" style={{ width: PA_W, height: PA_H }}>
       <Fill color="#10161b" />
