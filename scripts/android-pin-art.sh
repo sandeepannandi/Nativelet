@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Focused native pixel evidence. Runs before unrelated full-suite tests.
 set -eu
+python3 -m pip install -q pillow
 OUT=smoke-out/pin-art; mkdir -p "$OUT"
 PKG=com.anonymous.nativeletshowcase
 adb shell am force-stop "$PKG"; adb logcat -c
