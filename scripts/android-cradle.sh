@@ -60,21 +60,27 @@ def diff(a,b,box): return sum(ImageStat.Stat(ImageChops.difference(crop(a,box),c
 FULL=(60,30,280,365); LEFT=(80,150,140,290); RIGHT=(200,150,260,290)
 moving=max(diff('initial',k,FULL) for k in ['swing-a','swing-b','swing-c'])
 farball=max(diff('initial',k,RIGHT) for k in ['swing-a','swing-b','swing-c'])
-# Gradual decay: sparse emulator screenshots cannot sample the swing envelope
-# reliably (screencap cadence aliases the ~1s period, and a real cradle's middle
-# balls keep a small fast jitter that inflates single-pair diffs). The honest
-# pixel-observable claim is: motion is still present at ~45s (decay is not
-# instant or canned) AND the cradle is pixel-identical to rest by ~100s.
+# Eventual settle: motion still present at ~45s (not instant, not a canned
+# loop) AND pixel-identical to rest by ~100s. Per-pass amplitude decay is NOT
+# asserted here: sparse emulator screencaps (~1.5-2s cadence) alias the ~1.07s
+# swing period, box diffs saturate once a ball leaves its rest slot, and the
+# middle balls' residual jitter inflates pairwise diffs - the measured values
+# are reported as inconclusive data, not as a pass. Per-pass energy behavior is
+# frame-rate independent by construction (fixed 1/480s substeps) and is covered
+# by the cradleMath unit tests.
 late_motion=max(diff('late-a',k,FULL) for k in ['late-b','late-c'])
 settlediff=diff('initial','settled',FULL)
+early_env=max(diff('initial',k,FULL) for k in ['swing-a','swing-b','swing-c','early-a','early-b'])
+late_env=max(diff('initial',k,FULL) for k in ['late-a','late-b','late-c'])
 checks=[
  ('release-swing',moving>2,moving),
  ('far-ball-transfer',farball>2,farball),
- ('decays-gradually',late_motion>1.5 and settlediff<1.2,(late_motion,settlediff)),
+ ('eventual-settle',late_motion>1.5 and settlediff<1.2,(late_motion,settlediff)),
  ('settles-to-rest',settlediff<1.2,settlediff),
 ]
 for n,ok,value in checks:
  with open(p/'summary.txt','a') as f:f.write(f'cradle-{n} {"ok" if ok else "FAIL"} value={value}\n')
+with open(p/'summary.txt','a') as f:f.write(f'cradle-amplitude-decay inconclusive reason=screencap-aliasing value=(early_env={early_env},late_env={late_env})\n')
 print((p/'summary.txt').read_text())
 assert all(ok for _,ok,_ in checks),'cradle behavior failed'
 with open(p/'summary.txt','a') as f:f.write('cradle-session ok crash=no\n')
