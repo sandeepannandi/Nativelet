@@ -60,8 +60,10 @@ def diff(a,b,box): return sum(ImageStat.Stat(ImageChops.difference(crop(a,box),c
 FULL=(60,30,280,365); LEFT=(80,150,140,290); RIGHT=(200,150,260,290)
 moving=max(diff('initial',k,FULL) for k in ['swing-a','swing-b','swing-c'])
 farball=max(diff('initial',k,RIGHT) for k in ['swing-a','swing-b','swing-c'])
-# Eventual settle: motion still present at ~45s (not instant, not a canned
-# loop) AND pixel-identical to rest by ~100s. Per-pass amplitude decay is NOT
+# Eventual settle: motion still present at ~45s AND pixel-identical to rest
+# by ~100s. This shows the system keeps evolving and comes to rest; it does
+# not by itself rule out canned animation - the physics model is supported
+# separately by the cradleMath unit tests. Per-pass amplitude decay is NOT
 # asserted here: sparse emulator screencaps (~1.5-2s cadence) alias the ~1.07s
 # swing period, box diffs saturate once a ball leaves its rest slot, and the
 # middle balls' residual jitter inflates pairwise diffs - the measured values
