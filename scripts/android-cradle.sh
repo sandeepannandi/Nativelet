@@ -15,7 +15,7 @@ shot(){ adb exec-out screencap -p > "$OUT/$1.png"; }
 shot initial
 adb logcat -d > "$OUT/logcat-early.txt" || true
 trap 'adb logcat -d > "$OUT/logcat-onexit.txt" 2>/dev/null || true' EXIT
-# Anchor on the wooden base strip (#8b6b4a); canvas is 340x380 logical with the base at x 70..270, y 336..354.
+# Anchor on the wooden base strip (#8b6b4a); canvas is 576x380 logical with the base at x 188..388, y 336..354.
 python3 - "$OUT/initial.png" > "$OUT/coords.txt" <<'PY'
 from PIL import Image
 import sys
@@ -30,13 +30,15 @@ y0=min(rows); mid=(y0+min(rows[-1],y0+8))//2
 xs=[x for x in range(w) if isbase(im.getpixel((x,mid)))]
 x0,x1=min(xs),max(xs)
 s=(x1-x0)/200.0
-print(int(x0-70*s),int(y0-336*s),s)
+print(int(x0-188*s),int(y0-336*s),s)
 PY
 read CX CY S < "$OUT/coords.txt"
 at(){ python3 -c "print(int($CX+$1*$S))"; }
 aty(){ python3 -c "print(int($CY+$1*$S))"; }
-# Pull the leftmost ball (rest 110,260) up-left to ~(10,120) over 900ms, then release.
-adb shell input swipe "$(at 110)" "$(aty 260)" "$(at 10)" "$(aty 120)" 900
+# Pull the leftmost ball (rest 228,260) up-left to ~(5,115) over 900ms, then
+# release. The target sits past the 1.25 rad drag clamp, so the release starts
+# at the maximum representable angle - the case that used to clip the canvas.
+adb shell input swipe "$(at 228)" "$(aty 260)" "$(at 5)" "$(aty 115)" 900
 sleep 0.4; shot swing-a
 sleep 0.4; shot swing-b
 sleep 0.4; shot swing-c
@@ -57,7 +59,7 @@ def crop(name,logical):
     x0,y0,x1,y1=logical
     return Image.open(p/f'{name}.png').convert('RGB').crop((int(cx+x0*s),int(cy+y0*s),int(cx+x1*s),int(cy+y1*s)))
 def diff(a,b,box): return sum(ImageStat.Stat(ImageChops.difference(crop(a,box),crop(b,box))).mean)/3
-FULL=(60,30,280,365); LEFT=(80,150,140,290); RIGHT=(200,150,260,290)
+FULL=(100,28,476,368); LEFT=(198,150,258,290); RIGHT=(318,150,378,290)
 moving=max(diff('initial',k,FULL) for k in ['swing-a','swing-b','swing-c'])
 farball=max(diff('initial',k,RIGHT) for k in ['swing-a','swing-b','swing-c'])
 # Eventual settle: motion still present at ~45s AND pixel-identical to rest

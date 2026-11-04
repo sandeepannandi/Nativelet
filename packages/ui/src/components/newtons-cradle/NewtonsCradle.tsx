@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, PanResponder, View, type ViewStyle } from "react-native";
-import { Canvas, Circle, Line, Oval, Points, RadialGradient, RoundedRect, vec } from "@shopify/react-native-skia";
+import { AccessibilityInfo, PanResponder, View, useWindowDimensions, type ViewStyle } from "react-native";
+import { Canvas, Circle, Group, Line, Oval, Points, RadialGradient, RoundedRect, vec } from "@shopify/react-native-skia";
 import { runOnJS, useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import {
   CRADLE_DEFAULTS,
@@ -94,6 +94,12 @@ export function NewtonsCradle({
     [],
   );
   const opts = useMemo(() => CRADLE_DEFAULTS, []);
+  /* The design space is 576x380 so the full swing fits; scale it down to the
+     host width. Pointer coordinates map back into design space by / scale. */
+  const { width: winW } = useWindowDimensions();
+  const scale = Math.min(1, (winW - 48) / CRADLE_W);
+  const dispW = CRADLE_W * scale;
+  const dispH = CRADLE_H * scale;
   const sim = useSharedValue<CradleState>(createCradle(opts));
   const frame = useSharedValue(0);
   const pointer = useSharedValue<CradlePointer>({ id: 0, x: 0, y: 0, ball: -1 });
@@ -131,15 +137,15 @@ export function NewtonsCradle({
         onStartShouldSetPanResponder: () => !latest.current.reduce,
         onPanResponderGrant: (evt) => {
           const s = sim.value;
-          const x = evt.nativeEvent.locationX;
-          const y = evt.nativeEvent.locationY;
+          const x = evt.nativeEvent.locationX / scale;
+          const y = evt.nativeEvent.locationY / scale;
           const ball = pickBall(s, cfg, x, y, BALL_R * 2.4);
           pointer.value = { id: 1, x, y, ball };
           if (ball >= 0) latest.current.onFeedback?.("grab");
         },
         onPanResponderMove: (evt) => {
           const p = pointer.value;
-          if (p.ball >= 0) pointer.value = { ...p, x: evt.nativeEvent.locationX, y: evt.nativeEvent.locationY };
+          if (p.ball >= 0) pointer.value = { ...p, x: evt.nativeEvent.locationX / scale, y: evt.nativeEvent.locationY / scale };
         },
         onPanResponderRelease: () => {
           if (pointer.value.ball >= 0) latest.current.onFeedback?.("release");
@@ -188,24 +194,26 @@ export function NewtonsCradle({
 
   return (
     <View
-      style={[{ width: CRADLE_W, height: CRADLE_H }, style]}
+      style={[{ width: dispW, height: dispH }, style]}
       accessibilityLabel={label}
       accessibilityRole="image"
       {...pan.panHandlers}
     >
       {!reduce ? <CanvasKeepAlive /> : null}
-      <Canvas pointerEvents="none" style={{ width: CRADLE_W, height: CRADLE_H }}>
+      <Canvas pointerEvents="none" style={{ width: dispW, height: dispH }}>
+        <Group transform={[{ scale }]}>
         <RoundedRect x={0} y={0} width={CRADLE_W} height={CRADLE_H} r={18} color={CRADLE_BACKGROUND} />
-        <RoundedRect x={70} y={338} width={200} height={18} r={4} color={BASE_SIDE} />
-        <RoundedRect x={70} y={336} width={200} height={9} r={3} color={BASE_TOP} />
-        <Line p1={vec(90, 340)} p2={vec(100, 46)} color={FRAME_POST} style="stroke" strokeWidth={7} strokeCap="round" />
-        <Line p1={vec(250, 340)} p2={vec(240, 46)} color={FRAME_POST} style="stroke" strokeWidth={7} strokeCap="round" />
-        <RoundedRect x={84} y={36} width={172} height={11} r={4} color={FRAME_BAR} />
-        <RoundedRect x={84} y={44} width={172} height={4} r={2} color={FRAME_EDGE} opacity={0.55} />
+        <RoundedRect x={188} y={338} width={200} height={18} r={4} color={BASE_SIDE} />
+        <RoundedRect x={188} y={336} width={200} height={9} r={3} color={BASE_TOP} />
+        <Line p1={vec(208, 340)} p2={vec(218, 46)} color={FRAME_POST} style="stroke" strokeWidth={7} strokeCap="round" />
+        <Line p1={vec(368, 340)} p2={vec(358, 46)} color={FRAME_POST} style="stroke" strokeWidth={7} strokeCap="round" />
+        <RoundedRect x={202} y={36} width={172} height={11} r={4} color={FRAME_BAR} />
+        <RoundedRect x={202} y={44} width={172} height={4} r={2} color={FRAME_EDGE} opacity={0.55} />
         <Points points={strings} mode="lines" color={STRING_COLOR} style="stroke" strokeWidth={1.4} strokeCap="round" />
         {INDICES.map((i) => (
           <Ball key={i} sim={sim} frame={frame} i={i} />
         ))}
+        </Group>
       </Canvas>
     </View>
   );

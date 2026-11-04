@@ -1,5 +1,11 @@
-/* Layout and palette shared by the Skia source and the Canvas2D preview. */
-export const CRADLE_W = 340;
+/* Layout and palette shared by the Skia source and the Canvas2D preview.
+   Viewport invariant: a ball held at the maximum drag angle (maxTheta = 1.25
+   rad in cradleMath) must stay fully inside the canvas. The canvas is widened
+   (not the swing narrowed) to guarantee it:
+     pivotX(0) - STRING_LEN * sin(1.25) - BALL_R = 228 - 205.0 - 15 = 8.0 px
+   and symmetric on the right (576 - 8.0 = 568.0). Renderers scale this design
+   space down to the host; keep the invariant when retuning. */
+export const CRADLE_W = 576;
 export const CRADLE_H = 380;
 export const CRADLE_BACKGROUND = "#f3efe6";
 export const CRADLE_BALLS = 5;
