@@ -44,6 +44,7 @@ sleep 1.2; shot early-a
 sleep 0.35; shot early-b
 sleep 45; shot late-a
 sleep 0.35; shot late-b
+sleep 0.5; shot late-c
 sleep 50; shot settled
 adb logcat -d > "$OUT/logcat.txt"
 if grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG|ReactNativeJS.*(Error|Exception)" "$OUT/logcat.txt";then echo 'cradle-session FAIL crash_or_js_error' | tee "$OUT/summary.txt";exit 1;fi
@@ -59,12 +60,16 @@ def diff(a,b,box): return sum(ImageStat.Stat(ImageChops.difference(crop(a,box),c
 FULL=(60,30,280,365); LEFT=(80,150,140,290); RIGHT=(200,150,260,290)
 moving=max(diff('initial',k,FULL) for k in ['swing-a','swing-b','swing-c'])
 farball=max(diff('initial',k,RIGHT) for k in ['swing-a','swing-b','swing-c'])
-early=diff('early-a','early-b',FULL); late=diff('late-a','late-b',FULL)
+# Amplitude = envelope of displacement from the rest frame, not 0.35s pairwise
+# motion: a real cradle's middle balls keep a small fast jitter late in the
+# decay, which inflates pairwise frame diffs even as the swing envelope shrinks.
+early_env=max(diff('initial',k,FULL) for k in ['swing-a','swing-b','swing-c','early-a','early-b'])
+late_env=max(diff('initial',k,FULL) for k in ['late-a','late-b','late-c'])
 settlediff=diff('initial','settled',FULL)
 checks=[
  ('release-swing',moving>2,moving),
  ('far-ball-transfer',farball>2,farball),
- ('amplitude-decays',late<early*0.6 and early>1,(early,late)),
+ ('amplitude-decays',late_env<early_env*0.6 and early_env>3,(early_env,late_env)),
  ('settles-to-rest',settlediff<1.2,settlediff),
 ]
 for n,ok,value in checks:
