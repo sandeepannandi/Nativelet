@@ -354,3 +354,12 @@
 .miniPlasma b { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: radial-gradient(circle, #fff 0%, #e9a8ff 55%, #7b2cff 100%); box-shadow: 0 0 10px rgba(226,96,255,0.9); }
 
 .miniPins{width:220px;height:240px;border:9px solid #4c575f;border-radius:9px;background:radial-gradient(circle at 42% 39%,#e8f1f6 0 1.1px,#778a97 1.4px 2.3px,#152029 2.6px 4px,transparent 4.2px) 0 0/9px 9px,#0b1116;transform:perspective(600px) rotateX(12deg) rotateY(-10deg);box-shadow:12px 18px 26px #18263040;position:relative;overflow:hidden}.miniPins i{position:absolute;inset:43px 32px;border-radius:50%;border:19px solid #c7d6e055;box-shadow:8px 11px 9px #02060a99,inset 6px 8px 8px #010609cc;transform:rotate(-18deg)}
+.miniCradle{position:relative;width:150px;height:110px;border-radius:12px;background:#f3efe6;overflow:hidden}
+.miniCradle::before{content:"";position:absolute;left:14px;right:14px;top:12px;height:5px;border-radius:3px;background:#9aa5ae;box-shadow:0 2px 0 #5c666e55}
+.miniCradle i{position:absolute;top:17px;width:1.5px;height:52px;background:#3f4a52;transform-origin:50% 0}
+.miniCradle i::after{content:"";position:absolute;left:-6.5px;top:50px;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#fdfefe,#c3ccd2 45%,#5f6a72)}
+.miniCradle i:nth-child(1){left:44px;transform:rotate(-42deg)}
+.miniCradle i:nth-child(2){left:60px}
+.miniCradle i:nth-child(3){left:74px}
+.miniCradle i:nth-child(4){left:88px}
+.miniCradle i:nth-child(5){left:102px}
