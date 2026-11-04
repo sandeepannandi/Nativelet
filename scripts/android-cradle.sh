@@ -13,6 +13,8 @@ bash scripts/android-system-ready.sh
 sleep 2
 shot(){ adb exec-out screencap -p > "$OUT/$1.png"; }
 shot initial
+adb logcat -d > "$OUT/logcat-early.txt" || true
+trap 'adb logcat -d > "$OUT/logcat-onexit.txt" 2>/dev/null || true' EXIT
 # Anchor on the wooden base strip (#8b6b4a); canvas is 340x380 logical with the base at x 70..270, y 336..354.
 python3 - "$OUT/initial.png" > "$OUT/coords.txt" <<'PY'
 from PIL import Image
