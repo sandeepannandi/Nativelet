@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, PanResponder, View, type ViewStyle } from "react-native";
 import { Canvas, Circle, Line, Oval, Points, RadialGradient, RoundedRect, vec } from "@shopify/react-native-skia";
-import { useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
+import { runOnJS, useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import {
   CRADLE_DEFAULTS,
   createCradle,
@@ -59,7 +59,7 @@ function Ball({ sim, frame, i }: { sim: ReturnType<typeof useSharedValue<CradleS
     frame.value;
     return PIVOT_Y + STRING_LEN * Math.cos(sim.value.th[i]);
   });
-  const gradientCenter = useDerivedValue(() => vec(cx.value - BALL_R * 0.35, cy.value - BALL_R * 0.42));
+  const gradientCenter = useDerivedValue(() => ({ x: cx.value - BALL_R * 0.35, y: cy.value - BALL_R * 0.42 }));
   const shadowX = useDerivedValue(() => cx.value - BALL_R * 0.9);
   const shadowOpacity = useDerivedValue(() => Math.max(0.05, 0.2 - ((cy.value - REST_BALL_Y) / 150) * 0.15));
   return (
@@ -161,7 +161,8 @@ export function NewtonsCradle({
     stepCradleFixed(s, cfg, dt * (slowM.value ? 0.25 : 1), ptrs, opts);
     if (s.lastCollisionAt > lastClick.value + 0.08) {
       lastClick.value = s.lastCollisionAt;
-      latest.current.onFeedback?.("collision");
+      const cb = latest.current.onFeedback;
+      if (cb) runOnJS(cb)("collision");
     }
     frame.value = frame.value + 1;
   });

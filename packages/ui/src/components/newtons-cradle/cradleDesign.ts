@@ -24,5 +24,6 @@ export const CHROME_STOPS = ["#fdfefe", "#c3ccd2", "#5f6a72"] as const;
 export const SPECULAR = "rgba(255,255,255,0.95)";
 
 export function pivotX(i: number): number {
+  "worklet";
   return CENTER_X + (i - (CRADLE_BALLS - 1) / 2) * BALL_SPACING;
 }
