@@ -3,6 +3,7 @@ import { join } from "node:path";
 import NativeletSite from "./components/nativelet-site";
 
 const components = {
+  cradle: { dir: "packages/ui/src/components/newtons-cradle", files: ["NewtonsCradle.tsx", "cradleMath.ts", "cradleDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   pins: { dir: "packages/ui/src/components/pin-art-board", files: ["PinArtBoard.tsx", "pinMath.ts", "Example.tsx", "README.md", "LICENSE"] },
   plasma: { dir: "packages/ui/src/components/plasma-globe", files: ["PlasmaGlobe.tsx", "plasmaMath.ts", "plasmaDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   cymatics: { dir: "packages/ui/src/components/cymatics", files: ["Cymatics.tsx", "cymaticsMath.ts", "cymaticsDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
@@ -66,6 +67,7 @@ function read(dir: string, files: readonly string[]) {
 
 export default function Home() {
   const sources = {
+    cradle: read(components.cradle.dir, components.cradle.files),
     pins: read(components.pins.dir, components.pins.files),
     plasma: read(components.plasma.dir, components.plasma.files),
     cymatics: read(components.cymatics.dir, components.cymatics.files),
