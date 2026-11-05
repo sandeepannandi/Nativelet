@@ -68,9 +68,11 @@ test('the bell curve emerges from collisions, not from the spawn script', () => 
   const s = createGalton(P);
   pourAll(s);
   const { mean, sd } = stats(histogram(s));
-  /* Ideal binomial for 10 rows: mean 5, sd = sqrt(10)/2 = 1.58. A poured
-     stream spreads a little less than independent single beads (crowding is
-     real physics), so accept 0.9..2.1 around the centre. */
+  /* Ideal binomial for 10 rows: mean 5, sd = sqrt(10)/2 = 1.58. Measured
+     poured-stream sd is ~1.1-1.3 (narrower than ideal; the cause within
+     this model - stream crowding vs the seeded roughness kick vs cascaded
+     sleep - is not separated, so this is a sanity band, not the statistical
+     gate). The tight statistical gate is the single-bead test below. */
   assert.ok(Math.abs(mean - 5) < 0.6, `mean bin ${mean.toFixed(2)} near 5`);
   assert.ok(sd > 0.9 && sd < 2.1, `sd ${sd.toFixed(2)} is bell-like, not a spike or a smear`);
 });
