@@ -51,6 +51,15 @@ shot piled
 adb shell input swipe "$(at 120)" "$(aty 300)" "$(at 480)" "$(aty 300)" 130
 sleep 2
 shot cleared
+# Mid-drag tilt proof: a slow sideways drag eases the board to its tiltMax
+# (0.12 rad); screenshot while the finger is still down, then measure the
+# frame top-edge slope. Evidence for drag-tilt on native, not a physics gate.
+adb shell input swipe "$(at 200)" "$(aty 300)" "$(at 560)" "$(aty 300)" 4000 &
+DRAGPID=$!
+sleep 2
+shot tilted
+wait $DRAGPID
+sleep 1
 adb logcat -d > "$OUT/logcat.txt"
 if grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG|ReactNativeJS.*(Error|Exception)" "$OUT/logcat.txt";then
   echo 'galton-session FAIL crash_or_js_error' | tee "$OUT/summary.txt"
@@ -74,6 +83,22 @@ def beads(name,box):
   if 170<r<235 and 100<g<165 and 30<b<90: n+=1
  return n
 base=beads('initial',BINS)
+def topslope(name):
+    im=Image.open(p/f'{name}.png').convert('RGB')
+    def edge(xx):
+        X=int(cx+xx*s); run=0
+        for y in range(int(cy-80*s), int(cy+720*s)):
+            r,g,b=im.getpixel((X,y))
+            if 85<r<140 and 60<g<105 and 35<b<75:
+                run+=1
+                if run>=3: return y-2
+            else: run=0
+        return None
+    x1=int(cx+120*s); x2=int(cx+456*s)
+    y1=edge(120); y2=edge(456)
+    assert y1 is not None and y2 is not None,'frame edge missing in '+name
+    return (y2-y1)/(x2-x1)
+slope=topslope('tilted')
 dropped=beads('dropped',BINS)
 piled=beads('piled',BINS)
 cleared=beads('cleared',BINS)
@@ -81,6 +106,7 @@ checks=[
  ('drop-lands',dropped>base+250,(dropped,base)),
  ('pour-piles',piled>15000,piled),
  ('swipe-clears',cleared<piled*0.15,(piled,cleared)),
+ ('tilt-rotates',abs(slope)>0.05,round(slope,4)),
 ]
 with open(p/'summary.txt','a') as f:
  for n,ok,value in checks:f.write(f'galton-{n} {"ok" if ok else "FAIL"} value={value}\n')
