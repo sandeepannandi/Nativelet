@@ -13,12 +13,28 @@ enough beads have landed.
   hard knocks or tilting.
 - The bell curve is never scripted: no code picks a bin or nudges a bead
   toward one. The deflection direction at each peg comes from the contact
-  geometry. One explicitly stochastic term stands in for wood grain,
+  geometry. Two explicitly stochastic terms stand in for wood grain,
   dents and spin: hard peg hits re-kick lateral velocity with a seeded
-  random component (`pegJitter`). Poured streams measurably narrow the
-  distribution (sd ~1.1 bins vs the 1.58 binomial ideal; single beads
-  measure ~1.59) - reported as a measured property of this model, not
-  claimed as real-board behaviour.
+  random component (`pegJitter`), and a bead balanced directly on top of
+  one neighbour gets a seeded sideways nudge every 0.4 s (up to six
+  times) until it topples to a lean or proves stable - real grain and
+  flat spots do this. Both are seeded, named here, and are the only
+  randomness in the model.
+- Poured streams measurably narrow the distribution in this model:
+  beads poured 15/s from one spout collide in flight here, so their peg
+  choices correlate. Measured model behaviour (200-bead pour): sd
+  0.79-0.92 across seeds vs the 1.58 binomial ideal; slowing the pour
+  widens it monotonically (3/s -> sd ~1.2, 2/s -> ~1.55), converging on
+  the ideal as the simulated stream thins; single beads dropped one at
+  a time measure sd ~1.8 (n=300). That dose response is this model's
+  pour-rate dependence - whether a real fast-fed board narrows the same
+  way is NOT claimed; all numbers above are measured properties of this
+  model, not real-board behaviour.
+- Pile rest is geometric: a bead sleeps only inside a bin, cradled on at
+  least two sleeping neighbours, leaning on one neighbour off to the
+  side, or balanced after surviving the six nudges. A single contact
+  directly below never puts a bead to sleep - that rule is what stops a
+  pouring stream from freezing into a standing column.
 - Tilting skews the cascade exactly like tilting the real toy.
 - 240 Hz fixed substeps keep the clatter stable at any frame rate.
 - Shared `galtonMath.ts` drives both the Skia source and the Canvas2D web

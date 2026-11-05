@@ -79,12 +79,17 @@ export type GaltonState = {
   contactT: Float32Array;
   beadT: Float32Array;
   pileT: Float32Array;
+  pileC: Uint8Array;
+  pileDx: Float32Array;
+  kickT: Float32Array;
+  kickC: Uint8Array;
   rng: number;
   tilt: number;
   tiltTarget: number;
   spawnAcc: number;
   pouring: number;
   acc: number;
+  revAcc: number;
   time: number;
   settled: number;
   head: Int32Array;
@@ -110,12 +115,17 @@ export function createGalton(p: GaltonPhysics, seed = 22222): GaltonState {
     contactT: new Float32Array(p.maxBalls).fill(-1),
     beadT: new Float32Array(p.maxBalls).fill(-1),
     pileT: new Float32Array(p.maxBalls).fill(-1),
+    pileC: new Uint8Array(p.maxBalls),
+    pileDx: new Float32Array(p.maxBalls),
+    kickT: new Float32Array(p.maxBalls).fill(-1),
+    kickC: new Uint8Array(p.maxBalls),
     rng: seed | 0 || 1,
     tilt: 0,
     tiltTarget: 0,
     spawnAcc: 0,
     pouring: 0,
     acc: 0,
+    revAcc: 0,
     time: 0,
     settled: 0,
     head: new Int32Array(COLS * ROWS_G),
@@ -136,6 +146,10 @@ export function resetGalton(s: GaltonState) {
   s.contactT.fill(-1);
   s.beadT.fill(-1);
   s.pileT.fill(-1);
+  s.pileC.fill(0);
+  s.pileDx.fill(0);
+  s.kickT.fill(-1);
+  s.kickC.fill(0);
 }
 
 function rand(s: GaltonState): number {
@@ -304,7 +318,7 @@ function collideStatics(s: GaltonState, p: GaltonPhysics, i: number) {
   s.y[i] = y;
 }
 
-function collidePairs(s: GaltonState, p: GaltonPhysics) {
+function collidePairs(s: GaltonState, p: GaltonPhysics, track: boolean) {
   "worklet";
   const r2 = 2 * p.ballR;
   for (let i = 0; i < s.n; i++) {
@@ -336,6 +350,18 @@ function collidePairs(s: GaltonState, p: GaltonPhysics) {
               const sj = s.sleep[j] > 0;
               s.beadT[i] = s.time;
               s.beadT[j] = s.time;
+              /* one supporting contact is a balancing act, not a cradle: a
+                 falling bead ridge can prop a bead mid-air one contact at a
+                 time, so only a pocket of TWO sleeping neighbours marks
+                 genuine pile support. Counted geometrically (any overlap,
+                 tracked once per substep): a resting contact breathes between
+                 approaching and separating, so gating on rvn > 0 misses it */
+              if (track && (si || sj)) {
+                const f = si ? j : i;
+                s.pileC[f]++;
+                if (s.pileC[f] === 1) s.pileDx[f] = si ? -dx : dx;
+                if (s.pileC[f] >= 2) s.pileT[f] = s.time;
+              }
               if (rvn > 0) {
                 if (si || sj) {
                   /* a bead pile is not a wall: landing energy dissipates
@@ -348,7 +374,6 @@ function collidePairs(s: GaltonState, p: GaltonPhysics) {
                   s.vy[f] += sgn * (1 + e) * rvn * ny;
                   s.vx[f] *= 0.7;
                   s.vy[f] *= 0.85;
-                  s.pileT[f] = s.time;
                   if (rvn > p.wakeSpeed) wake(s, si ? i : j);
                 } else {
                   const e = rvn > 150 ? p.restBall : 0;
@@ -357,13 +382,21 @@ function collidePairs(s: GaltonState, p: GaltonPhysics) {
                   s.vy[i] -= imp * ny;
                   s.vx[j] += imp * nx;
                   s.vy[j] += imp * ny;
-                  /* wood on wood scrubs a quarter of the slide */
+                  /* wood on wood scrubs a quarter of the slide; resting
+                     granules also rub energy away - without it a surface
+                     raft of awake beads skates on its own contacts and
+                     never settles enough to nod off */
+                  const slow = rvn < 150;
                   const tx = -ny, ty = nx;
-                  const vt = ((s.vx[i] - s.vx[j]) * tx + (s.vy[i] - s.vy[j]) * ty) * 0.06;
+                  const vt = ((s.vx[i] - s.vx[j]) * tx + (s.vy[i] - s.vy[j]) * ty) * (slow ? 0.22 : 0.06);
                   s.vx[i] -= vt * tx;
                   s.vy[i] -= vt * ty;
                   s.vx[j] += vt * tx;
                   s.vy[j] += vt * ty;
+                  if (slow) {
+                    s.vx[i] *= 0.96; s.vy[i] *= 0.985;
+                    s.vx[j] *= 0.96; s.vy[j] *= 0.985;
+                  }
                 }
                 if (rvn > 60) s.lastImpactAt = s.time;
                 s.contactT[i] = s.time;
@@ -443,25 +476,60 @@ function substep(s: GaltonState, p: GaltonPhysics, dt: number) {
     s.next[i] = s.head[c];
     s.head[c] = i;
   }
-  for (let pass = 0; pass < 3; pass++) collidePairs(s, p);
+  s.pileC.fill(0);
+  for (let pass = 0; pass < 3; pass++) collidePairs(s, p, pass === 0);
   for (let i = 0; i < s.n; i++) {
     if (!s.sleep[i]) collideStatics(s, p, i);
+  }
+  /* granular roughness for pinnacle-perched beads: a slow bead balanced
+     almost directly on top of one sleeping neighbour (|dx| <= 4) is a
+     balanced ridge, not a rest state - real grain/flat-spots topple it
+     sideways. A seeded wobble stands in for that roughness until it finds
+     a lean or a pocket. Same honesty class as pegJitter: named, seeded,
+     not a hidden force */
+  for (let i = 0; i < s.n; i++) {
+    if (s.sleep[i]) continue;
+    const pinnacled = s.pileC[i] === 1 && s.pileDx[i] >= -4 && s.pileDx[i] <= 4 &&
+      s.time - s.beadT[i] < 0.1 && s.time - s.kickT[i] > 0.4 && s.kickC[i] < 6 &&
+      s.vx[i] * s.vx[i] + s.vy[i] * s.vy[i] < 400;
+    if (pinnacled) {
+      /* one seeded nudge per 0.4s while perched: repeated every-substep
+         kicks would feed a random walk and stop the crest from ever
+         settling; a single nudge lets it topple or stay */
+      s.vx[i] += (rand(s) - 0.5) * 20;
+      s.kickT[i] = s.time;
+      s.kickC[i]++;
+    }
   }
   /* sleep bookkeeping: slow, supported beads in the bin zone nod off */
   for (let i = 0; i < s.n; i++) {
     if (s.sleep[i]) continue;
     const sp = Math.hypot(s.vx[i], s.vy[i]);
-    const inBins = s.y[i] > p.binTop - 44;
-    /* a bead creeping on top of already-sleeping beads is part of the pile,
-       however high the heap has crested - sleeping beads only ever exist in
-       the bins or the mound, so contact with one is the safe signal */
+    /* genuinely inside a bin, below the mouths: the mouth band itself must
+       not grant sleep - a slow bead drifting across an empty bin's mouth
+       would freeze mid-air and anchor a floating pile */
+    const inBins = s.y[i] > p.binTop + 12;
+    /* a bead cradled in a pocket of at least two sleeping neighbours is part
+       of the pile, however high the heap has crested - the two-contact rule
+       stops the pour stream from freezing into a standing ridge, since beads
+       in a single-file stream only ever touch the one bead below them */
     const onPile = s.time - s.pileT[i] < 0.3;
     const inMound = onPile;
     /* piles nod off when creeping inside the bins, or when resting on other
        beads in the mound above the bin mouths; a bead balanced on a peg
        keeps micro-jittering until it slips off - only near the bins does
        long stillness freeze a bead */
-    if ((inBins && sp < p.sleepSpeed) || (inMound && sp < p.sleepSpeed) || (sp < 4 && s.y[i] > p.binTop - 30)) {
+    /* leaning rest: one support is enough when it is off to the side
+       (|dx| > 4, a shoulder to lean on) and the bead is creeping slowly in
+       the mound band - a pinnacle bead never qualifies via this path */
+    const leaning = s.pileC[i] === 1 && (s.pileDx[i] < -4 || s.pileDx[i] > 4) &&
+      s.time - s.beadT[i] < 0.1 && sp < 25 && s.y[i] > p.binTop - 200;
+    /* balanced rest: a pinnacle bead that has shrugged off six roughness
+       nudges without toppling is statically stable on a flat spot - real
+       beads do this - so it may finally sleep */
+    const balanced = s.pileC[i] === 1 && s.pileDx[i] >= -4 && s.pileDx[i] <= 4 &&
+      s.time - s.beadT[i] < 0.1 && s.kickC[i] >= 6 && sp < 8 && s.y[i] > p.binTop - 200;
+    if ((inBins && sp < p.sleepSpeed) || (inMound && sp < p.sleepSpeed) || leaning || balanced || (sp < 4 && s.y[i] > p.binTop + 12)) {
       s.sleepT[i] += dt;
       if (s.sleepT[i] > (inBins || inMound ? p.sleepDelay : 1.5)) {
         s.sleep[i] = 1;
@@ -474,6 +542,27 @@ function substep(s: GaltonState, p: GaltonPhysics, dt: number) {
       }
     } else {
       s.sleepT[i] = 0;
+    }
+  }
+  /* sleep is conditional on support: about twice a second, a bead sleeping
+     above the bin mouths whose cradle has shifted out from under it (a
+     neighbour was knocked awake and re-settled elsewhere) wakes and falls
+     back in. Bin-region beads are held by the dividers and skip the check */
+  s.revAcc += dt;
+  if (s.revAcc > 0.5) {
+    s.revAcc = 0;
+    const r2s = 2 * p.ballR + 1.5;
+    for (let i = 0; i < s.n; i++) {
+      if (!s.sleep[i] || s.y[i] > p.binTop + 12) continue;
+      let sup = 0, lean = 0;
+      for (let j = 0; j < s.n && sup < 2; j++) {
+        if (j === i || !s.sleep[j]) continue;
+        const dx = s.x[j] - s.x[i], dy = s.y[j] - s.y[i];
+        if (dx * dx + dy * dy < r2s * r2s && dy > -4) { sup++; if (dx < -4 || dx > 4) lean = 1; }
+      }
+      /* two supports cradle, or one off-to-the-side shoulder to lean on;
+         anything less was a perched ridge the pile has since shed */
+      if (sup < 2 && !lean) wake(s, i);
     }
   }
   s.time += dt;
