@@ -68,14 +68,15 @@ test('the bell curve emerges from collisions, not from the spawn script', () => 
   const s = createGalton(P);
   pourAll(s);
   const { mean, sd } = stats(histogram(s));
-  /* Ideal binomial for 10 rows: mean 5, sd = sqrt(10)/2 = 1.58. A fast
-     poured stream measures NARROWER, and that is physical, not scripted:
-     beads poured 15/s from one spout collide in flight and choose peg
-     sides together, so their bin choices are correlated. Measured dose
-     response (seed 7, 120 beads): 2/s -> sd 1.55, 4/s -> 1.08, 8/s ->
-     0.80, 15/s -> 0.86. The slow pour converges on the ideal; the full-
-     rate pour asserts an honest bell band, and the single-bead test below
-     is the tight statistical gate. */
+  /* Ideal binomial for 10 rows: mean 5, sd = sqrt(10)/2 = 1.58. With
+     named Coulomb friction (mu 0.2) the measured full-rate pour lands
+     sd 1.70-1.88 across seeds, the slow pour ~1.50 and single beads
+     ~1.8 - all consistent with the ideal within sampling noise, with no
+     significant pour-rate dependence. (An earlier build measured sd
+     0.8-0.9 here, but that was ad-hoc contact damping acting as
+     unlimited static friction plus count-by-x masking of a frozen
+     stream - both removed.) This test asserts an honest bell band; the
+     single-bead test below is the tight statistical gate. */
   assert.ok(Math.abs(mean - 5) < 0.6, `mean bin ${mean.toFixed(2)} near 5`);
   assert.ok(sd > 0.6 && sd < 2.0, `sd ${sd.toFixed(2)} is bell-like, not a spike or a smear`);
 });
@@ -144,14 +145,25 @@ function auditSettledPile(s, label) {
     }
     return false;
   };
-  /* support rule: >=2 contacts below (cradle), or 1 contact off to the
-     side (lean), or 1 contact directly under a pinnacle bead, or resting
-     on a peg / divider top */
+  /* support rule (static stability for unilateral frictionless round
+     contacts): gravity must pass through the contact span - one
+     supporting contact on EACH side, or one almost directly under the
+     centre, or resting on a peg / divider top. An arch bead held by a
+     single off-side touch is NOT stable and must not be sleeping */
   const supported = (i) => {
     if (onPeg(i) || onDividerTop(i)) return true;
-    const b = below(i);
-    return b.two >= 1; /* one contact below is physical support; the sim's
-                          stricter sleep admission is checked by grounding */
+    let left = 0, right = 0, under = 0;
+    for (let j = 0; j < s.n; j++) {
+      if (j === i || !s.sleep[j]) continue;
+      const dx = s.x[j] - s.x[i];
+      const dy = s.y[j] - s.y[i];
+      if (dy <= 2) continue;
+      if (dx * dx + dy * dy > touch * touch) continue;
+      if (dx < -1) left = 1;
+      else if (dx > 1) right = 1;
+      if (dx >= -4 && dx <= 4) under++;
+    }
+    return (left && right) || under >= 1;
   };
   let aloft = 0;
   for (let i = 0; i < s.n; i++) {

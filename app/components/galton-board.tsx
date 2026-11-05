@@ -276,7 +276,11 @@ export function GaltonBoardPreview() {
       <canvas
         ref={canvasRef}
         className={styles.canvas}
-        style={{ width: GALTON_W, height: GALTON_H }}
+        /* inline height must stay auto: a fixed pixel height overrides the
+           stylesheet's height:auto, so max-width:100% on narrow screens
+           would squeeze the width while height stayed 720 and stretch the
+           board into ovals */
+        style={{ width: GALTON_W, height: "auto" }}
         role="img"
         aria-label="Galton board web preview: wooden beads clatter down brass pegs and pile into a bell curve"
       />
