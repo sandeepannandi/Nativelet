@@ -52,7 +52,13 @@ adb shell input swipe "$(at 120)" "$(aty 300)" "$(at 480)" "$(aty 300)" 130
 sleep 2
 shot cleared
 adb logcat -d > "$OUT/logcat.txt"
-if grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG|ReactNativeJS.*(Error|Exception)" "$OUT/logcat.txt";then echo 'galton-session FAIL crash_or_js_error' | tee "$OUT/summary.txt";exit 1;fi
+if grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG|ReactNativeJS.*(Error|Exception)" "$OUT/logcat.txt";then
+  echo 'galton-session FAIL crash_or_js_error' | tee "$OUT/summary.txt"
+  echo '--- fatal logcat context (for diagnosis) ---'
+  grep -E -B6 -A45 'FATAL EXCEPTION|Fatal signal|JavascriptException|ANR in|AndroidRuntime|ReactNativeJS' "$OUT/logcat.txt" | head -160 || true
+  echo '--- end fatal logcat context ---'
+  exit 1
+fi
 CX=$CX CY=$CY S=$S python3 - "$OUT" <<'PY'
 from PIL import Image
 import os,sys
