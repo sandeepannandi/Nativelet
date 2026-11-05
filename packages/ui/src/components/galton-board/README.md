@@ -20,21 +20,23 @@ enough beads have landed.
   times) until it topples to a lean or proves stable - real grain and
   flat spots do this. Both are seeded, named here, and are the only
   randomness in the model.
-- Poured streams measurably narrow the distribution in this model:
-  beads poured 15/s from one spout collide in flight here, so their peg
-  choices correlate. Measured model behaviour (200-bead pour): sd
-  0.79-0.92 across seeds vs the 1.58 binomial ideal; slowing the pour
-  widens it monotonically (3/s -> sd ~1.2, 2/s -> ~1.55), converging on
-  the ideal as the simulated stream thins; single beads dropped one at
-  a time measure sd ~1.8 (n=300). That dose response is this model's
-  pour-rate dependence - whether a real fast-fed board narrows the same
-  way is NOT claimed; all numbers above are measured properties of this
-  model, not real-board behaviour.
-- Pile rest is geometric: a bead sleeps only inside a bin, cradled on at
-  least two sleeping neighbours, leaning on one neighbour off to the
-  side, or balanced after surviving the six nudges. A single contact
-  directly below never puts a bead to sleep - that rule is what stops a
-  pouring stream from freezing into a standing column.
+- Measured model behaviour (not claimed as real-board behaviour): a
+  full 15/s pour lands sd 1.70-1.88 across seeds, a slow 3/s pour lands
+  ~1.50, and single beads dropped one at a time land ~1.8 (n=300) -
+  all consistent with the 1.58 binomial ideal within sampling noise.
+  (An earlier build measured far narrower, but that was count-by-x
+  masking a frozen stream plus ad-hoc contact damping acting as
+  unlimited static friction; both were removed.)
+- Contacts are unilateral and impulse-based with named Coulomb friction
+  (mu = 0.2, friction angle ~11 deg): tangential impulses are capped at
+  mu times the normal impulse, so beads on steeper slopes keep sliding
+  into pockets instead of being pinned by damping. Pile rest is
+  geometric static stability for round beads: a bead sleeps only inside
+  a bin, cradled by sleeping neighbours on BOTH sides (gravity through
+  the contact span), or balanced almost directly atop one support after
+  surviving six seeded nudges. A single off-side contact never grants
+  sleep - that rule is what stops streams, arches and bridges from
+  freezing mid-pile.
 - Tilting skews the cascade exactly like tilting the real toy.
 - 240 Hz fixed substeps keep the clatter stable at any frame rate.
 - Shared `galtonMath.ts` drives both the Skia source and the Canvas2D web
