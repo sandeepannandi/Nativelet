@@ -363,3 +363,14 @@
 .miniCradle i:nth-child(3){left:74px}
 .miniCradle i:nth-child(4){left:88px}
 .miniCradle i:nth-child(5){left:102px}
+
+.miniGalton{position:relative;width:150px;height:110px;border-radius:12px;background:#f3efe6;overflow:hidden}
+.miniGalton::before{content:"";position:absolute;left:20px;right:20px;top:8px;bottom:8px;border-radius:6px;background:#f5f1e6;box-shadow:inset 0 0 0 3px #6d5238}
+.miniGalton i{position:absolute;width:4px;height:4px;border-radius:50%;background:#c9a24a;box-shadow:0 0 0 1px #7d5f23}
+.miniGalton i:nth-child(1){left:71px;top:26px}
+.miniGalton i:nth-child(2){left:63px;top:38px}
+.miniGalton i:nth-child(3){left:79px;top:38px}
+.miniGalton i:nth-child(4){left:55px;top:50px}
+.miniGalton i:nth-child(5){left:71px;top:50px}
+.miniGalton i:nth-child(6){left:87px;top:50px}
+.miniGalton i:nth-child(7){left:63px;top:74px;width:22px;height:14px;border-radius:0 0 7px 7px;background:linear-gradient(#d1883a,#9c5a1e);box-shadow:none}
