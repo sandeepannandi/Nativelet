@@ -56,8 +56,15 @@ export function pegY(row: number): number {
    bins run from a wall to the first or last divider). */
 export function binCenter(k: number): number {
   "worklet";
-  if (k <= 0) return (WALL_L + dividerX(0)) / 2;
-  if (k >= ROWS) return (dividerX(ROWS - 1) + WALL_R) / 2;
+  /* Self-contained on purpose: on the Reanimated UI runtime an imported
+     worklet's nested call to another worklet resolves to undefined
+     ("undefined is not a function" in binCenter once the bell-curve overlay
+     first renders, Android FATAL EXCEPTION main). dividerX(0) and
+     dividerX(ROWS - 1) are inlined below; identical arithmetic. */
+  const firstDivider = CENTER_X - ((ROWS - 1) / 2) * PEG_SX;
+  const lastDivider = CENTER_X + ((ROWS - 1) / 2) * PEG_SX;
+  if (k <= 0) return (WALL_L + firstDivider) / 2;
+  if (k >= ROWS) return (lastDivider + WALL_R) / 2;
   return CENTER_X + (k - ROWS / 2) * PEG_SX;
 }
 /* Divider k = 0..ROWS-1 hangs below last-row peg k. */
