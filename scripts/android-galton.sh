@@ -42,9 +42,9 @@ sleep 0.8
 adb shell input tap "$(at 288)" "$(aty 300)"
 sleep 0.8
 adb shell input tap "$(at 288)" "$(aty 300)"
-sleep 6
+sleep 10
 shot dropped
-adb shell input swipe "$(at 288)" "$(aty 300)" "$(at 288)" "$(aty 300)" 9000
+adb shell input swipe "$(at 288)" "$(aty 300)" "$(at 288)" "$(aty 300)" 24000
 sleep 45
 shot piled
 # Fast horizontal fling sweeps the bins clean.
@@ -73,11 +73,12 @@ def beads(name,box):
   r,g,b=px
   if 170<r<235 and 100<g<165 and 30<b<90: n+=1
  return n
+base=beads('initial',BINS)
 dropped=beads('dropped',BINS)
 piled=beads('piled',BINS)
 cleared=beads('cleared',BINS)
 checks=[
- ('drop-lands',dropped>40,dropped),
+ ('drop-lands',dropped>base+250,(dropped,base)),
  ('pour-piles',piled>15000,piled),
  ('swipe-clears',cleared<piled*0.15,(piled,cleared)),
 ]
