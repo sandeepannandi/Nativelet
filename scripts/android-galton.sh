@@ -42,7 +42,7 @@ sleep 0.8
 adb shell input tap "$(at 288)" "$(aty 300)"
 sleep 0.8
 adb shell input tap "$(at 288)" "$(aty 300)"
-sleep 10
+sleep 14
 shot dropped
 adb shell input swipe "$(at 288)" "$(aty 300)" "$(at 288)" "$(aty 300)" 24000
 sleep 45
@@ -64,7 +64,7 @@ from PIL import Image
 import os,sys
 from pathlib import Path
 p=Path(sys.argv[1]); cx=float(os.environ['CX']); cy=float(os.environ['CY']); s=float(os.environ['S'])
-BINS=(34,504,542,688)
+BINS=(34,504,542,718)
 def beads(name,box):
  x0,y0,x1,y1=box
  im=Image.open(p/f'{name}.png').convert('RGB').crop((int(cx+x0*s),int(cy+y0*s),int(cx+x1*s),int(cy+y1*s)))
