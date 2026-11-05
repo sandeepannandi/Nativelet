@@ -97,6 +97,12 @@ export function GaltonBoard({
   const sim = useSharedValue<GaltonState>(createGalton(GALTON_DEFAULTS));
   const frame = useSharedValue(0);
   const pouringSV = useSharedValue(false);
+  /* Commands from JS-thread gesture handlers to the UI-thread sim. The sim
+     object lives on the UI runtime; mutating sim.value from the JS thread is
+     lost, so gestures set primitive flags that the frame callback applies. */
+  const dropCmd = useSharedValue(0);
+  const resetCmd = useSharedValue(0);
+  const tiltSV = useSharedValue(0);
   const slowM = useSharedValue(false);
   const reduceM = useSharedValue(false);
   const lastClick = useSharedValue(-10);
@@ -130,6 +136,9 @@ export function GaltonBoard({
       for (let f = 0; f < 14 * 60; f++) stepGalton(s, 1 / 60, GALTON_DEFAULTS);
       setPouring(s, false);
       for (let f = 0; f < 26 * 60; f++) stepGalton(s, 1 / 60, GALTON_DEFAULTS);
+      /* Reassign so the pre-run state reaches the UI runtime (a JS-side
+         sim.value read is a detached copy on native). */
+      sim.value = s;
     }
     frame.value = frame.value + 1;
   }, [reduce, reduceM, sim, frame]);
@@ -160,7 +169,7 @@ export function GaltonBoard({
               pouringSV.value = false;
             }
           }
-          if (g.moved) setTiltTarget(sim.value, GALTON_DEFAULTS, gs.dx / 420);
+          if (g.moved) tiltSV.value = gs.dx / 420;
         },
         onPanResponderRelease: (_evt, gs) => {
           const g = gesture.current;
@@ -169,20 +178,20 @@ export function GaltonBoard({
             g.holding = false;
             pouringSV.value = false;
           } else if (Math.abs(gs.vx) > 1.1 || Math.abs(gs.dx) > 70) {
-            resetGalton(sim.value);
+            resetCmd.value += 1;
             latest.current.onFeedback?.("clear");
           } else if (!g.moved) {
-            dropOne(sim.value, GALTON_DEFAULTS);
+            dropCmd.value += 1;
             latest.current.onFeedback?.("drop");
           }
-          setTiltTarget(sim.value, GALTON_DEFAULTS, 0);
+          tiltSV.value = 0;
         },
         onPanResponderTerminate: () => {
           const g = gesture.current;
           window.clearTimeout(g.holdTimer);
           g.holding = false;
           pouringSV.value = false;
-          setTiltTarget(sim.value, GALTON_DEFAULTS, 0);
+          tiltSV.value = 0;
         },
         onPanResponderTerminationRequest: () => false,
       }),
@@ -192,6 +201,15 @@ export function GaltonBoard({
   useFrameCallback((info) => {
     if (reduceM.value) return;
     const s = sim.value;
+    if (resetCmd.value > 0) {
+      resetGalton(s);
+      resetCmd.value = 0;
+    }
+    while (dropCmd.value > 0) {
+      dropOne(s, GALTON_DEFAULTS);
+      dropCmd.value -= 1;
+    }
+    setTiltTarget(s, GALTON_DEFAULTS, tiltSV.value);
     const dt = Math.min(48, info.timeSincePreviousFrame ?? 16.7) / 1000;
     setPouring(s, pouringSV.value);
     stepGalton(s, dt * (slowM.value ? 0.25 : 1), GALTON_DEFAULTS);
