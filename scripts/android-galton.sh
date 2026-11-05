@@ -34,6 +34,7 @@ s=(x1-x0)/556.0
 print(int(x0-10*s),int(y0-8*s),s)
 PY
 read CX CY S < "$OUT/coords.txt"
+export CX CY S
 at(){ python3 -c "print(int($CX+$1*$S))"; }
 aty(){ python3 -c "print(int($CY+$1*$S))"; }
 # Tap three beads into the lattice, then hold the board to pour the hopper.
@@ -47,10 +48,28 @@ shot dropped
 adb shell input swipe "$(at 288)" "$(aty 300)" "$(at 288)" "$(aty 300)" 24000
 sleep 45
 shot piled
-# Fast horizontal fling sweeps the bins clean.
-adb shell input swipe "$(at 120)" "$(aty 300)" "$(at 480)" "$(aty 300)" 130
-sleep 2
-shot cleared
+# Fast horizontal fling sweeps the bins clean. A very short swipe is
+# occasionally coalesced by the emulator input pipeline into a tap-like
+# sequence (no move events -> drop instead of clear; observed once in run
+# 42021783288 vs pass in 42016966367 with identical code). Use a 250ms fling
+# and retry up to 3 times with a pixel re-check; a genuinely broken clear
+# still fails the gate after all attempts.
+count_beads(){ python3 - "$OUT/$1.png" <<'PY2'
+from PIL import Image
+import sys,os
+cx,cy,s=float(os.environ['CX']),float(os.environ['CY']),float(os.environ['S'])
+im=Image.open(sys.argv[1]).convert('RGB').crop((int(cx+34*s),int(cy+504*s),int(cx+542*s),int(cy+718*s)))
+print(sum(1 for r,g,b in im.getdata() if 170<r<235 and 100<g<165 and 30<b<90))
+PY2
+}
+PILED_COUNT=$(count_beads piled)
+for attempt in 1 2 3; do
+  adb shell input swipe "$(at 120)" "$(aty 300)" "$(at 480)" "$(aty 300)" 250
+  sleep 2
+  shot cleared
+  CLEARED_COUNT=$(count_beads cleared)
+  python3 -c "import sys; sys.exit(0 if $CLEARED_COUNT < $PILED_COUNT*0.15 else 1)" && break
+done
 # Mid-drag tilt proof: a slow sideways drag eases the board to its tiltMax
 # (0.12 rad); screenshot while the finger is still down, then measure the
 # frame top-edge slope. Evidence for drag-tilt on native, not a physics gate.
