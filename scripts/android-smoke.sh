@@ -14,8 +14,9 @@ echo "package=$PKG" | tee "$OUT/summary.txt"
 # Run new focused evidence first so unrelated old suites cannot skip it.
 bash scripts/android-pin-art.sh || exit 1
 bash scripts/android-cradle.sh || exit 1
+bash scripts/android-galton.sh || exit 1
 adb shell wm size > "$OUT/wm.txt"
-ROUTES="index fold genie blossom capsule cards carousel chart curl glass gooey light lens morph orbit pinch ripple sort swipe toasts mosaic bubbles flap banner fog pendulum blackhole coin reveal prism hourglass strings range wheel timeline path player flowfield crumple shatter recorder venom cymatics plasma-globe pin-art cradle"
+ROUTES="index fold genie blossom capsule cards carousel chart curl glass gooey light lens morph orbit pinch ripple sort swipe toasts mosaic bubbles flap banner fog pendulum blackhole coin reveal prism hourglass strings range wheel timeline path player flowfield crumple shatter recorder venom cymatics plasma-globe pin-art cradle galton"
 for r in $ROUTES; do
   adb shell am force-stop "$PKG"
   adb logcat -c

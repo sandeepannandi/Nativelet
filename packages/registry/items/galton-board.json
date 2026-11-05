@@ -1,0 +1,31 @@
+{
+  "slug": "galton-board",
+  "title": "Galton Board",
+  "category": "interaction",
+  "files": [
+    "GaltonBoard.tsx",
+    "galtonMath.ts",
+    "galtonDesign.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-reanimated"
+  ],
+  "optionalDependencies": [
+    "expo-haptics (demo adapter only)"
+  ],
+  "tested": {
+    "expo": "57.0.27",
+    "reactNative": "0.86.3",
+    "web": "0.21.2",
+    "skia": "2.6.2",
+    "reanimated": "4.5.1"
+  },
+  "nativeDeviceVerified": false,
+  "description": "Wooden Galton board with rigid-bead physics: quincunx peg deflections, real ball-ball collisions, pour/tilt/clear gestures, and an emergent bell curve."
+}
