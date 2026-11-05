@@ -48,12 +48,14 @@ shot dropped
 adb shell input swipe "$(at 288)" "$(aty 300)" "$(at 288)" "$(aty 300)" 24000
 sleep 45
 shot piled
-# Fast horizontal fling sweeps the bins clean. A very short swipe is
-# occasionally coalesced by the emulator input pipeline into a tap-like
-# sequence (no move events -> drop instead of clear; observed once in run
-# 42021783288 vs pass in 42016966367 with identical code). Use a 250ms fling
-# and retry up to 3 times with a pixel re-check; a genuinely broken clear
-# still fails the gate after all attempts.
+# Fast horizontal fling sweeps the bins clean. The gate evaluates the FIRST
+# attempt with the original 130ms fling, exactly once - retries never count
+# toward it. Run 42021783288 showed a no-op fling while the identical
+# gesture cleared in 42016966367; whether that was input coalescing or
+# component gesture handling is UNPROVEN. Each fling is traced with getevent
+# so a no-op can be attributed (ABS_MT_POSITION_X samples ~ delivered move
+# events). Diagnostic retries at 250ms (slower delivery) run only after a
+# failed first attempt and are reported as separate non-gating lines.
 count_beads(){ python3 - "$OUT/$1.png" <<'PY2'
 from PIL import Image
 import sys,os
@@ -62,14 +64,36 @@ im=Image.open(sys.argv[1]).convert('RGB').crop((int(cx+34*s),int(cy+504*s),int(c
 print(sum(1 for r,g,b in im.getdata() if 170<r<235 and 100<g<165 and 30<b<90))
 PY2
 }
+fling(){ # $1 duration-ms  $2 label
+  adb shell getevent -lt > "$OUT/getevent-$2.txt" 2>&1 &
+  local GEPID=$!
+  sleep 0.5
+  adb shell input swipe "$(at 120)" "$(aty 300)" "$(at 480)" "$(aty 300)" "$1"
+  sleep 0.5
+  kill $GEPID 2>/dev/null || true
+  wait $GEPID 2>/dev/null || true
+}
+move_events(){
+  if [ -f "$OUT/getevent-$1.txt" ]; then grep -c 'ABS_MT_POSITION_X' "$OUT/getevent-$1.txt" || true; else echo 0; fi
+}
+: > "$OUT/clear-attempts.txt"
 PILED_COUNT=$(count_beads piled)
-for attempt in 1 2 3; do
-  adb shell input swipe "$(at 120)" "$(aty 300)" "$(at 480)" "$(aty 300)" 250
-  sleep 2
-  shot cleared
-  CLEARED_COUNT=$(count_beads cleared)
-  python3 -c "import sys; sys.exit(0 if $CLEARED_COUNT < $PILED_COUNT*0.15 else 1)" && break
-done
+fling 130 cleared
+sleep 2
+shot cleared
+C1=$(count_beads cleared)
+M1=$(move_events cleared)
+echo "1 130 $C1 $M1" >> "$OUT/clear-attempts.txt"
+if ! python3 -c "import sys; sys.exit(0 if $C1 < $PILED_COUNT*0.15 else 1)"; then
+  for n in 2 3; do
+    fling 250 cleared$n
+    sleep 2
+    shot cleared$n
+    C=$(count_beads cleared$n)
+    M=$(move_events cleared$n)
+    echo "$n 250 $C $M" >> "$OUT/clear-attempts.txt"
+  done
+fi
 # Mid-drag tilt proof: a slow sideways drag eases the board to its tiltMax
 # (0.12 rad); screenshot while the finger is still down, then measure the
 # frame top-edge slope. Evidence for drag-tilt on native, not a physics gate.
@@ -129,6 +153,12 @@ checks=[
 ]
 with open(p/'summary.txt','a') as f:
  for n,ok,value in checks:f.write(f'galton-{n} {"ok" if ok else "FAIL"} value={value}\n')
+ # non-gating diagnostics: per-attempt bead count + delivered move events
+ try:
+  for line in (p/'clear-attempts.txt').read_text().splitlines():
+   n,dur,cnt,mv=line.split()
+   f.write(f'galton-swipe-attempt{n} info duration_ms={dur} beads={cnt} move_events={mv}\n')
+ except FileNotFoundError: pass
 print((p/'summary.txt').read_text())
 assert all(ok for _,ok,_ in checks),'galton behavior failed'
 with open(p/'summary.txt','a') as f:f.write('galton-session ok crash=no\n')
