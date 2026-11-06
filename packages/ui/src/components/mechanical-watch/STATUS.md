@@ -146,3 +146,24 @@ extract actual exit stone outline + contacting tooth outline + contact
 point; reproduce those true shapes as face lists, incl. a club-tooth polygon
 for the wheel (tooth becomes 2-3 contact points, or SAT polygon-vs-polygon).
 Also still open: jewel slot coverage at high amplitude (rattle episodes).
+
+## Run 6 (~13:48 IST): PIVOT CORRECTION - arbor is ~1.3-1.6R above the wheel, not 2.52R
+Digitized the exit contact from the reference frames (f001/f008, 8x crops):
+- EXIT LOCK = tooth TIP vs the stone's LONG SIDE face (not an end shelf):
+  measured face normal ~139 deg (math frame) at contact polar ~57 deg, r ~ R.
+  That gives near-full normal resistance to tooth travel (no friction creep)
+  - the exit lock topology my model was missing.
+- Zero-motion analysis of the blue fork across 40 frames puts the pallet
+  ARBOR at ~y=110-130 orig px above the wheel center: 1.3-1.6 x R. My run-2
+  "2.52R" measured the slot neck, not the arbor - wrong, correcting.
+  (Original pre-rewrite forkPivot 13.4 was accidentally right.)
+- Draw sign at exit is marginal and pivot-distance-critical; with the short
+  arbor a face near 132 deg gives solid draw to -bank AND 0.96 resist AND
+  0.27 creep ratio (all good). Entry faces must be re-derived for the new
+  arbor as well (corner-cone split changes sign of net draw with old faces).
+NEXT RUN: re-derive all four faces for pivot (0,13.4): extend probe3.mjs into
+a feasibility checker (resist / draw-to-engaged-bank / corner-cone contains
+-T with margin toward the lock edge / creep ratio < 0.35) using measured GIF
+angles as anchors; new fork tail proportions (hornR ~9, rollerR ~2.5,
+balancePivot ~12); retune driveTorque (reflected inertia drops ~(13/18.8)^2);
+validate diag5 (exit arrests on lock face, half-pitch/beat) + diag2.
