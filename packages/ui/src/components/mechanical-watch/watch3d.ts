@@ -82,7 +82,7 @@ export function lathe(profile: [number, number][], seg: number, col: V3, metal: 
     for (let k = 0; k < n - 1; k++) {
       const [r0, z0] = profile[k], [r1, z1] = profile[k + 1];
       const A: V3 = [r0 * c0, r0 * s0, z0], B: V3 = [r1 * c0, r1 * s0, z1];
-      const C: V3 = [r1 * c1, r1 * s1, z1], D: V3 = [r0 * c1, r0 * s0, z0];
+      const C: V3 = [r1 * c1, r1 * s1, z1], D: V3 = [r0 * c1, r0 * s1, z0];
       const nA: V3 = [pn[k][0] * cm, pn[k][0] * sm, pn[k][1]];
       const nB: V3 = [pnL[k + 1][0] * cm, pnL[k + 1][0] * sm, pnL[k + 1][1]];
       if (r0 > 1e-6 && r1 > 1e-6) { const nQ = nMean(nA, nB); pushTriN(p, nr, idx, A, nQ, B, nQ, C, nQ); pushTriN(p, nr, idx, A, nQ, C, nQ, D, nQ); }
