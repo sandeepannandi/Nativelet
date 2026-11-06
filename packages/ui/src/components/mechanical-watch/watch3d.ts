@@ -37,6 +37,13 @@ function pushTriN(p: number[], n: number[], i: number[], a: V3, na: V3, b: V3, n
   i.push(base, base + 1, base + 2);
 }
 
+/** Mean of two unit normals (for quad-shared shading). */
+function nMean(x: V3, y: V3): V3 {
+  const mx = x[0] + y[0], my = x[1] + y[1], mz = x[2] + y[2];
+  const l = Math.sqrt(mx * mx + my * my + mz * mz) || 1;
+  return [mx / l, my / l, mz / l];
+}
+
 /** Surface of revolution around the Y... around the Z axis. profile = [r, z][]. */
 export function lathe(profile: [number, number][], seg: number, col: V3, metal: number): Mesh {
   const p: number[] = [], nr: number[] = [], idx: number[] = [];
@@ -78,7 +85,7 @@ export function lathe(profile: [number, number][], seg: number, col: V3, metal: 
       const C: V3 = [r1 * c1, r1 * s1, z1], D: V3 = [r0 * c1, r0 * s0, z0];
       const nA: V3 = [pn[k][0] * cm, pn[k][0] * sm, pn[k][1]];
       const nB: V3 = [pnL[k + 1][0] * cm, pnL[k + 1][0] * sm, pnL[k + 1][1]];
-      if (r0 > 1e-6 && r1 > 1e-6) { pushTriN(p, nr, idx, A, nA, B, nB, C, nB); pushTriN(p, nr, idx, A, nA, C, nB, D, nA); }
+      if (r0 > 1e-6 && r1 > 1e-6) { const nQ = nMean(nA, nB); pushTriN(p, nr, idx, A, nQ, B, nQ, C, nQ); pushTriN(p, nr, idx, A, nQ, C, nQ, D, nQ); }
       else if (r1 > 1e-6) pushTriN(p, nr, idx, A, [0, 0, pn[k][1] >= 0 ? 1 : -1], B, nB, C, nB);       // r0 = 0: A == D on the axis
       else if (r0 > 1e-6) pushTriN(p, nr, idx, A, nA, D, nA, B, [0, 0, pn[k][1] >= 0 ? 1 : -1]);       // r1 = 0: B == C on the axis
     }
@@ -114,14 +121,14 @@ export function ring(rOut: number, rIn: number, z0: number, z1: number, seg: num
   for (let s = 0; s < seg; s++) {
     const a0 = (s / seg) * 2 * Math.PI, a1 = ((s + 1) / seg) * 2 * Math.PI;
     const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
-    const am = (a0 + a1) / 2, cm = Math.cos(am), sm = Math.sin(am);
-    const OUT: V3 = [cm, sm, 0], IN: V3 = [-cm, -sm, 0];
     const O0: V3 = [rOut * c0, rOut * s0, z0], O1: V3 = [rOut * c1, rOut * s1, z0];
     const o0: V3 = [rOut * c0, rOut * s0, z1], o1: V3 = [rOut * c1, rOut * s1, z1];
     const I0: V3 = [rIn * c0, rIn * s0, z0], I1: V3 = [rIn * c1, rIn * s1, z0];
     const i0: V3 = [rIn * c0, rIn * s0, z1], i1: V3 = [rIn * c1, rIn * s1, z1];
-    pushTriN(p, nr, idx, O0, OUT, O1, OUT, o1, OUT); pushTriN(p, nr, idx, O0, OUT, o1, OUT, o0, OUT);   // outer wall
-    pushTriN(p, nr, idx, I0, IN, i1, IN, I1, IN); pushTriN(p, nr, idx, I0, IN, i0, IN, i1, IN);        // inner wall
+    const nO0: V3 = [c0, s0, 0], nO1: V3 = [c1, s1, 0], nI0: V3 = [-c0, -s0, 0], nI1: V3 = [-c1, -s1, 0];
+    const nOQ = nMean(nO0, nO1), nIQ = nMean(nI0, nI1);   // quad-shared: both halves shade identically
+    pushTriN(p, nr, idx, O0, nOQ, O1, nOQ, o1, nOQ); pushTriN(p, nr, idx, O0, nOQ, o1, nOQ, o0, nOQ);   // outer wall: true-cylinder shading
+    pushTriN(p, nr, idx, I0, nIQ, i1, nIQ, I1, nIQ); pushTriN(p, nr, idx, I0, nIQ, i0, nIQ, i1, nIQ);   // inner wall
     pushTriN(p, nr, idx, o0, ZUP, o1, ZUP, i1, ZUP); pushTriN(p, nr, idx, o0, ZUP, i1, ZUP, i0, ZUP);   // top ring
     pushTriN(p, nr, idx, O0, ZDN, I1, ZDN, O1, ZDN); pushTriN(p, nr, idx, O0, ZDN, I0, ZDN, I1, ZDN);   // bottom ring
   }
@@ -371,16 +378,16 @@ function hand(len: number, w: number, tail: number, z0: number, z1: number, col:
 
 export function buildWatchScene(): WatchScene {
   // case: clean band ring + convex bezel arc + solid back (no zigzag profiles)
-  const caseBand = ring(50, 46.8, -2, 10.0, 128, STEEL, 1);   // top cap fully under the bezel bottom (10.2): no z-alternation
-  const caseBack = lathe([[0, -2.8], [46.6, -2.8], [48.4, -2], [46.6, -1.7], [41.8, -1.7]], 96, STEEL, 1);   // no interior top disc: the plate covers it (fan interleave)
-  const bezel = lathe([[45.8, 10.4], [50.3, 10.4], [51.2, 11.5], [49, 13.5], [45.8, 13.2], [45.8, 10.4]], 128, STEEL, 1);  // closed cross-section; base 0.4 above band top: no near-coplanar annulus
+  const caseBand = ring(50, 46.8, -2, 10.0, 192, STEEL, 1);   // top cap fully under the bezel bottom (10.2): no z-alternation
+  const caseBack = lathe([[0, -2.8], [46.6, -2.8], [48.4, -2], [46.6, -1.7], [41.8, -1.7]], 160, STEEL, 1);   // no interior top disc: the plate covers it (fan interleave)
+  const bezel = lathe([[45.8, 10.4], [50.3, 10.4], [51.2, 11.9], [50.1, 13.3], [45.8, 13.5], [45.8, 10.4]], 256, STEEL, 1);  // domed: top edge (45.8,13.5) and ridge (51.2,11.9) project apart - no grazing zipper
   const crownX = merge([
     box(50.5, 0, 4, 3.5, 1.6, 1.6, STEEL, 1),     // stem
     box(53.5, 0, 4, 3.4, 4.6, 4.6, STEEL, 1),     // head
     box(53.5, 0, 4, 4.0, 3.4, 5.2, STEEL, 1),     // knurl cross
   ]);
   // chapter ring + applied markers
-  const chapter = ring(46.55, 41.5, 6.4, 9.4, 96, [0.07, 0.07, 0.09], 0.2);   // tall rehaut: top (9.4) clears the band top (10.0) and bezel bottom (10.2) - no coplanar contact
+  const chapter = ring(46.55, 41.5, 6.4, 9.4, 160, [0.07, 0.07, 0.09], 0.2);   // tall rehaut: top (9.4) clears the band top (10.0) and bezel bottom (10.2) - no coplanar contact
   const markers: Mesh[] = [];
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * 2 * Math.PI;
