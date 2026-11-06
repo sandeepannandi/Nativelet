@@ -47,10 +47,10 @@ export function MechanicalWatchPreview() {
     let ema = 20;
     let img: ImageData | null = null;
     let px = 0;
-    // test instrumentation: installed ONLY when the page is opened with ?watchdebug=1,
-    // never in normal production visits. Lets automated checks observe sim state.
+    // test instrumentation: compiled out of production builds entirely
+    // (NODE_ENV is inlined at build time; development/test builds only).
     let simClock = 0, wallClock = 0;
-    if (window.location.search.includes("watchdebug=1")) {
+    if (process.env.NODE_ENV !== "production") {
       (window as unknown as { __watch: unknown }).__watch = {
         sim, cam, crownScreen,
         crownCss: () => {

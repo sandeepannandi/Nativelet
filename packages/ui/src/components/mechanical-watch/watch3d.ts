@@ -136,8 +136,13 @@ export function ring(rOut: number, rIn: number, z0: number, z1: number, seg: num
 }
 
 /** Spoked wheel: rim ring + hub + `spokes` tapered arms, all in one mesh. */
+const lighten = (c: V3, k: number): V3 => [Math.min(1, c[0] * k), Math.min(1, c[1] * k), Math.min(1, c[2] * k)];
+
 export function spokedWheel(rOut: number, rIn: number, hubR: number, z0: number, z1: number, spokes: number, col: V3, metal: number): Mesh {
   const parts: Mesh[] = [ring(rOut, rIn, z0, z1, 40, col, metal)];
+  // machined finishing: bright polished lip on the rim top, dark recess ring around the hub
+  parts.push(ring(rOut + 0.02, rOut - 0.5, z1, z1 + 0.14, 40, lighten(col, 1.22), metal));
+  parts.push(ring(hubR + 1.0, hubR + 0.4, z1 + 0.01, z1 + 0.05, 28, lighten(col, 0.55), metal));
   const armW = (rIn - hubR) * 0.42;
   for (let s = 0; s < spokes; s++) {
     const a = (s / spokes) * 2 * Math.PI;
