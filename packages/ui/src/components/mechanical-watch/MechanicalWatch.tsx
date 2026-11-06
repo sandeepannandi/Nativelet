@@ -44,44 +44,64 @@ export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Me
   const camSV = useSharedValue<Camera>({ ...CAM0 });
   const dragging = useSharedValue(false);
   const reduceM = useSharedValue(false);
-  const windCmd = useSharedValue(0);       // crown wind requests (turns)
+  const windCmd = useSharedValue(0);       // crown wind requests (turns, fractional ok)
+  const slowmo = useSharedValue(1);        // 1 normal, 0.12 slow motion (tap toggles)
   const lastBeat = useSharedValue(0);
   const latest = useRef({ reduce, onBeat });
   latest.current = { reduce, onBeat };
   useEffect(() => { reduceM.value = reduce; }, [reduce, reduceM]);
 
-  /* drag orbits the camera; vertical two-finger... keep it one finger:
-     horizontal drag = yaw, vertical = pitch; quick flick on the crown edge
-     winds (later: dedicated crown hit zone). */
-  const gesture = useRef({ yaw: CAM0.yaw, pitch: CAM0.pitch });
+  /* One finger: horizontal drag = yaw, vertical = pitch. A drag that starts on the
+     crown (3 o'clock, projected per frame) winds vertically instead; a quick tap
+     elsewhere toggles slow motion. */
+  const gesture = useRef({ yaw: CAM0.yaw, pitch: CAM0.pitch, mode: "orbit" as "orbit" | "wind", downAt: 0 });
+  const crownScreen = useRef({ x: -1e9, y: -1e9 });
   const pan = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
+        onPanResponderGrant: (e) => {
           gesture.current.yaw = camSV.value.yaw;
           gesture.current.pitch = camSV.value.pitch;
+          gesture.current.downAt = Date.now();
+          const { locationX, locationY } = e.nativeEvent;
+          gesture.current.mode =
+            Math.hypot(locationX - crownScreen.current.x, locationY - crownScreen.current.y) < 42
+              ? "wind"
+              : "orbit";
           dragging.value = true;
         },
         onPanResponderMove: (_e, gs) => {
+          if (gesture.current.mode === "wind") {
+            // vertical drag on the crown winds: 46px per turn; ratchet - only positive adds power
+            windCmd.value += gs.dy / 46;
+            return;
+          }
           camSV.value = {
             ...camSV.value,
             yaw: gesture.current.yaw + gs.dx / 140,
             pitch: Math.max(-1.1, Math.min(1.3, gesture.current.pitch + gs.dy / 180)),
           };
         },
-        onPanResponderRelease: () => { dragging.value = false; },
+        onPanResponderRelease: (_e, gs) => {
+          // quick tap (not on the crown) toggles slow motion
+          if (gesture.current.mode === "orbit" && Math.abs(gs.dx) < 6 && Math.abs(gs.dy) < 6 && Date.now() - gesture.current.downAt < 300) {
+            slowmo.value = slowmo.value === 1 ? 0.12 : 1;
+          }
+          dragging.value = false;
+        },
         onPanResponderTerminate: () => { dragging.value = false; },
       }),
-    [camSV, dragging],
+    [camSV, dragging, slowmo, windCmd],
   );
 
   useFrameCallback((info) => {
     if (reduceM.value) return;
     const s = sim.value;
-    while (windCmd.value > 0) { windCrown(s, WATCH_DEFAULTS, 0.5); windCmd.value -= 1; }
+    const wq = windCmd.value;
+    if (wq !== 0) { windCrown(s, WATCH_DEFAULTS, wq); windCmd.value = 0; }
     const dt = Math.min(48, info.timeSincePreviousFrame ?? 16.7) / 1000;
-    stepWatch(s, WATCH_DEFAULTS, dt);
+    stepWatch(s, WATCH_DEFAULTS, dt * slowmo.value);
     if (!dragging.value) {
       const c = camSV.value;
       camSV.value = { ...c, yaw: c.yaw + dt * 0.12 };   // idle turntable
@@ -102,8 +122,21 @@ export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Me
     // sort=false: the painter order is unused - depth is resolved per-pixel.
     renderWatch(scene, {
       barrel: a.barrel, center: a.center, third: a.third, fourth: a.fourth, escape: a.escape,
-      fork: s.p, balance: s.b, hour: -a.hour, minute: -a.minute, second: -a.second,
+      fork: s.p, balance: s.b, hour: -a.hour, minute: -a.minute, second: -a.second, crown: s.crown,
     }, camSV.value, px, TRIS, false);
+    // project the crown head into view coords for the wind hit zone
+    {
+      const cv = camSV.value;
+      const cyw = Math.cos(cv.yaw), syw = Math.sin(cv.yaw);
+      const cp = Math.cos(cv.pitch), sp = Math.sin(cv.pitch);
+      const f = px / (2 * Math.tan(cv.fov / 2));
+      const x2 = 53.5 * cyw, yw = 53.5 * syw, zc = yw * sp - 4 * cp + cv.dist;
+      const ys = yw * cp + 4 * sp;
+      crownScreen.current = {
+        x: (px / 2 + (x2 * f) / zc) * (size / px),
+        y: (px / 2 - (ys * f) / zc) * (size / px),
+      };
+    }
     rasterizeZB(TRIS, px, 1, BG, buf);
     const data = Skia.Data.fromBytes(buf);
     const img = Skia.Image.MakeImage(

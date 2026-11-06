@@ -10,7 +10,7 @@ const scene = buildWatchScene();
 const out = [];
 renderWatch(scene, {
   barrel: 0, center: 0.3, third: 0.6, fourth: 1, escape: 0.5,
-  fork: 0.05, balance: 1.2, hour: 0.5, minute: 2.2, second: 4,
+  fork: 0.05, balance: 1.2, hour: 0.5, minute: 2.2, second: 4, crown: 0.8,
 }, { yaw: 0.35, pitch: 0.55, dist: 150, fov: 0.73, cx: 0, cy: 0 }, R, out);
 
 const buf = new Uint8Array(R * R * 3);

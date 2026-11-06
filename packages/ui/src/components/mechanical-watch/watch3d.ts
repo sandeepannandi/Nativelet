@@ -251,6 +251,22 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
     const scx = spn ? spn.center[0] : 0, scy = spn ? spn.center[1] : 0;
     const sang = spn ? spn.angle : 0;
     const sc = Math.cos(sang), ss = Math.sin(sang);
+    // General-axis (non-z) spin: Rodrigues rotation about the unit axis through center.
+    // z-axis meshes keep the cheap inline path below; this closure is built once per mesh.
+    let genRot: ((x: number, y: number, z: number, o: number[]) => void) | null = null;
+    if (spn && !(spn.axis[0] === 0 && spn.axis[1] === 0 && spn.axis[2] === 1)) {
+      const ux = spn.axis[0], uy = spn.axis[1], uz = spn.axis[2];
+      const ccx = spn.center[0], ccy = spn.center[1], ccz = spn.center[2];
+      const t1 = 1 - sc;
+      genRot = (x, y, z, o) => {
+        const dx = x - ccx, dy = y - ccy, dz = z - ccz;
+        const dot = ux * dx + uy * dy + uz * dz;
+        o[0] = ccx + dx * sc + (uy * dz - uz * dy) * ss + ux * dot * t1;
+        o[1] = ccy + dy * sc + (uz * dx - ux * dz) * ss + uy * dot * t1;
+        o[2] = ccz + dz * sc + (ux * dy - uy * dx) * ss + uz * dot * t1;
+      };
+    }
+    const GV = [0, 0, 0];
     for (let k = 0; k < n; k += 3) {
       let vi = idx[k] * 3;
       let ax = pos[vi], ay = pos[vi + 1], az = pos[vi + 2];
@@ -258,7 +274,11 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       let bx = pos[vi], by = pos[vi + 1], bz = pos[vi + 2];
       vi = idx[k + 2] * 3;
       let cx = pos[vi], cy = pos[vi + 1], cz = pos[vi + 2];
-      if (spn) {
+      if (genRot) {
+        genRot(ax, ay, az, GV); ax = GV[0]; ay = GV[1]; az = GV[2];
+        genRot(bx, by, bz, GV); bx = GV[0]; by = GV[1]; bz = GV[2];
+        genRot(cx, cy, cz, GV); cx = GV[0]; cy = GV[1]; cz = GV[2];
+      } else if (spn) {
         let dx = ax - scx, dy = ay - scy;
         ax = scx + dx * sc - dy * ss; ay = scy + dx * ss + dy * sc;
         dx = bx - scx; dy = by - scy;
@@ -280,7 +300,15 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
         pnx += nrms[vj]; pny += nrms[vj + 1]; pnz += nrms[vj + 2];
         vj = idx[k + 2] * 3;
         pnx += nrms[vj]; pny += nrms[vj + 1]; pnz += nrms[vj + 2];
-        if (spn) { const qx = pnx * sc - pny * ss; pny = pnx * ss + pny * sc; pnx = qx; }
+        if (genRot) {
+          const ux2 = spn!.axis[0], uy2 = spn!.axis[1], uz2 = spn!.axis[2];
+          const dot = ux2 * pnx + uy2 * pny + uz2 * pnz;
+          const t2 = 1 - sc;
+          const qx = pnx * sc + (uy2 * pnz - uz2 * pny) * ss + ux2 * dot * t2;
+          const qy = pny * sc + (uz2 * pnx - ux2 * pnz) * ss + uy2 * dot * t2;
+          const qz = pnz * sc + (ux2 * pny - uy2 * pnx) * ss + uz2 * dot * t2;
+          pnx = qx; pny = qy; pnz = qz;
+        } else if (spn) { const qx = pnx * sc - pny * ss; pny = pnx * ss + pny * sc; pnx = qx; }
         nrx = pnx; nry = pny; nrz0 = pnz;
         nl = Math.sqrt(nrx * nrx + nry * nry + nrz0 * nrz0);
         if (nl < 1e-12) continue;
@@ -354,6 +382,7 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
 
 export type WatchScene = {
   statics: Mesh[];        // case, ring, plate, bridges (never spin)
+  crown: Mesh;            // spins about its stem axis when wound
   wheels: Mesh[];         // barrel, center, third, fourth, escape (spin.angle set per frame)
   fork: Mesh;             // spins about (0,-3.6)
   balance: Mesh;          // spins about (0,8.4)
@@ -383,11 +412,12 @@ export function buildWatchScene(): WatchScene {
   // No bottom face, no inner wall: a closed thin shell stacked its bore circles
   // at grazing angles and the polygon sagitta zippered the depth test.
   const bezel = lathe([[45.8, 13.5], [50.1, 13.3], [51.2, 11.9], [51.2, 10.0]], 256, STEEL, 1);
-  const crownX = merge([
+  const crown = merge([
     box(50.5, 0, 4, 3.5, 1.6, 1.6, STEEL, 1),     // stem
     box(53.5, 0, 4, 3.4, 4.6, 4.6, STEEL, 1),     // head
     box(53.5, 0, 4, 4.0, 3.4, 5.2, STEEL, 1),     // knurl cross
   ]);
+  crown.spin = { axis: [1, 0, 0], center: [53.5, 0, 4], angle: 0 };   // crown winds about its own stem axis
   // chapter ring + applied markers
   const chapter = ring(46.55, 41.5, 6.4, 9.4, 160, [0.07, 0.07, 0.09], 0.2);   // tall rehaut: top (9.4) clears the band top (10.0) and bezel bottom (10.2) - no coplanar contact
   const markers: Mesh[] = [];
@@ -478,17 +508,18 @@ export function buildWatchScene(): WatchScene {
   });
   return {
     // assembled far -> near in renderWatch; painter ties inside a layer resolve by this order
-    statics: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel, crownX],
+    statics: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel],
     wheels: [barrel, center, third, fourth, escape],
-    fork, balance, hairspring, hourHand, minuteHand, secondHand,
+    fork, balance, hairspring, hourHand, minuteHand, secondHand, crown,
   };
 }
 
 /** Per-frame: set spin angles from the sim state and render everything. */
 export function renderWatch(scene: WatchScene, a: {
   barrel: number; center: number; third: number; fourth: number; escape: number;
-  fork: number; balance: number; hour: number; minute: number; second: number;
+  fork: number; balance: number; hour: number; minute: number; second: number; crown: number;
 }, cam: Camera, size: number, out: Tri[], sort = true): void {
+  scene.crown.spin!.angle = a.crown;
   scene.wheels[0].spin!.angle = a.barrel;
   scene.wheels[1].spin!.angle = a.center;
   scene.wheels[2].spin!.angle = a.third;
@@ -501,8 +532,8 @@ export function renderWatch(scene: WatchScene, a: {
   scene.minuteHand.spin!.angle = a.minute;
   scene.secondHand.spin!.angle = a.second;
   const st = scene.statics;
-  // st: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel, crownX]
-  renderFrame([st[0], st[1], ...scene.wheels, scene.fork, st[2], scene.balance, scene.hairspring, ...st.slice(3), scene.hourHand, scene.minuteHand, scene.secondHand], cam, size, out, sort);
+  // st: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel]
+  renderFrame([st[0], st[1], ...scene.wheels, scene.fork, st[2], scene.balance, scene.hairspring, ...st.slice(3), scene.crown, scene.hourHand, scene.minuteHand, scene.secondHand], cam, size, out, sort);
 }
 
 /* Depth-correct rasterizer: the painter sort cannot order intersecting or
