@@ -95,7 +95,7 @@ console.log('wrote /tmp/watch.ppm');
   const tris = [];
   renderFrame([coin], { yaw: 1.2, pitch: 0.55, dist: 150, fov: 0.73, cx: 0, cy: 0 }, 700, tris, false);
   const px = new Uint8ClampedArray(700 * 700 * 4);
-  rasterizeZB(tris, 700, 2, [12, 12, 14], px);
+  rasterizeZB(tris, 700, 2, [12, 12, 14], px, 700 / (2 * Math.tan(0.73 / 2)));
   const v = (x, y) => px[(y * 700 + x) * 4];
   let holes = 0;
   for (let y = 1; y < 699; y++) for (let x = 1; x < 699; x++) {

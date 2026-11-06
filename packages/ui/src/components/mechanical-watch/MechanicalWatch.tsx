@@ -149,7 +149,7 @@ export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Me
           y: (px / 2 - (ys * f) / zc) * (size / px),
         };
       }
-      rasterizeZB(TRIS, px, 1, BG, buf);
+      rasterizeZB(TRIS, px, 1, BG, buf, px / (2 * Math.tan(cam.current.fov / 2)));
       // Publish the frame: a typed array crosses as a copied shareable.
       pxSV.value = px;
       pixSV.value = buf;

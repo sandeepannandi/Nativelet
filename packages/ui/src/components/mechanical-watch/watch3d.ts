@@ -10,7 +10,10 @@ export type Tri = {
   x0: number; y0: number; x1: number; y1: number; x2: number; y2: number;
   r: number; g: number; b: number;
   z0: number; z1: number; z2: number;   // view-space depth per vertex (>0)
+  env?: boolean;                        // large polished face: add per-pixel env reflection in rasterizeZB
+  enx?: number; eny?: number; enz?: number;   // cam-space face normal (unit, camera-facing)
 };
+const ENV_MIN_AREA = 30;   // px^2 at projection size; smaller metal tris keep per-face shading
 
 type V3 = [number, number, number];
 
@@ -353,13 +356,22 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       r += spec * (sm ? Math.min(1, mcr * sa) : 1);
       g += spec * (sm ? Math.min(1, mcg * sa) : 1);
       b += spec * (sm ? Math.min(1, mcb * sa) : 1);
-      out.push({
-        x0: half + (ax2 * f) / azc, y0: half - (ays * f) / azc,
-        x1: half + (bx2 * f) / bzc, y1: half - (bys * f) / bzc,
-        x2: half + (cx2 * f) / czc, y2: half - (cys * f) / czc,
+      const qx0 = half + (ax2 * f) / azc, qy0 = half - (ays * f) / azc;
+      const qx1 = half + (bx2 * f) / bzc, qy1 = half - (bys * f) / bzc;
+      const qx2 = half + (cx2 * f) / czc, qy2 = half - (cys * f) / czc;
+      const tri: Tri = {
+        x0: qx0, y0: qy0, x1: qx1, y1: qy1, x2: qx2, y2: qy2,
         r: r > 1 ? 1 : r, g: g > 1 ? 1 : g, b: b > 1 ? 1 : b,
         z0: azc, z1: bzc, z2: czc,
-      });
+      };
+      // large polished faces get per-pixel environment reflection in the rasterizer:
+      // mirror reflections vary with the per-pixel view ray, which per-face
+      // shading cannot express - that flatness is what reads as plastic.
+      if (sm) {
+        const area = 0.5 * Math.abs((qx1 - qx0) * (qy2 - qy0) - (qx2 - qx0) * (qy1 - qy0));
+        if (area > ENV_MIN_AREA) { tri.env = true; tri.enx = nx; tri.eny = nyy; tri.enz = nzz; }
+      }
+      out.push(tri);
       if (zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; ZMESH[zCount] = mi; zCount++; }
     }
   }
@@ -579,11 +591,28 @@ export function renderWatch(scene: WatchScene, a: {
    and grow-only. */
 let ZB_DEPTH = new Float32Array(0);
 let ZB_COL = new Uint8Array(0);   // 4 bytes per pixel (RGBX) so a Uint32 view can write packed colors
-export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, number, number], out: Uint8ClampedArray | Uint8Array): void {
+let ZB_WINNER = new Int32Array(0);
+let ZB_RAY = new Float32Array(0);
+let ZB_RAY_R = 0, ZB_RAY_F = 0;
+export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, number, number], out: Uint8ClampedArray | Uint8Array, focal?: number): void {
   const R = size * ss;
   const n = R * R;
-  if (ZB_DEPTH.length < n) { ZB_DEPTH = new Float32Array(n); ZB_COL = new Uint8Array(n * 4); }
-  const depth = ZB_DEPTH.subarray(0, n), col = ZB_COL.subarray(0, n * 4);
+  if (ZB_DEPTH.length < n) { ZB_DEPTH = new Float32Array(n); ZB_COL = new Uint8Array(n * 4); ZB_WINNER = new Int32Array(n); }
+  const depth = ZB_DEPTH.subarray(0, n), col = ZB_COL.subarray(0, n * 4), winner = ZB_WINNER.subarray(0, n);
+  winner.fill(-1);
+  // normalized per-pixel view rays, rebuilt only when size/focal changes
+  const fsc = (focal ?? 0) * (R / size);
+  if (focal && (ZB_RAY_R !== R || ZB_RAY_F !== fsc || ZB_RAY.length < 3 * n)) {
+    if (ZB_RAY.length < 3 * n) ZB_RAY = new Float32Array(3 * n);
+    const h = R / 2;
+    for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
+      const dx = (x + 0.5) - h, dy = h - (y + 0.5), dz = fsc;
+      const il = 1 / Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const p3 = 3 * (y * R + x);
+      ZB_RAY[p3] = dx * il; ZB_RAY[p3 + 1] = dy * il; ZB_RAY[p3 + 2] = dz * il;
+    }
+    ZB_RAY_R = R; ZB_RAY_F = fsc;
+  }
   depth.fill(0);   // q = 1/z > 0 always; larger q = nearer
   for (let i = 0; i < n * 4; i += 4) { col[i] = bg[0]; col[i + 1] = bg[1]; col[i + 2] = bg[2]; }
   const col32 = new Uint32Array(col.buffer, 0, n);
@@ -624,12 +653,47 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
       const dq = span > 1e-9 ? (hq1 - hq0) / span : 0;
       let q = hq0 + ((x0 + 0.5) - hx0) * dq;
       const row = y * R;
+      const isEnv = focal !== undefined && t.env === true;
       for (let x = x0; x <= x1; x++, q += dq) {
         const p = row + x;
-        if (q > depth[p]) { depth[p] = q; col32[p] = packed; }
+        if (q > depth[p]) { depth[p] = q; col32[p] = packed; if (isEnv) winner[p] = ti; else if (winner[p] >= 0) winner[p] = -1; }
       }
     }
   }
+  /* Pass 2: per-pixel studio-environment reflection on large polished faces.
+     The mirror direction varies with the view ray even across a flat face;
+     adding it per-pixel is what makes brass/steel read as metal. Rational
+     falloffs instead of exp() - this runs ~100k times per frame. */
+  if (focal !== undefined) {
+    const ray = ZB_RAY;
+    for (let p = 0; p < n; p++) {
+      const ti = winner[p];
+      if (ti < 0) continue;
+      const t = tris[ti];
+      const enx = t.enx!, eny = t.eny!, enz = t.enz!;
+      const p3 = 3 * p;
+      const dx = ray[p3], dy = ray[p3 + 1], dz = ray[p3 + 2];
+      const dn = dx * enx + dy * eny + dz * enz;   // negative: normal faces camera
+      let rx = dx - 2 * dn * enx, ry = dy - 2 * dn * eny;   // rz unused by env
+      const up = ry > 0 ? ry : 0, dwn = ry < 0 ? -ry : 0;
+      let env = 0.06 + 0.55 * up * up + 0.10 * dwn;
+      const w1x = rx + 0.45, w1y = ry - 0.55;
+      const d1 = 1 + w1x * w1x * 6 + w1y * w1y * 2.2;
+      env += 0.9 / (d1 * d1);
+      const w2x = rx - 0.55, w2y = ry - 0.35;
+      const d2 = 1 + w2x * w2x * 9 + w2y * w2y * 3;
+      env += 0.55 / (d2 * d2);
+      const ct = -dn, om = 1 - ct, om2 = om * om;
+      const fr = 0.25 + 0.75 * om2 * om2 * om;
+      const e = env * fr * 0.85;
+      if (e <= 0.004) continue;
+      const o = 4 * p;
+      const er = e * (0.55 + 0.45 * t.r) * 255, eg = e * (0.55 + 0.45 * t.g) * 255, eb = e * (0.55 + 0.45 * t.b) * 255;
+      const nr = col[o] + er, ng = col[o + 1] + eg, nb = col[o + 2] + eb;
+      col[o] = nr > 255 ? 255 : nr; col[o + 1] = ng > 255 ? 255 : ng; col[o + 2] = nb > 255 ? 255 : nb;
+    }
+  }
+
   // box downsample ss x ss -> size x size RGBA
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
