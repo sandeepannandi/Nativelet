@@ -232,3 +232,27 @@ stop) are all correct; the internal contact roles differ from a real Swiss
 lever. Proper fix = per-side drop-length tuning so the tooth drop coincides
 with the fork reaching the banking (drop adjustment); sweep harness diag6
 is ready for that. Also open: lock-slide asymmetry 0.43/0.57.
+
+## Run 10 (~14:18 IST): watch3d.ts engine v1 + pixel-tested first render
+watch3d.ts: true 3D mesh engine in shared TS - lathe/ring/extrude/gear/
+spokedWheel/box builders, merge/bake, perspective camera (yaw/pitch/dist/
+fov), per-tri world-space normals, key+fill diffuse, reflected-key Blinn +
+studio-streak specular (metals tint), DOUBLE-SIDED with normals flipped
+toward the camera (kills the winding class of bugs), painter sort far-first.
+Scene: steel case band + closed bezel + tall rehaut + crown at 3 o'clock,
+solid mainplate, 5 brass train wheels (z-tiered), pallet fork with ruby
+stones, balance + Archimedean hairspring, steel dauphine hands + red
+seconds. ~12.3k tris after culling, 400x400 in ~25ms node (native perf TBD
+on device - NO performance claims yet).
+watch3d.test.mjs: real scanline rasterizer; asserts coverage >15%, sd > 10,
+>40 specular pixels, >200 brass pixels; writes /tmp/watch.ppm.
+Bugs found by LOOKING at renders (v1..v11): lathe degenerate fan rule at
+r=0 (caseback disc missing); caseback interior top disc fan-interleaving
+with the plate (starburst); camera always viewed the CASEBACK side
+(z-mirror fixed: dial now faces the camera); winding-dependent culling
+replaced by double-sided rendering; rehaut/bezel/band radial ordering.
+KNOWN ARTIFACTS (queued): bezel silhouette zigzag at grazing arcs
+(double-sided interleave), gear teeth are simple trapezoids (club-tooth
+profile TODO), no crystal/dome yet, hairspring static (animate breathing).
+NEXT: wire sim state -> renderWatch angles (trainAngles), animated orbit,
+then native (createPicture) + web (Canvas2D) renderers.
