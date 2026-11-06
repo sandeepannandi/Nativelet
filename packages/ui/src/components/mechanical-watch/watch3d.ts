@@ -395,6 +395,8 @@ const STEEL: V3 = [0.72, 0.74, 0.78];
 const BLUED: V3 = [0.16, 0.28, 0.62];
 const PLATE: V3 = [0.30, 0.30, 0.34];
 const RUBY: V3 = [0.72, 0.10, 0.16];
+const GOLD: V3 = [0.85, 0.68, 0.30];   // jewel chatons
+const PLATE_DARK: V3 = [0.26, 0.26, 0.30];   // Geneva stripe alternation
 
 function hand(len: number, w: number, tail: number, z0: number, z1: number, col: V3): Mesh {
   // tapered dauphine-ish hand pointing +Y from the center
@@ -418,6 +420,32 @@ export function buildWatchScene(): WatchScene {
     box(53.5, 0, 4, 4.0, 3.4, 5.2, STEEL, 1),     // knurl cross
   ]);
   crown.spin = { axis: [1, 0, 0], center: [53.5, 0, 4], angle: 0 };   // crown winds about its own stem axis
+  /* movement finishing: ruby jewels in gold chatons at the visible pivots,
+     Geneva stripes across the mainplate, polished slotted screws. */
+  const jewel = (jx: number, jy: number, z0: number): Mesh => merge([
+    ring(1.55, 1.0, z0, z0 + 0.55, 20, GOLD, 1),
+    lathe([[0, z0], [1.0, z0], [1.0, z0 + 0.55], [0, z0 + 0.55]], 20, RUBY, 0.6),
+  ]);
+  const jewels = [
+    bake(jewel(0, 0, 0), -20, 15, 3.0),    // barrel arbor
+    bake(jewel(0, 0, 0), 0, 2, 2.2),       // center wheel top
+    bake(jewel(0, 0, 0), 17, 11, 3.8),     // third arbor
+    bake(jewel(0, 0, 0), 18, -7, 4.2),     // fourth wheel top
+    bake(jewel(0, 0, 0), 0, -22, 4.8),     // escape arbor
+    bake(jewel(0, 0, 0), 0, 3.4, 6.6),     // balance upper jewel in the cock
+  ];
+  const stripes: Mesh[] = [];
+  for (let i = 0; i < 8; i++) {
+    const sx = -18.2 + i * 5.2;
+    const half = Math.sqrt(Math.max(0, 40.6 * 40.6 - sx * sx)) - 0.6;
+    const m = box(sx, 0, 0.12, 4.9, 2 * half, 0.24, i % 2 === 0 ? PLATE_DARK : PLATE, 0.6);
+    stripes.push(m);
+  }
+  const screw = (sx: number, sy: number, z0: number, a: number): Mesh => merge([
+    lathe([[0, z0], [1.0, z0], [1.0, z0 + 0.5], [0.86, z0 + 0.62], [0, z0 + 0.62]], 12, STEEL, 1),
+    bake(box(0, 0, 0, 1.55, 0.26, 0.14, [0.08, 0.08, 0.1], 0.2), sx, sy, z0 + 0.55, a),
+  ]);
+  const screws = [screw(-30, -12, 0, 0.5), screw(30, -14, 0, 1.9), screw(-8, -30, 0, 2.8), screw(8, 28, 0, 1.1)];
   // chapter ring + applied markers
   const chapter = ring(46.55, 41.5, 6.4, 9.4, 160, [0.07, 0.07, 0.09], 0.2);   // tall rehaut: top (9.4) clears the band top (10.0) and bezel bottom (10.2) - no coplanar contact
   const markers: Mesh[] = [];
@@ -508,7 +536,7 @@ export function buildWatchScene(): WatchScene {
   });
   return {
     // assembled far -> near in renderWatch; painter ties inside a layer resolve by this order
-    statics: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel],
+    statics: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel, ...jewels, ...stripes, ...screws],
     wheels: [barrel, center, third, fourth, escape],
     fork, balance, hairspring, hourHand, minuteHand, secondHand, crown,
   };
@@ -546,7 +574,7 @@ export function renderWatch(scene: WatchScene, a: {
    and grow-only. */
 let ZB_DEPTH = new Float32Array(0);
 let ZB_COL = new Uint8Array(0);   // 4 bytes per pixel (RGBX) so a Uint32 view can write packed colors
-export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, number, number], out: Uint8ClampedArray): void {
+export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, number, number], out: Uint8ClampedArray | Uint8Array): void {
   const R = size * ss;
   const n = R * R;
   if (ZB_DEPTH.length < n) { ZB_DEPTH = new Float32Array(n); ZB_COL = new Uint8Array(n * 4); }

@@ -24,7 +24,7 @@ const BG: [number, number, number] = [9, 9, 14];   // #09090e, matches the old f
    with linear sampling, so a lower tier costs sharpness, not correctness. */
 const TIERS = [448, 384, 320, 256];
 const TRIS: Tri[] = [];
-let PIX = new Uint8ClampedArray(0);
+let PIX = new Uint8Array(0);
 let qTier = 1;
 let qEma = 20;
 
@@ -116,7 +116,7 @@ export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Me
     const s = sim.value;
     const a = trainAngles(s.e);
     const px = TIERS[qTier];
-    if (PIX.length < px * px * 4) PIX = new Uint8ClampedArray(px * px * 4);
+    if (PIX.length < px * px * 4) PIX = new Uint8Array(px * px * 4);
     const buf = PIX.length === px * px * 4 ? PIX : PIX.subarray(0, px * px * 4);
     TRIS.length = 0;
     // sort=false: the painter order is unused - depth is resolved per-pixel.

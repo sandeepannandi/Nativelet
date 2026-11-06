@@ -47,18 +47,23 @@ export function MechanicalWatchPreview() {
     let ema = 20;
     let img: ImageData | null = null;
     let px = 0;
-    // test/debug handle: lets automated checks observe sim state and the crown hit zone
-    (window as unknown as { __watch: unknown }).__watch = {
-      sim, cam, crownScreen,
-      crownCss: () => {
-        const rect = canvas.getBoundingClientRect();
-        return {
-          x: rect.left + (crownScreen.x * rect.width) / canvas.width,
-          y: rect.top + (crownScreen.y * rect.height) / canvas.height,
-        };
-      },
-      getTimeScale: () => timeScale,
-    };
+    // test instrumentation: installed ONLY when the page is opened with ?watchdebug=1,
+    // never in normal production visits. Lets automated checks observe sim state.
+    let simClock = 0, wallClock = 0;
+    if (window.location.search.includes("watchdebug=1")) {
+      (window as unknown as { __watch: unknown }).__watch = {
+        sim, cam, crownScreen,
+        crownCss: () => {
+          const rect = canvas.getBoundingClientRect();
+          return {
+            x: rect.left + (crownScreen.x * rect.width) / canvas.width,
+            y: rect.top + (crownScreen.y * rect.height) / canvas.height,
+          };
+        },
+        getTimeScale: () => timeScale,
+        getClocks: () => ({ simClock, wallClock }),
+      };
+    }
 
     const draw = () => {
       const t0 = performance.now();
@@ -104,6 +109,8 @@ export function MechanicalWatchPreview() {
       last = t;
       if (!latest.current.reduced) {
         stepWatch(sim, WATCH_DEFAULTS, dt * timeScale);
+        simClock += dt * timeScale;
+        wallClock += dt;
         if (!dragging) cam.yaw += dt * 0.12;   // idle turntable
       }
       draw();
