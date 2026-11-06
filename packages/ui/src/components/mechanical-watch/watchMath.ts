@@ -56,7 +56,7 @@ export const WATCH_DEFAULTS: WatchPhysics = {
   rollerR: 2.5,
   hornR: 9.5,
   slotHalf: 0.5,
-  bankAngle: 0.05,   // total throw 5.7 deg; set so engaged lock depth ~0.5, disengaged clearance ~0.4
+  bankAngle: 0.06,   // total throw 6.9 deg; engaged lock depth ~0.45, disengaged clearance ~0.4
   balanceHz: 3,
   balanceJ: 1,
   balanceDamp: 0.35,
@@ -90,8 +90,8 @@ export type WatchState = {
   b: number; wb: number;       // balance
   wind: number;                // mainspring wind 0..1
   crown: number;               // crown rotation (renderer + ratchet)
-  beats: number;               // beat counter (haptics/tests)
-  lastForkSign: number;
+  beats: number;               // beat counter: lock-ARREST events (haptics/tests)
+  lockHeld: boolean;           // a tooth currently rests on a lock face
   amp: number;                 // recent amplitude estimate (rad)
   t: number;
   acc: number;                 // substep accumulator
@@ -104,9 +104,9 @@ export function createWatch(p: WatchPhysics): WatchState {
   return {
     // tooth 3 rests on the engaged exit shelf; gentle balance start (the
     // escapement itself must pump the amplitude up - that is the validation)
-    e: -0.2904, we: 0, p: -p.bankAngle, wp: 0,   // tooth 3 on the exit lock face at -bank
+    e: -0.2796, we: 0, p: -p.bankAngle, wp: 0,   // tooth 3 on the exit lock face at -bank
     b: 0, wb: w0 * 4.4,   // running amplitude; unlock needs b ~ 1.5+ against full-wind draw
-    wind: 1, crown: 0, beats: 0, lastForkSign: -1,
+    wind: 1, crown: 0, beats: 0, lockHeld: true,
     amp: 4.4, t: 0, acc: 0, seeded: true, stopped: false,
   };
 }
@@ -161,10 +161,13 @@ type Face = { ax: number; ay: number; nx: number; ny: number; tx: number; ty: nu
 /* verified by probe4.mjs (resist / draw sign / creep / corner-cone margin):
    entry corner (-4.82,-4.72) polar 119 deg, exit corner (5.72,-5.23) polar
    55 deg; engaged depth 0.4 at the banking, clearance ~0.34 at the other. */
-const ENTRY_LOCK = { ax: -4.82, ay: -4.72, tx: -0.292, ty: 0.957, nx: -0.957, ny: -0.292, len: 1.5 };
-const ENTRY_IMP  = { ax: -4.82, ay: -4.72, tx: -1, ty: 0, nx: 0, ny: -1, len: 1.2 };
-const EXIT_LOCK  = { ax: 5.61, ay: -5.33, tx: 0.743, ty: 0.669, nx: -0.669, ny: 0.743, len: 1.4 };
-const EXIT_IMP   = { ax: 5.72, ay: -5.23, tx: -0.342, ty: 0.940, nx: -0.940, ny: -0.342, len: 1.2 };
+/* corners at world polars 118.5 / 55.5 deg: separation 63 deg = 10.5
+   half-pitches, so alternating arrests each advance the wheel exactly one
+   half-pitch (2 beats per tooth is structural) */
+const ENTRY_LOCK = { ax: -4.738, ay: -4.674, tx: -0.292, ty: 0.957, nx: -0.957, ny: -0.292, len: 1.1 };
+const ENTRY_IMP  = { ax: -4.738, ay: -4.674, tx: 1, ty: 0, nx: 0, ny: -1, len: 0.9 };   // extends INWARD from the corner (inside the tooth circle when engaged)
+const EXIT_LOCK  = { ax: 5.514, ay: -5.316, tx: 0.743, ty: 0.669, nx: -0.669, ny: 0.743, len: 1.4 };
+const EXIT_IMP   = { ax: 5.625, ay: -5.216, tx: 0.342, ty: -0.940, nx: -0.940, ny: -0.342, len: 1.2 };   // extends INWARD from the corner
 
 function rotFace(local: Face, c: number, s: number, F: number, out: Face) {
   out.ax = local.ax * c - local.ay * s;
@@ -211,6 +214,7 @@ function substep(s: WatchState, p: WatchPhysics, dt: number, geo: Face[]) {
   rotFace(EXIT_IMP, c, sn, F, geo[3]);
 
   const pitch = (2 * Math.PI) / p.escapeTeeth;
+  let lockNow = false;
   for (let kTooth = 0; kTooth < p.escapeTeeth; kTooth++) {
     const a = s.e + kTooth * pitch;
     const tx = p.escapeR * Math.cos(a), ty = p.escapeR * Math.sin(a);
@@ -219,6 +223,7 @@ function substep(s: WatchState, p: WatchPhysics, dt: number, geo: Face[]) {
       const face = geo[i];
       const pen = contactFace(tx, ty, face);
       if (pen < 0) continue;
+      if (i === 0 || i === 2) lockNow = true;
       const cpx = face.ax, cpy = face.ay - F;   // lever from fork pivot
       const fvx = -s.wp * cpy, fvy = s.wp * cpx;
       const rvx = vtx - fvx, rvy = vty - fvy;
@@ -336,9 +341,11 @@ function substep(s: WatchState, p: WatchPhysics, dt: number, geo: Face[]) {
   s.p += s.wp * dt;
   s.b += s.wb * dt;
 
-  // beat counting: fork crossing center
-  const sg = s.p > 0 ? 1 : s.p < 0 ? -1 : s.lastForkSign;
-  if (sg !== s.lastForkSign) { s.beats++; s.lastForkSign = sg; }
+  // beat counting: a beat is a lock ARREST (a tooth lands on a lock face),
+  // not a fork sign flip - the fork can flap in the slot clearance without
+  // the escapement beating
+  if (lockNow && !s.lockHeld) s.beats++;
+  s.lockHeld = lockNow;
 
   // amplitude estimate (slow tracker)
   const ab = Math.abs(s.b);

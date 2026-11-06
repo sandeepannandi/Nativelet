@@ -188,3 +188,30 @@ beats on lock-ARREST events (contact begins on a lock face), not fork sign
 crossings; (c) re-validate diag2 (6/s sustained, half-pitch/beat, amp
 sustained, unwind stops). Also note: amplitude decayed slowly (4.0 -> 1.1
 over 10s) - check energy balance after arrest fix (impulse may be short).
+
+## Run 8 (~14:04 IST): alternating arrests + honest beats; impulse timing is the remaining defect
+Changes: corner polars set to entry 118.5 / exit 55.5 (separation 63 deg =
+10.5 half-pitches: alternating arrests now each advance the wheel ~half a
+pitch, measured deltas alternate 0.43/0.57). Impulse faces flipped to extend
+INWARD from the stone corners (real topology: contact migrates from corner
+into the stone; nothing pokes through the tooth circle at engagement, so
+arriving teeth now hit the LOCK face first). Beats now counted on
+lock-ARREST events, not fork sign flips. bankAngle 0.06.
+diag2: 6 beats/s sustained, ~1 pitch per 2 beats, unwind still stops.
+diag5: clean alternating X-lock / E-lock arrests.
+KNOWN DEFECTS (next run):
+1. Fork flip completes in ~2ms but tooth slide on the impulse face needs
+   ~10-20ms; once the fork pins on the far bank the departing tooth DRAGS
+   on the (inward) impulse face for ~300ms at creep speed, and the impulse
+   energy goes into the banking pin (cf=0) instead of the balance. Conseq:
+   amplitude decays 4.2 -> 2.4 over 10s (escapement feeds back too little).
+2. Arrests come in pairs 5ms apart every 333ms (mid-flip catch + final
+   catch) and the fork flips at 1.5 Hz (half the balance frequency) - one
+   unlock per full balance swing succeeds, not one per half-swing. Likely
+   the entry draw (tau 3.08 vs exit 0.69) is too strong to unlock on one
+   side; check E-lock draw angle (n=197) and driveTorque.
+3. Tried shorter imp faces (0.45/0.6) to kill the disengaged-bank drag:
+   REVERTED - machine-gun runaway (36-68 beats/s), the short faces let
+   teeth slip past. The fix is flip timing, not face length.
+Levers: forkJ (slow the flip toward ~10ms), imp face angle = impulse ratio,
+driveTorque, possibly don't ground the fork (cf=0) for IMP-face contacts.

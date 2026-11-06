@@ -4,9 +4,9 @@
 const F = [0, 13.4];
 const deg = d => [Math.cos(d * Math.PI / 180), Math.sin(d * Math.PI / 180)];
 const stones = [
-  { name: 'entry', corner: [-4.82, -4.72], pol: 119 * Math.PI / 180, engaged: +1,
+  { name: 'entry', corner: [-4.738, -4.674], pol: 119 * Math.PI / 180, engaged: +1,
     lockN: 197, impN: 270 },
-  { name: 'exit', corner: [5.72, -5.23], pol: 55 * Math.PI / 180, engaged: -1,
+  { name: 'exit', corner: [5.625, -5.216], pol: 55 * Math.PI / 180, engaged: -1,
     lockN: 132, impN: 200 },
 ];
 let ok = true;
