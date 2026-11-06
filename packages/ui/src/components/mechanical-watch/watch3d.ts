@@ -308,11 +308,9 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       const rx2 = KX - 2 * nd * nx;
       const ry2 = KY - 2 * nd * nyy;
       const rl = Math.sqrt(rx2 * rx2 + ry2 * ry2 + rz * rz);
-      const streak = Math.abs(nx);
-      let specA = Math.pow(Math.max(0, -rz / (rl > 1e-9 ? rl : 1)), 12);
-      const st = streak * streak * streak * streak * streak; // |nx|^5
-      const st2 = st * st * (1 - Math.abs(nzz)) * (1 - Math.abs(nzz)) * 0.3;  // |nx|^10 (1-|nz|)^2 - kept subtle so brushed-metal streaks do not corduroy the case
-      if (st2 > specA) specA = st2;
+      // plain Blinn: the |nx|^n "brushed streak" terms quantized per-triangle
+      // into stripes/teeth on curved steel - removed, not retuned.
+      const specA = Math.pow(Math.max(0, -rz / (rl > 1e-9 ? rl : 1)), 24);
       const spec = specA * (0.22 + 1.0 * metal);
       const amb = 0.22;
       const dif = 0.78 * (keyD > 0 ? keyD : 0) + 0.25 * (fillD > 0 ? fillD : 0);
@@ -380,7 +378,10 @@ export function buildWatchScene(): WatchScene {
   // case: clean band ring + convex bezel arc + solid back (no zigzag profiles)
   const caseBand = ring(50, 46.8, -2, 10.0, 192, STEEL, 1);   // top cap fully under the bezel bottom (10.2): no z-alternation
   const caseBack = lathe([[0, -2.8], [46.6, -2.8], [48.4, -2], [46.6, -1.7], [41.8, -1.7]], 160, STEEL, 1);   // no interior top disc: the plate covers it (fan interleave)
-  const bezel = lathe([[45.8, 10.4], [50.3, 10.4], [51.2, 11.9], [50.1, 13.3], [45.8, 13.5], [45.8, 10.4]], 256, STEEL, 1);  // domed: top edge (45.8,13.5) and ridge (51.2,11.9) project apart - no grazing zipper
+  // open dome profile: top arc + outer wall straight down to the band top.
+  // No bottom face, no inner wall: a closed thin shell stacked its bore circles
+  // at grazing angles and the polygon sagitta zippered the depth test.
+  const bezel = lathe([[45.8, 13.5], [50.1, 13.3], [51.2, 11.9], [51.2, 10.0]], 256, STEEL, 1);
   const crownX = merge([
     box(50.5, 0, 4, 3.5, 1.6, 1.6, STEEL, 1),     // stem
     box(53.5, 0, 4, 3.4, 4.6, 4.6, STEEL, 1),     // head
