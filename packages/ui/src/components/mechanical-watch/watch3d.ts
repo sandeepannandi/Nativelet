@@ -19,6 +19,7 @@ export type Mesh = {
   col: V3;                // base color 0..1
   metal: number;          // 0 dielectric .. 1 metal (specular strength/tint)
   spin?: { axis: V3; center: V3; angle: number };  // rigid transform per frame
+  nrm?: Float32Array;     // per-vertex analytic normals (smooth shading); absent = flat face normals
 };
 
 /* ---------- mesh builders ---------- */
@@ -28,61 +29,102 @@ function pushTri(p: number[], i: number[], a: V3, b: V3, c: V3) {
   p.push(...a, ...b, ...c);
   i.push(base, base + 1, base + 2);
 }
+function pushTriN(p: number[], n: number[], i: number[], a: V3, na: V3, b: V3, nb: V3, c: V3, nc: V3) {
+  const base = p.length / 3;
+  p.push(...a, ...b, ...c);
+  n.push(...na, ...nb, ...nc);
+  i.push(base, base + 1, base + 2);
+}
 
 /** Surface of revolution around the Y... around the Z axis. profile = [r, z][]. */
 export function lathe(profile: [number, number][], seg: number, col: V3, metal: number): Mesh {
-  const p: number[] = [], idx: number[] = [];
+  const p: number[] = [], nr: number[] = [], idx: number[] = [];
   const n = profile.length;
+  // profile tangent (dr,dz) -> surface normal (dz,-dr). Adjacent segments blend
+  // only across gentle bends (polished arcs); hard corners keep crisp creases,
+  // so flat caps stay uniformly lit instead of fanning into per-segment stripes.
+  const segN: [number, number][] = [];
+  for (let k = 0; k < n - 1; k++) {
+    const [r0, z0] = profile[k], [r1, z1] = profile[k + 1];
+    const dr = r1 - r0, dz = z1 - z0;
+    const l = Math.hypot(dr, dz) || 1;
+    segN.push([dz / l, -dr / l]);
+  }
+  const CREASE = 0.82;   // ~35deg
+  const pn: [number, number][] = [];
+  for (let k = 0; k < n; k++) {
+    const prev = k > 0 ? segN[k - 1] : null, next = k < n - 1 ? segN[k] : null;
+    if (prev && next && prev[0] * next[0] + prev[1] * next[1] > CREASE) {
+      const sx = prev[0] + next[0], sz = prev[1] + next[1];
+      const l = Math.hypot(sx, sz) || 1;
+      pn.push([sx / l, sz / l]);
+    } else pn.push(next ?? prev ?? [0, 1]);
+  }
+  // leftN[k] = normal segment k-1 uses at its k vertex; pn[k] = normal segment k
+  // uses at its k vertex. At a crease they differ (own segment's normal).
+  const pnL: [number, number][] = pn.map((p, k) => {
+    const prev = k > 0 ? segN[k - 1] : null, next = k < n - 1 ? segN[k] : null;
+    if (prev && next && prev[0] * next[0] + prev[1] * next[1] <= CREASE) return prev;
+    return p;
+  });
   for (let s = 0; s < seg; s++) {
     const a0 = (s / seg) * 2 * Math.PI, a1 = ((s + 1) / seg) * 2 * Math.PI;
     const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+    const am = (a0 + a1) / 2, cm = Math.cos(am), sm = Math.sin(am);   // segment-center angle: smooth around the curve
     for (let k = 0; k < n - 1; k++) {
       const [r0, z0] = profile[k], [r1, z1] = profile[k + 1];
       const A: V3 = [r0 * c0, r0 * s0, z0], B: V3 = [r1 * c0, r1 * s0, z1];
       const C: V3 = [r1 * c1, r1 * s1, z1], D: V3 = [r0 * c1, r0 * s0, z0];
-      if (r0 > 1e-6 && r1 > 1e-6) { pushTri(p, idx, A, B, C); pushTri(p, idx, A, C, D); }
-      else if (r1 > 1e-6) pushTri(p, idx, A, B, C);       // r0 = 0: A == D on the axis
-      else if (r0 > 1e-6) pushTri(p, idx, A, D, B);       // r1 = 0: B == C on the axis
+      const nA: V3 = [pn[k][0] * cm, pn[k][0] * sm, pn[k][1]];
+      const nB: V3 = [pnL[k + 1][0] * cm, pnL[k + 1][0] * sm, pnL[k + 1][1]];
+      if (r0 > 1e-6 && r1 > 1e-6) { pushTriN(p, nr, idx, A, nA, B, nB, C, nB); pushTriN(p, nr, idx, A, nA, C, nB, D, nA); }
+      else if (r1 > 1e-6) pushTriN(p, nr, idx, A, [0, 0, pn[k][1] >= 0 ? 1 : -1], B, nB, C, nB);       // r0 = 0: A == D on the axis
+      else if (r0 > 1e-6) pushTriN(p, nr, idx, A, nA, D, nA, B, [0, 0, pn[k][1] >= 0 ? 1 : -1]);       // r1 = 0: B == C on the axis
     }
   }
-  return { pos: new Float32Array(p), idx: new Uint32Array(idx), col, metal };
+  return { pos: new Float32Array(p), idx: new Uint32Array(idx), col, metal, nrm: new Float32Array(nr) };
 }
 
 /** Extrude a 2D polygon (CCW) to z0..z1 with caps. Polygon must be convex-ish
    or fan-triangulable from vertex 0; gear/star profiles qualify if ordered. */
 export function extrude(pts: [number, number][], z0: number, z1: number, col: V3, metal: number): Mesh {
-  const p: number[] = [], idx: number[] = [];
+  const p: number[] = [], nr: number[] = [], idx: number[] = [];
   const n = pts.length;
+  const ZUP: V3 = [0, 0, 1], ZDN: V3 = [0, 0, -1];
   for (let i = 0; i < n; i++) {
     const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % n];
-    pushTri(p, idx, [x0, y0, z0], [x1, y1, z0], [x1, y1, z1]);
-    pushTri(p, idx, [x0, y0, z0], [x1, y1, z1], [x0, y0, z1]);
+    const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1;
+    const W: V3 = [dy / l, -dx / l, 0];   // outward edge normal (CCW polygon)
+    pushTriN(p, nr, idx, [x0, y0, z0], W, [x1, y1, z0], W, [x1, y1, z1], W);
+    pushTriN(p, nr, idx, [x0, y0, z0], W, [x1, y1, z1], W, [x0, y0, z1], W);
   }
   for (let i = 1; i < n - 1; i++) {   // top cap (CCW from above)
-    pushTri(p, idx, [pts[0][0], pts[0][1], z1], [pts[i][0], pts[i][1], z1], [pts[i + 1][0], pts[i + 1][1], z1]);
+    pushTriN(p, nr, idx, [pts[0][0], pts[0][1], z1], ZUP, [pts[i][0], pts[i][1], z1], ZUP, [pts[i + 1][0], pts[i + 1][1], z1], ZUP);
   }
   for (let i = 1; i < n - 1; i++) {   // bottom cap
-    pushTri(p, idx, [pts[0][0], pts[0][1], z0], [pts[i + 1][0], pts[i + 1][1], z0], [pts[i][0], pts[i][1], z0]);
+    pushTriN(p, nr, idx, [pts[0][0], pts[0][1], z0], ZDN, [pts[i + 1][0], pts[i + 1][1], z0], ZDN, [pts[i][0], pts[i][1], z0], ZDN);
   }
-  return { pos: new Float32Array(p), idx: new Uint32Array(idx), col, metal };
+  return { pos: new Float32Array(p), idx: new Uint32Array(idx), col, metal, nrm: new Float32Array(nr) };
 }
 
-/** Annulus (ring) extruded: outer + inner walls + two ring caps. */
 export function ring(rOut: number, rIn: number, z0: number, z1: number, seg: number, col: V3, metal: number): Mesh {
-  const p: number[] = [], idx: number[] = [];
+  const p: number[] = [], nr: number[] = [], idx: number[] = [];
+  const ZUP: V3 = [0, 0, 1], ZDN: V3 = [0, 0, -1];
   for (let s = 0; s < seg; s++) {
     const a0 = (s / seg) * 2 * Math.PI, a1 = ((s + 1) / seg) * 2 * Math.PI;
     const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+    const am = (a0 + a1) / 2, cm = Math.cos(am), sm = Math.sin(am);
+    const OUT: V3 = [cm, sm, 0], IN: V3 = [-cm, -sm, 0];
     const O0: V3 = [rOut * c0, rOut * s0, z0], O1: V3 = [rOut * c1, rOut * s1, z0];
     const o0: V3 = [rOut * c0, rOut * s0, z1], o1: V3 = [rOut * c1, rOut * s1, z1];
     const I0: V3 = [rIn * c0, rIn * s0, z0], I1: V3 = [rIn * c1, rIn * s1, z0];
     const i0: V3 = [rIn * c0, rIn * s0, z1], i1: V3 = [rIn * c1, rIn * s1, z1];
-    pushTri(p, idx, O0, O1, o1); pushTri(p, idx, O0, o1, o0);       // outer wall
-    pushTri(p, idx, I0, i1, I1); pushTri(p, idx, I0, i0, i1);       // inner wall
-    pushTri(p, idx, o0, o1, i1); pushTri(p, idx, o0, i1, i0);       // top ring
-    pushTri(p, idx, O0, I1, O1); pushTri(p, idx, O0, I0, I1);       // bottom ring
+    pushTriN(p, nr, idx, O0, OUT, O1, OUT, o1, OUT); pushTriN(p, nr, idx, O0, OUT, o1, OUT, o0, OUT);   // outer wall
+    pushTriN(p, nr, idx, I0, IN, i1, IN, I1, IN); pushTriN(p, nr, idx, I0, IN, i0, IN, i1, IN);        // inner wall
+    pushTriN(p, nr, idx, o0, ZUP, o1, ZUP, i1, ZUP); pushTriN(p, nr, idx, o0, ZUP, i1, ZUP, i0, ZUP);   // top ring
+    pushTriN(p, nr, idx, O0, ZDN, I1, ZDN, O1, ZDN); pushTriN(p, nr, idx, O0, ZDN, I0, ZDN, I1, ZDN);   // bottom ring
   }
-  return { pos: new Float32Array(p), idx: new Uint32Array(idx), col, metal };
+  return { pos: new Float32Array(p), idx: new Uint32Array(idx), col, metal, nrm: new Float32Array(nr) };
 }
 
 /** Spoked wheel: rim ring + hub + `spokes` tapered arms, all in one mesh. */
@@ -126,14 +168,19 @@ export function merge(meshes: Mesh[]): Mesh {
   let np = 0, ni = 0;
   for (const m of meshes) { np += m.pos.length; ni += m.idx.length; }
   const pos = new Float32Array(np), idx = new Uint32Array(ni);
+  const allN = meshes.every((m) => m.nrm && m.nrm.length === m.pos.length);
+  const nrm = allN ? new Float32Array(np) : undefined;
   let op = 0, oi = 0;
   for (const m of meshes) {
     pos.set(m.pos, op);
+    if (nrm) nrm.set(m.nrm!, op);
     const vb = op / 3;
     for (let k = 0; k < m.idx.length; k++) idx[oi + k] = m.idx[k] + vb;
     op += m.pos.length; oi += m.idx.length;
   }
-  return { pos, idx, col: meshes[0].col, metal: meshes[0].metal };
+  const out: Mesh = { pos, idx, col: meshes[0].col, metal: meshes[0].metal };
+  if (nrm) out.nrm = nrm;
+  return out;
 }
 
 export function box(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, col: V3, metal: number): Mesh {
@@ -172,6 +219,8 @@ function norm(v: V3): V3 { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] 
    convex=true skip the per-triangle sort (drawn in index order). */
 const ZKEY = new Float64Array(65536);
 const ZIDX = new Uint32Array(65536);
+const ZMESH = new Uint16Array(65536);
+const TIE_EPS = 0.35;   // depths closer than this are the same physical layer: mesh order decides (meshes are assembled far -> near)
 
 export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[]): void {
   out.length = 0;
@@ -187,6 +236,7 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
     const spn = m.spin;
     const pos = m.pos, idx = m.idx;
     const mcr = m.col[0], mcg = m.col[1], mcb = m.col[2];
+    const nrms = m.nrm;
     const metal = m.metal, sm = metal > 0.5;
     const n = idx.length;
     const scx = spn ? spn.center[0] : 0, scy = spn ? spn.center[1] : 0;
@@ -209,11 +259,23 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       }
       const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
       const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
-      const nrx = e1y * e2z - e1z * e2y;
-      const nry = e1z * e2x - e1x * e2z;
-      const nrz0 = e1x * e2y - e1y * e2x;
-      const nl = Math.sqrt(nrx * nrx + nry * nry + nrz0 * nrz0);
+      let nrx = e1y * e2z - e1z * e2y;
+      let nry = e1z * e2x - e1x * e2z;
+      let nrz0 = e1x * e2y - e1y * e2x;
+      let nl = Math.sqrt(nrx * nrx + nry * nry + nrz0 * nrz0);
       if (nl < 1e-12) continue;
+      if (nrms) {   // analytic smooth normals: average the 3 vertex normals (spin-rotated)
+        let vj = idx[k] * 3;
+        let pnx = nrms[vj], pny = nrms[vj + 1], pnz = nrms[vj + 2];
+        vj = idx[k + 1] * 3;
+        pnx += nrms[vj]; pny += nrms[vj + 1]; pnz += nrms[vj + 2];
+        vj = idx[k + 2] * 3;
+        pnx += nrms[vj]; pny += nrms[vj + 1]; pnz += nrms[vj + 2];
+        if (spn) { const qx = pnx * sc - pny * ss; pny = pnx * ss + pny * sc; pnx = qx; }
+        nrx = pnx; nry = pny; nrz0 = pnz;
+        nl = Math.sqrt(nrx * nrx + nry * nry + nrz0 * nrz0);
+        if (nl < 1e-12) continue;
+      }
       // camera transform (+z of the scene faces the camera)
       const ax2 = ax * cyw - ay * syw, ayw = ax * syw + ay * cyw;
       const azc = ayw * sp - az * cp + cam.dist;
@@ -241,7 +303,7 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       const streak = Math.abs(nx);
       let specA = Math.pow(Math.max(0, -rz / (rl > 1e-9 ? rl : 1)), 12);
       const st = streak * streak * streak * streak * streak; // |nx|^5
-      const st2 = st * st * (1 - Math.abs(nzz)) * (1 - Math.abs(nzz)) * 0.9;  // |nx|^10 (1-|nz|)^2
+      const st2 = st * st * (1 - Math.abs(nzz)) * (1 - Math.abs(nzz)) * 0.3;  // |nx|^10 (1-|nz|)^2 - kept subtle so brushed-metal streaks do not corduroy the case
       if (st2 > specA) specA = st2;
       const spec = specA * (0.22 + 1.0 * metal);
       const amb = 0.22;
@@ -257,13 +319,18 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
         x2: half + (cx2 * f) / czc, y2: half - (cys * f) / czc,
         r: r > 1 ? 1 : r, g: g > 1 ? 1 : g, b: b > 1 ? 1 : b,
       });
-      if (zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; zCount++; }
+      if (zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; ZMESH[zCount] = mi; zCount++; }
     }
   }
   // painter sort: far (large z) drawn first
   const order = ZIDX.subarray(0, zCount);
   const z = ZKEY;
-  Array.prototype.sort.call(order, (a, b) => z[b] - z[a]);
+  Array.prototype.sort.call(order, (a, b) => {
+    const dz = z[b] - z[a];
+    if (dz > TIE_EPS) return 1;
+    if (dz < -TIE_EPS) return -1;
+    return ZMESH[a] - ZMESH[b];
+  });
   const sorted: Tri[] = new Array(zCount);
   for (let i = 0; i < zCount; i++) sorted[i] = out[ZIDX[i]];
   for (let i = 0; i < zCount; i++) out[i] = sorted[i];
@@ -301,26 +368,26 @@ function hand(len: number, w: number, tail: number, z0: number, z1: number, col:
 
 export function buildWatchScene(): WatchScene {
   // case: clean band ring + convex bezel arc + solid back (no zigzag profiles)
-  const caseBand = ring(50, 46.8, -2, 10.0, 64, STEEL, 1);   // top cap fully under the bezel bottom (10.2): no z-alternation
-  const caseBack = lathe([[0, -2.8], [46.6, -2.8], [48.4, -2], [46.6, -1.7], [41.8, -1.7]], 48, STEEL, 1);   // no interior top disc: the plate covers it (fan interleave)
-  const bezel = lathe([[45.8, 10.2], [50.3, 10.2], [51.2, 11.5], [49, 13.5], [45.8, 13.2], [45.8, 10.2]], 64, STEEL, 1);  // closed cross-section
+  const caseBand = ring(50, 46.8, -2, 10.0, 128, STEEL, 1);   // top cap fully under the bezel bottom (10.2): no z-alternation
+  const caseBack = lathe([[0, -2.8], [46.6, -2.8], [48.4, -2], [46.6, -1.7], [41.8, -1.7]], 96, STEEL, 1);   // no interior top disc: the plate covers it (fan interleave)
+  const bezel = lathe([[45.8, 10.4], [50.3, 10.4], [51.2, 11.5], [49, 13.5], [45.8, 13.2], [45.8, 10.4]], 128, STEEL, 1);  // closed cross-section; base 0.4 above band top: no near-coplanar annulus
   const crownX = merge([
     box(50.5, 0, 4, 3.5, 1.6, 1.6, STEEL, 1),     // stem
     box(53.5, 0, 4, 3.4, 4.6, 4.6, STEEL, 1),     // head
     box(53.5, 0, 4, 4.0, 3.4, 5.2, STEEL, 1),     // knurl cross
   ]);
   // chapter ring + applied markers
-  const chapter = ring(46.55, 41.5, 6.4, 10.2, 64, [0.07, 0.07, 0.09], 0.2);   // tall rehaut, INSIDE the band inner wall (46.8) - no crossing
+  const chapter = ring(46.55, 41.5, 6.4, 9.4, 96, [0.07, 0.07, 0.09], 0.2);   // tall rehaut: top (9.4) clears the band top (10.0) and bezel bottom (10.2) - no coplanar contact
   const markers: Mesh[] = [];
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * 2 * Math.PI;
     const w = i % 3 === 0 ? 1.6 : 0.9;
     const m = box(0, 0, 0, w, 3.6, 0.5, STEEL, 1);
-    bake(m, 43.9 * Math.sin(a), 43.9 * Math.cos(a), 10.0, -a);
+    bake(m, 43.9 * Math.sin(a), 43.9 * Math.cos(a), 9.65, -a);   // sits on the chapter top (9.4), under the bezel bottom (10.2)
     markers.push(m);
   }
   // solid mainplate disc (dark) + center medallion + balance cock
-  const plate = lathe([[0, -0.8], [41.6, -0.8], [41.6, 0], [0, 0]], 56, PLATE, 0.8);
+  const plate = lathe([[0, -0.8], [41.6, -0.8], [41.6, 0], [0, 0]], 96, PLATE, 0.8);
   const balCock = bake(box(0, 0, 0, 5, 14, 1.2, PLATE, 0.8), 0, 9, 6.0, 0.12);
   // gear train: z-tiered for depth separation (barrel low, rising toward escape)
   const barrel = merge([
@@ -367,7 +434,7 @@ export function buildWatchScene(): WatchScene {
   fork.spin = { axis: [0, 0, 1], center: [0, -8.6, 0], angle: 0 };
   // balance at (0, 3.4) above the train plane
   const balance = merge([
-    ring(8.6, 7.6, 5.0, 6.0, 44, STEEL, 1),
+    ring(8.6, 7.6, 5.0, 6.0, 64, STEEL, 1),
     spokedWheel(7.6, 7.0, 1.4, 5.4, 6.0, 2, STEEL, 1),
     lathe([[0, 3.8], [0.7, 3.8], [0.7, 7.0], [0, 7.0]], 8, STEEL, 1),
   ]);
@@ -398,7 +465,8 @@ export function buildWatchScene(): WatchScene {
     w.spin = { axis: [0, 0, 1], center: [wheelCenters[i][0], wheelCenters[i][1], 0], angle: 0 };
   });
   return {
-    statics: [caseBand, caseBack, bezel, crownX, chapter, plate, balCock, ...markers],
+    // assembled far -> near in renderWatch; painter ties inside a layer resolve by this order
+    statics: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel, crownX],
     wheels: [barrel, center, third, fourth, escape],
     fork, balance, hairspring, hourHand, minuteHand, secondHand,
   };
@@ -420,5 +488,7 @@ export function renderWatch(scene: WatchScene, a: {
   scene.hourHand.spin!.angle = a.hour;
   scene.minuteHand.spin!.angle = a.minute;
   scene.secondHand.spin!.angle = a.second;
-  renderFrame([...scene.statics, ...scene.wheels, scene.fork, scene.balance, scene.hairspring, scene.hourHand, scene.minuteHand, scene.secondHand], cam, size, out);
+  const st = scene.statics;
+  // st: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel, crownX]
+  renderFrame([st[0], st[1], ...scene.wheels, scene.fork, st[2], scene.balance, scene.hairspring, ...st.slice(3), scene.hourHand, scene.minuteHand, scene.secondHand], cam, size, out);
 }
