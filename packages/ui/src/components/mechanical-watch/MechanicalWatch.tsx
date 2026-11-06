@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, PanResponder, View, useWindowDimensions, type ViewStyle } from "react-native";
-import { Canvas, Picture, Skia, createPicture } from "@shopify/react-native-skia";
+import { AccessibilityInfo, PanResponder, View, type ViewStyle } from "react-native";
+import { AlphaType, Canvas, ColorType, FilterMode, MipmapMode, Picture, Skia, createPicture } from "@shopify/react-native-skia";
 import { useDerivedValue, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import { WATCH_DEFAULTS, createWatch, stepWatch, trainAngles, windCrown, type WatchState } from "./watchMath";
-import { buildWatchScene, renderWatch, type Camera, type Tri } from "./watch3d";
+import { buildWatchScene, renderWatch, rasterizeZB, type Camera, type Tri } from "./watch3d";
 
 export type MechanicalWatchProps = {
   /** Render size in points (square). */
@@ -16,6 +16,17 @@ export type MechanicalWatchProps = {
 };
 
 const CAM0: Camera = { yaw: 0.35, pitch: 0.55, dist: 150, fov: 0.73, cx: 0, cy: 0 };
+const BG: [number, number, number] = [9, 9, 14];   // #09090e, matches the old flat fill
+
+/* Software render cost varies widely by device, so the bitmap resolution is
+   adaptive: start mid-tier and walk down when the rolling render time exceeds
+   a frame budget, back up when there is headroom. The final image is upscaled
+   with linear sampling, so a lower tier costs sharpness, not correctness. */
+const TIERS = [448, 384, 320, 256];
+const TRIS: Tri[] = [];
+let PIX = new Uint8ClampedArray(0);
+let qTier = 1;
+let qEma = 20;
 
 export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Mechanical watch", style }: MechanicalWatchProps) {
   const [systemReduce, setSystemReduce] = useState(false);
@@ -80,38 +91,45 @@ export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Me
 
   const picture = useDerivedValue(() => {
     frame.value;
+    const t0 = Date.now();
     const rect = { x: 0, y: 0, width: size, height: size };
     const s = sim.value;
     const a = trainAngles(s.e);
-    const tris: Tri[] = [];
+    const px = TIERS[qTier];
+    if (PIX.length < px * px * 4) PIX = new Uint8ClampedArray(px * px * 4);
+    const buf = PIX.length === px * px * 4 ? PIX : PIX.subarray(0, px * px * 4);
+    TRIS.length = 0;
+    // sort=false: the painter order is unused - depth is resolved per-pixel.
     renderWatch(scene, {
       barrel: a.barrel, center: a.center, third: a.third, fourth: a.fourth, escape: a.escape,
       fork: s.p, balance: s.b, hour: -a.hour, minute: -a.minute, second: -a.second,
-    }, camSV.value, size, tris);
+    }, camSV.value, px, TRIS, false);
+    rasterizeZB(TRIS, px, 1, BG, buf);
+    const data = Skia.Data.fromBytes(buf);
+    const img = Skia.Image.MakeImage(
+      { width: px, height: px, alphaType: AlphaType.Opaque, colorType: ColorType.RGBA_8888 },
+      data,
+      px * 4,
+    );
+    // Adaptive quality: rolling render cost steers the resolution tier.
+    const ms = Date.now() - t0;
+    qEma = qEma * 0.85 + ms * 0.15;
+    if (qEma > 26 && qTier < TIERS.length - 1) { qTier++; qEma = 20; }
+    else if (qEma < 12 && qTier > 0) { qTier--; qEma = 20; }
     return createPicture((canvas) => {
-      const bg = Skia.Paint();
-      bg.setAntiAlias(true);
-      bg.setColor(Float32Array.of(0.035, 0.035, 0.045, 1));
-      canvas.drawRect(rect, bg);
-      const paint = Skia.Paint();
-      paint.setAntiAlias(true);
-      const path = Skia.Path.Make();
-      let cr = -1, cg = -1, cb = -1;
-      for (let i = 0; i < tris.length; i++) {
-        const t = tris[i];
-        // 12-bit color bucket: flush the run when the quantized color changes
-        const qr = (t.r * 15) | 0, qg = (t.g * 15) | 0, qb = (t.b * 15) | 0;
-        if (qr !== cr || qg !== cg || qb !== cb) {
-          if (cr >= 0) { canvas.drawPath(path, paint); path.rewind(); }
-          cr = qr; cg = qg; cb = qb;
-          paint.setColor(Float32Array.of((qr + 0.5) / 15, (qg + 0.5) / 15, (qb + 0.5) / 15, 1));
-        }
-        path.moveTo(t.x0, t.y0);
-        path.lineTo(t.x1, t.y1);
-        path.lineTo(t.x2, t.y2);
-        path.close();
+      if (img) {
+        canvas.drawImageRectOptions(
+          img,
+          { x: 0, y: 0, width: px, height: px },
+          rect,
+          FilterMode.Linear,
+          MipmapMode.None,
+        );
+      } else {
+        const bg = Skia.Paint();
+        bg.setColor(Float32Array.of(0.035, 0.035, 0.045, 1));
+        canvas.drawRect(rect, bg);
       }
-      if (cr >= 0) canvas.drawPath(path, paint);
     }, rect);
   }, [size]);
 

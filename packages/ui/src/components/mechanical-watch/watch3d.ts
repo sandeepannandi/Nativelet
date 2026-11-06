@@ -216,7 +216,8 @@ export function bake(m: Mesh, dx: number, dy: number, dz: number, rz = 0): Mesh 
 
 export type Camera = { yaw: number; pitch: number; dist: number; fov: number; cx: number; cy: number };
 
-const KEY: V3 = norm([-0.62, -0.28, 0.55]);   // grazing key from upper left (speculars reach the camera)
+const KEY: V3 = norm([-0.62, -0.28, 0.55]);
+const SKEY: V3 = norm([-0.35, 0.5, -0.8]);   // spec light travels INTO the scene so highlights reach the camera (the diffuse key's bounces never do)
 const FILL: V3 = norm([0.8, 0.35, 0.4]);
 
 function norm(v: V3): V3 { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; }
@@ -303,10 +304,10 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       nx *= inv; nyy *= inv; nzz *= inv;
       const keyD = -(nx * KX + nyy * KY + nzz * KZ);
       const fillD = -(nx * FX + nyy * FY + nzz * FZ);
-      const nd = nx * KX + nyy * KY + nzz * KZ;
-      const rz = KZ - 2 * nd * nzz;
-      const rx2 = KX - 2 * nd * nx;
-      const ry2 = KY - 2 * nd * nyy;
+      const nd = nx * SKEY[0] + nyy * SKEY[1] + nzz * SKEY[2];
+      const rz = SKEY[2] - 2 * nd * nzz;
+      const rx2 = SKEY[0] - 2 * nd * nx;
+      const ry2 = SKEY[1] - 2 * nd * nyy;
       const rl = Math.sqrt(rx2 * rx2 + ry2 * ry2 + rz * rz);
       // plain Blinn: the |nx|^n "brushed streak" terms quantized per-triangle
       // into stripes/teeth on curved steel - removed, not retuned.

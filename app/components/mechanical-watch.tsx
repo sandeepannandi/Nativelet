@@ -2,11 +2,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "framer-motion";
 import { WATCH_DEFAULTS, createWatch, stepWatch, trainAngles } from "../../packages/ui/src/components/mechanical-watch/watchMath";
-import { buildWatchScene, renderWatch, type Camera, type Tri } from "../../packages/ui/src/components/mechanical-watch/watch3d";
+import { buildWatchScene, renderWatch, rasterizeZB, type Camera, type Tri } from "../../packages/ui/src/components/mechanical-watch/watch3d";
 import styles from "./mechanical-watch.module.css";
 
 const SIZE = 360;
 const CAM0: Camera = { yaw: 0.35, pitch: 0.55, dist: 150, fov: 0.73, cx: 0, cy: 0 };
+const BG: [number, number, number] = [9, 9, 14];
+
+/* Adaptive software-render resolution: walk down when the rolling render time
+   exceeds a frame budget, back up with headroom; the bitmap is upscaled with
+   smoothing, so a lower tier costs sharpness, not correctness. */
+const TIERS = [512, 448, 384, 320];
 
 export function MechanicalWatchPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -28,45 +34,43 @@ export function MechanicalWatchPreview() {
     const sim = createWatch(WATCH_DEFAULTS);
     const tris: Tri[] = [];
     const cam: Camera = { ...CAM0 };
+    const off = document.createElement("canvas");
+    const offCtx = off.getContext("2d");
+    if (!offCtx) return;
     let raf = 0;
     let last = 0;
     let dragging = false;
     let grab: { yaw: number; pitch: number } | null = null;
+    let tier = 1;
+    let ema = 20;
+    let img: ImageData | null = null;
+    let px = 0;
 
     const draw = () => {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = "#09090e";
-      ctx.fillRect(0, 0, SIZE, SIZE);
-      tris.length = 0;
+      const t0 = performance.now();
+      if (px !== TIERS[tier]) {
+        px = TIERS[tier];
+        off.width = px;
+        off.height = px;
+        img = offCtx.createImageData(px, px);
+      }
       const a = trainAngles(sim.e);
+      tris.length = 0;
+      // sort=false: depth is resolved per-pixel by the z-buffer rasterizer.
       renderWatch(scene, {
         barrel: a.barrel, center: a.center, third: a.third, fourth: a.fourth, escape: a.escape,
         fork: sim.p, balance: sim.b, hour: -a.hour, minute: -a.minute, second: -a.second,
-      }, cam, SIZE, tris);
-      // Same 12-bit color-bucket batching as the native renderer: flush the
-      // path run when the quantized fill changes.
-      let cr = -1, cg = -1, cb = -1;
-      ctx.beginPath();
-      for (let i = 0; i < tris.length; i++) {
-        const t = tris[i];
-        const qr = (t.r * 15) | 0, qg = (t.g * 15) | 0, qb = (t.b * 15) | 0;
-        if (qr !== cr || qg !== cg || qb !== cb) {
-          if (cr >= 0) {
-            ctx.fillStyle = `rgb(${Math.round(((cr + 0.5) / 15) * 255)},${Math.round(((cg + 0.5) / 15) * 255)},${Math.round(((cb + 0.5) / 15) * 255)})`;
-            ctx.fill();
-          }
-          ctx.beginPath();
-          cr = qr; cg = qg; cb = qb;
-        }
-        ctx.moveTo(t.x0, t.y0);
-        ctx.lineTo(t.x1, t.y1);
-        ctx.lineTo(t.x2, t.y2);
-        ctx.closePath();
-      }
-      if (cr >= 0) {
-        ctx.fillStyle = `rgb(${Math.round(((cr + 0.5) / 15) * 255)},${Math.round(((cg + 0.5) / 15) * 255)},${Math.round(((cb + 0.5) / 15) * 255)})`;
-        ctx.fill();
-      }
+      }, cam, px, tris, false);
+      if (!img) return;
+      rasterizeZB(tris, px, 1, BG, img.data);
+      offCtx.putImageData(img, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+      const ms = performance.now() - t0;
+      ema = ema * 0.85 + ms * 0.15;
+      if (ema > 26 && tier < TIERS.length - 1) { tier++; ema = 20; }
+      else if (ema < 12 && tier > 0) { tier--; ema = 20; }
     };
 
     const tick = (t: number) => {
