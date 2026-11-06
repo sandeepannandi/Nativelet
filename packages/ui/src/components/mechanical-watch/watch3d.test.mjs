@@ -1,6 +1,6 @@
 /* Pixel test: rasterize the watch scene with a real scanline filler into an
    RGB buffer; assert coverage/variance/highlight; write /tmp/watch.ppm. */
-import { buildWatchScene, renderWatch } from './watch3d.ts';
+import { buildWatchScene, renderWatch, lathe, renderFrame, rasterizeZB } from './watch3d.ts';
 import { writeFileSync } from 'node:fs';
 
 const S = 400;
@@ -71,3 +71,37 @@ if (gold < 200) throw new Error('FAIL: no brass gear pixels');
 const header = Buffer.from(`P6\n${S} ${S}\n255\n`);
 writeFileSync('/tmp/watch.ppm', Buffer.concat([header, Buffer.from(img.buffer)]));
 console.log('wrote /tmp/watch.ppm');
+
+// Regression: lathe quad vertices must sit at their OWN angle and radius.
+// The D-vertex bug mixed x=cos(a1) with y=sin(a0), displacing vertices off
+// their circle by up to r*da and punching real holes in every lathe mesh.
+{
+  const prof = [[45.8, 13.5], [50.1, 13.3], [51.2, 11.9], [51.2, 10.0]];
+  const m = lathe(prof, 256, [1, 1, 1], 0);
+  let bad = 0;
+  for (let i = 0; i < m.pos.length; i += 3) {
+    const x = m.pos[i], y = m.pos[i + 1], z = m.pos[i + 2];
+    const r = Math.hypot(x, y);
+    const onProfile = prof.some(([pr, pz]) => Math.abs(pr - r) < 1e-5 && Math.abs(pz - z) < 1e-6);
+    if (!onProfile) bad++;
+  }
+  if (bad > 0) throw new Error('FAIL: ' + bad + ' lathe vertices off their profile circle');
+}
+
+// Regression: a closed lathe primitive must render with zero enclosed
+// background holes at a grazing angle (silhouette teeth must not return).
+{
+  const coin = lathe([[0, 0], [46, 0], [46, 4], [0, 4]], 160, [0.7, 0.7, 0.7], 0);
+  const tris = [];
+  renderFrame([coin], { yaw: 1.2, pitch: 0.55, dist: 150, fov: 0.73, cx: 0, cy: 0 }, 700, tris, false);
+  const px = new Uint8ClampedArray(700 * 700 * 4);
+  rasterizeZB(tris, 700, 2, [12, 12, 14], px);
+  const v = (x, y) => px[(y * 700 + x) * 4];
+  let holes = 0;
+  for (let y = 1; y < 699; y++) for (let x = 1; x < 699; x++) {
+    if (v(x, y) !== 12) continue;
+    if ((v(x - 1, y) > 60 && v(x + 1, y) > 60) || (v(x, y - 1) > 60 && v(x, y + 1) > 60)) holes++;
+  }
+  if (holes > 0) throw new Error('FAIL: closed lathe coin rendered with ' + holes + ' enclosed background holes');
+}
+console.log('lathe regression checks passed');
