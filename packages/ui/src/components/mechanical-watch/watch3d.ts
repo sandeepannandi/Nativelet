@@ -9,6 +9,7 @@
 export type Tri = {
   x0: number; y0: number; x1: number; y1: number; x2: number; y2: number;
   r: number; g: number; b: number;
+  z0: number; z1: number; z2: number;   // view-space depth per vertex (>0)
 };
 
 type V3 = [number, number, number];
@@ -222,7 +223,7 @@ const ZIDX = new Uint32Array(65536);
 const ZMESH = new Uint16Array(65536);
 const TIE_EPS = 0.35;   // depths closer than this are the same physical layer: mesh order decides (meshes are assembled far -> near)
 
-export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[]): void {
+export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[], sort = true): void {
   out.length = 0;
   let zCount = 0;
   const cyw = Math.cos(cam.yaw), syw = Math.sin(cam.yaw);
@@ -318,11 +319,13 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
         x1: half + (bx2 * f) / bzc, y1: half - (bys * f) / bzc,
         x2: half + (cx2 * f) / czc, y2: half - (cys * f) / czc,
         r: r > 1 ? 1 : r, g: g > 1 ? 1 : g, b: b > 1 ? 1 : b,
+        z0: azc, z1: bzc, z2: czc,
       });
       if (zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; ZMESH[zCount] = mi; zCount++; }
     }
   }
-  // painter sort: far (large z) drawn first
+  // painter sort: far (large z) drawn first (skipped by the z-buffer path)
+  if (!sort) return;
   const order = ZIDX.subarray(0, zCount);
   const z = ZKEY;
   Array.prototype.sort.call(order, (a, b) => {
@@ -476,7 +479,7 @@ export function buildWatchScene(): WatchScene {
 export function renderWatch(scene: WatchScene, a: {
   barrel: number; center: number; third: number; fourth: number; escape: number;
   fork: number; balance: number; hour: number; minute: number; second: number;
-}, cam: Camera, size: number, out: Tri[]): void {
+}, cam: Camera, size: number, out: Tri[], sort = true): void {
   scene.wheels[0].spin!.angle = a.barrel;
   scene.wheels[1].spin!.angle = a.center;
   scene.wheels[2].spin!.angle = a.third;
@@ -490,5 +493,83 @@ export function renderWatch(scene: WatchScene, a: {
   scene.secondHand.spin!.angle = a.second;
   const st = scene.statics;
   // st: [caseBack, plate, balCock, chapter, ...markers, caseBand, bezel, crownX]
-  renderFrame([st[0], st[1], ...scene.wheels, scene.fork, st[2], scene.balance, scene.hairspring, ...st.slice(3), scene.hourHand, scene.minuteHand, scene.secondHand], cam, size, out);
+  renderFrame([st[0], st[1], ...scene.wheels, scene.fork, st[2], scene.balance, scene.hairspring, ...st.slice(3), scene.hourHand, scene.minuteHand, scene.secondHand], cam, size, out, sort);
+}
+
+/* Depth-correct rasterizer: the painter sort cannot order intersecting or
+   near-coplanar triangles (sawtooth splatter), so the production adapters
+   rasterize the Tri list per-pixel with a z-buffer instead of drawing the
+   sorted list. 1/z is linear in screen space under perspective projection,
+   so interpolating q=1/z per pixel and keeping the largest-q (nearest) hit
+   is exact for depth ordering. ss=2 supersampling + box downsample gives AA.
+   Zero allocation per call beyond the returned frame: buffers are module-level
+   and grow-only. */
+let ZB_DEPTH = new Float32Array(0);
+let ZB_COL = new Uint8Array(0);   // 4 bytes per pixel (RGBX) so a Uint32 view can write packed colors
+export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, number, number], out: Uint8ClampedArray): void {
+  const R = size * ss;
+  const n = R * R;
+  if (ZB_DEPTH.length < n) { ZB_DEPTH = new Float32Array(n); ZB_COL = new Uint8Array(n * 4); }
+  const depth = ZB_DEPTH.subarray(0, n), col = ZB_COL.subarray(0, n * 4);
+  depth.fill(0);   // q = 1/z > 0 always; larger q = nearer
+  for (let i = 0; i < n * 4; i += 4) { col[i] = bg[0]; col[i + 1] = bg[1]; col[i + 2] = bg[2]; }
+  const col32 = new Uint32Array(col.buffer, 0, n);
+  const scale = R / size;   // tris were projected for a `size` buffer; scale up for SSAA
+  for (let ti = 0; ti < tris.length; ti++) {
+    const t = tris[ti];
+    const xs0 = t.x0 * scale, xs1 = t.x1 * scale, xs2 = t.x2 * scale;
+    const ys0 = t.y0 * scale, ys1 = t.y1 * scale, ys2 = t.y2 * scale;
+    const q0 = 1 / t.z0, q1 = 1 / t.z1, q2 = 1 / t.z2;
+    const yMin = Math.max(0, Math.floor(Math.min(ys0, ys1, ys2)));
+    const yMax = Math.min(R - 1, Math.ceil(Math.max(ys0, ys1, ys2)));
+    if (yMax < yMin) continue;
+    const xMin = Math.min(xs0, xs1, xs2), xMax = Math.max(xs0, xs1, xs2);
+    if (xMax < 0 || xMin >= R) continue;
+    const packed = (255 << 24) | (Math.round(t.b * 255) << 16) | (Math.round(t.g * 255) << 8) | Math.round(t.r * 255);
+    for (let y = yMin; y <= yMax; y++) {
+      const yy = y + 0.5;
+      // gather edge crossings (x and q)
+      let hx0 = 0, hq0 = 0, hx1 = 0, hq1 = 0, cnt = 0;
+      for (let e = 0; e < 3; e++) {
+        const ax = e === 0 ? xs0 : e === 1 ? xs1 : xs2;
+        const ay = e === 0 ? ys0 : e === 1 ? ys1 : ys2;
+        const aq = e === 0 ? q0 : e === 1 ? q1 : q2;
+        const bx = e === 0 ? xs1 : e === 1 ? xs2 : xs0;
+        const by = e === 0 ? ys1 : e === 1 ? ys2 : ys0;
+        const bq = e === 0 ? q1 : e === 1 ? q2 : q0;
+        if (ay === by) continue;
+        if (yy < Math.min(ay, by) || yy >= Math.max(ay, by)) continue;
+        const u = (yy - ay) / (by - ay);
+        const x = ax + u * (bx - ax), q = aq + u * (bq - aq);
+        if (cnt === 0) { hx0 = x; hq0 = q; cnt = 1; }
+        else if (x < hx0) { hx1 = hx0; hq1 = hq0; hx0 = x; hq0 = q; cnt = 2; }
+        else { hx1 = x; hq1 = q; cnt = 2; }
+      }
+      if (cnt < 2) continue;
+      const x0 = Math.max(0, Math.ceil(hx0 - 0.5)), x1 = Math.min(R - 1, Math.floor(hx1 - 0.5));
+      const span = hx1 - hx0;
+      const dq = span > 1e-9 ? (hq1 - hq0) / span : 0;
+      let q = hq0 + ((x0 + 0.5) - hx0) * dq;
+      const row = y * R;
+      for (let x = x0; x <= x1; x++, q += dq) {
+        const p = row + x;
+        if (q > depth[p]) { depth[p] = q; col32[p] = packed; }
+      }
+    }
+  }
+  // box downsample ss x ss -> size x size RGBA
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let sr = 0, sg = 0, sb = 0;
+      for (let dy = 0; dy < ss; dy++) {
+        const row = ((y * ss + dy) * R + x * ss) * 4;
+        for (let dx = 0; dx < ss; dx++) {
+          const o = row + dx * 4;
+          sr += col[o]; sg += col[o + 1]; sb += col[o + 2];
+        }
+      }
+      const d = (y * size + x) * 4, a = ss * ss;
+      out[d] = sr / a; out[d + 1] = sg / a; out[d + 2] = sb / a; out[d + 3] = 255;
+    }
+  }
 }
