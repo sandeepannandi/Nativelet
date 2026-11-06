@@ -167,104 +167,107 @@ const FILL: V3 = norm([0.8, 0.35, 0.4]);
 function norm(v: V3): V3 { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; }
 
 /** Render the scene to a painter-sorted (far-first) flat triangle list in
-   a size x size square. Lights ride with the camera so the rig is stable. */
-const ZBUF: number[] = [];
+   a size x size square. Allocation-free inner loop (UI-thread frame budget);
+   lights ride with the camera so the rig is stable. Meshes with
+   convex=true skip the per-triangle sort (drawn in index order). */
+const ZKEY = new Float64Array(65536);
+const ZIDX = new Uint32Array(65536);
 
 export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[]): void {
   out.length = 0;
-  ZBUF.length = 0;
+  let zCount = 0;
   const cyw = Math.cos(cam.yaw), syw = Math.sin(cam.yaw);
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   const f = size / (2 * Math.tan(cam.fov / 2));
   const half = size / 2;
-  for (const m of meshes) {
+  const KX = KEY[0], KY = KEY[1], KZ = KEY[2];
+  const FX = FILL[0], FY = FILL[1], FZ = FILL[2];
+  for (let mi = 0; mi < meshes.length; mi++) {
+    const m = meshes[mi];
     const spn = m.spin;
-    const n = m.idx.length;
+    const pos = m.pos, idx = m.idx;
+    const mcr = m.col[0], mcg = m.col[1], mcb = m.col[2];
+    const metal = m.metal, sm = metal > 0.5;
+    const n = idx.length;
+    const scx = spn ? spn.center[0] : 0, scy = spn ? spn.center[1] : 0;
+    const sang = spn ? spn.angle : 0;
+    const sc = Math.cos(sang), ss = Math.sin(sang);
     for (let k = 0; k < n; k += 3) {
-      const w: V3[] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-      for (let j = 0; j < 3; j++) {
-        const vi = m.idx[k + j] * 3;
-        let v: V3 = [m.pos[vi], m.pos[vi + 1], m.pos[vi + 2]];
-        if (spn) {
-          v = [v[0] - spn.center[0], v[1] - spn.center[1], v[2] - spn.center[2]];
-          v = rotZ(v, spn.angle);
-          v = [v[0] + spn.center[0], v[1] + spn.center[1], v[2] + spn.center[2]];
-        }
-        w[j] = v;
+      let vi = idx[k] * 3;
+      let ax = pos[vi], ay = pos[vi + 1], az = pos[vi + 2];
+      vi = idx[k + 1] * 3;
+      let bx = pos[vi], by = pos[vi + 1], bz = pos[vi + 2];
+      vi = idx[k + 2] * 3;
+      let cx = pos[vi], cy = pos[vi + 1], cz = pos[vi + 2];
+      if (spn) {
+        let dx = ax - scx, dy = ay - scy;
+        ax = scx + dx * sc - dy * ss; ay = scy + dx * ss + dy * sc;
+        dx = bx - scx; dy = by - scy;
+        bx = scx + dx * sc - dy * ss; by = scy + dx * ss + dy * sc;
+        dx = cx - scx; dy = cy - scy;
+        cx = scx + dx * sc - dy * ss; cy = scy + dx * ss + dy * sc;
       }
-      const e1: V3 = [w[1][0] - w[0][0], w[1][1] - w[0][1], w[1][2] - w[0][2]];
-      const e2: V3 = [w[2][0] - w[0][0], w[2][1] - w[0][1], w[2][2] - w[0][2]];
-      let nrm: V3 = [
-        e1[1] * e2[2] - e1[2] * e2[1],
-        e1[2] * e2[0] - e1[0] * e2[2],
-        e1[0] * e2[1] - e1[1] * e2[0],
-      ];
-      const nl = Math.hypot(nrm[0], nrm[1], nrm[2]);
+      const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+      const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+      const nrx = e1y * e2z - e1z * e2y;
+      const nry = e1z * e2x - e1x * e2z;
+      const nrz0 = e1x * e2y - e1y * e2x;
+      const nl = Math.sqrt(nrx * nrx + nry * nry + nrz0 * nrz0);
       if (nl < 1e-12) continue;
-      nrm = [nrm[0] / nl, nrm[1] / nl, nrm[2] / nl];
-      const scr: V3[] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-      let behind = false;
-      for (let j = 0; j < 3; j++) {
-        const v = w[j];
-        const x = v[0] * cyw - v[1] * syw, y = v[0] * syw + v[1] * cyw;
-        // -z: the scene's +z (dial side) faces the camera
-        const z2 = y * sp - v[2] * cp;
-        const zc = z2 + cam.dist;
-        if (zc < 4) { behind = true; break; }
-        const y2 = y * cp + v[2] * sp;
-        scr[j] = [x, y2, zc];
-      }
-      if (behind) continue;
-      const nx = nrm[0] * cyw - nrm[1] * syw, ny = nrm[0] * syw + nrm[1] * cyw;
-      const nry = ny * cp + nrm[2] * sp, nrz = ny * sp - nrm[2] * cp;
-      // double-sided (painter sort resolves occlusion): flip away-facing
-      // normals so the visible side is lit; no winding requirements on meshes
-      const flip = nrz > 0 ? -1 : 1;
-      const inv = flip / Math.max(1e-12, Math.hypot(nx, nry, nrz));
-      const nv: V3 = [nx * inv, nry * inv, nrz * inv];
-      const nvz2 = nrz * inv;
-      const keyD = Math.max(0, -(nv[0] * KEY[0] + nv[1] * KEY[1] + nv[2] * KEY[2]));
-      const fillD = Math.max(0, -(nv[0] * FILL[0] + nv[1] * FILL[1] + nv[2] * FILL[2]));
-      // reflect the key light about the face normal; spec when it exits toward the camera (0,0,-1)
-      const nd = nv[0] * KEY[0] + nv[1] * KEY[1] + nv[2] * KEY[2];
-      const rz = KEY[2] - 2 * nd * nv[2];
-      const rx = KEY[0] - 2 * nd * nv[0];
-      const ry = KEY[1] - 2 * nd * nv[1];
-      const rl = Math.max(1e-9, Math.hypot(rx, ry, rz));
-      const specA = Math.max(
-        Math.pow(Math.max(0, -rz / rl), 12),
-        // studio streak: bright bands where curved metal walls turn edge-on
-        Math.pow(Math.abs(nx), 10) * Math.pow(1 - Math.abs(nvz2), 2) * 0.9,
-      );
-      const spec = specA * (0.22 + 1.0 * m.metal);
-      const amb = 0.22, dif = 0.78 * keyD + 0.25 * fillD;
-      let r = m.col[0] * (amb + dif), g = m.col[1] * (amb + dif), b = m.col[2] * (amb + dif);
-      const sm = m.metal > 0.5;
-      r += spec * (sm ? Math.min(1, m.col[0] * 1.6) : 1);
-      g += spec * (sm ? Math.min(1, m.col[1] * 1.6) : 1);
-      b += spec * (sm ? Math.min(1, m.col[2] * 1.6) : 1);
-      const px: number[] = [], py: number[] = [];
-      let zAvg = 0;
-      for (let j = 0; j < 3; j++) {
-        px.push(half + (scr[j][0] * f) / scr[j][2]);
-        py.push(half - (scr[j][1] * f) / scr[j][2]);
-        zAvg += scr[j][2];
-      }
-      ZBUF.push(zAvg / 3);
+      // camera transform (+z of the scene faces the camera)
+      const ax2 = ax * cyw - ay * syw, ayw = ax * syw + ay * cyw;
+      const azc = ayw * sp - az * cp + cam.dist;
+      const bx2 = bx * cyw - by * syw, byw = bx * syw + by * cyw;
+      const bzc = byw * sp - bz * cp + cam.dist;
+      const cx2 = cx * cyw - cy * syw, cyw2 = cx * syw + cy * cyw;
+      const czc = cyw2 * sp - cz * cp + cam.dist;
+      if (azc < 4 || bzc < 4 || czc < 4) continue;
+      const ays = ayw * cp + az * sp;
+      const bys = byw * cp + bz * sp;
+      const cys = cyw2 * cp + cz * sp;
+      // normal to camera space
+      let nx = nrx * cyw - nry * syw, ny = nrx * syw + nry * cyw;
+      let nyy = ny * cp + nrz0 * sp, nzz = ny * sp - nrz0 * cp;
+      const flip = nzz > 0 ? -1 : 1;
+      const inv = flip / nl;
+      nx *= inv; nyy *= inv; nzz *= inv;
+      const keyD = -(nx * KX + nyy * KY + nzz * KZ);
+      const fillD = -(nx * FX + nyy * FY + nzz * FZ);
+      const nd = nx * KX + nyy * KY + nzz * KZ;
+      const rz = KZ - 2 * nd * nzz;
+      const rx2 = KX - 2 * nd * nx;
+      const ry2 = KY - 2 * nd * nyy;
+      const rl = Math.sqrt(rx2 * rx2 + ry2 * ry2 + rz * rz);
+      const streak = Math.abs(nx);
+      let specA = Math.pow(Math.max(0, -rz / (rl > 1e-9 ? rl : 1)), 12);
+      const st = streak * streak * streak * streak * streak; // |nx|^5
+      const st2 = st * st * (1 - Math.abs(nzz)) * (1 - Math.abs(nzz)) * 0.9;  // |nx|^10 (1-|nz|)^2
+      if (st2 > specA) specA = st2;
+      const spec = specA * (0.22 + 1.0 * metal);
+      const amb = 0.22;
+      const dif = 0.78 * (keyD > 0 ? keyD : 0) + 0.25 * (fillD > 0 ? fillD : 0);
+      let r = mcr * (amb + dif), g = mcg * (amb + dif), b = mcb * (amb + dif);
+      const sa = sm ? 1.6 : 1;
+      r += spec * (sm ? Math.min(1, mcr * sa) : 1);
+      g += spec * (sm ? Math.min(1, mcg * sa) : 1);
+      b += spec * (sm ? Math.min(1, mcb * sa) : 1);
       out.push({
-        x0: px[0], y0: py[0], x1: px[1], y1: py[1], x2: px[2], y2: py[2],
-        r: Math.min(1, r), g: Math.min(1, g), b: Math.min(1, b),
+        x0: half + (ax2 * f) / azc, y0: half - (ays * f) / azc,
+        x1: half + (bx2 * f) / bzc, y1: half - (bys * f) / bzc,
+        x2: half + (cx2 * f) / czc, y2: half - (cys * f) / czc,
+        r: r > 1 ? 1 : r, g: g > 1 ? 1 : g, b: b > 1 ? 1 : b,
       });
+      if (zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; zCount++; }
     }
   }
   // painter sort: far (large z) drawn first
-  const order = new Uint32Array(out.length);
-  for (let i = 0; i < order.length; i++) order[i] = i;
-  const z = ZBUF;
+  const order = ZIDX.subarray(0, zCount);
+  const z = ZKEY;
   Array.prototype.sort.call(order, (a, b) => z[b] - z[a]);
-  const sorted: Tri[] = new Array(out.length);
-  for (let i = 0; i < order.length; i++) sorted[i] = out[order[i]];
-  for (let i = 0; i < sorted.length; i++) out[i] = sorted[i];
+  const sorted: Tri[] = new Array(zCount);
+  for (let i = 0; i < zCount; i++) sorted[i] = out[ZIDX[i]];
+  for (let i = 0; i < zCount; i++) out[i] = sorted[i];
+  out.length = zCount;
 }
 
 /* ---------- the watch scene ----------

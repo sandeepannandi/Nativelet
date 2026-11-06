@@ -1,0 +1,28 @@
+{
+  "slug": "mechanical-watch",
+  "title": "Mechanical Watch",
+  "category": "interaction",
+  "files": [
+    "MechanicalWatch.tsx",
+    "watchMath.ts",
+    "watch3d.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-reanimated"
+  ],
+  "tested": {
+    "expo": "57.0.27",
+    "reactNative": "0.86.3",
+    "web": "0.21.2",
+    "skia": "2.6.2",
+    "reanimated": "4.5.1"
+  },
+  "nativeDeviceVerified": false,
+  "description": "A Swiss-lever escapement running real contact physics - balance wheel, pallet fork, club-tooth escape wheel with draw and impulse - rendered as true 3D meshes through a software perspective pipeline shared between Skia and Canvas2D. Drag to orbit the movement."
+}
