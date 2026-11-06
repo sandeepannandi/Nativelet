@@ -51,11 +51,11 @@ export type WatchPhysics = {
 export const WATCH_DEFAULTS: WatchPhysics = {
   escapeTeeth: 15,
   escapeR: 10,
-  forkPivot: 25.2,   // 2.52 x tip radius, measured from reference anchor escapement
-  balancePivot: 16,
-  rollerR: 3.0,
-  hornR: 13,
-  slotHalf: 0.6,
+  forkPivot: 13.4,   // ~1.4 x tip radius: pallet ARBOR (zero-motion point of the reference fork), not the slot neck
+  balancePivot: 12,
+  rollerR: 2.5,
+  hornR: 9.5,
+  slotHalf: 0.5,
   bankAngle: 0.05,   // total throw 5.7 deg; set so engaged lock depth ~0.5, disengaged clearance ~0.4
   balanceHz: 3,
   balanceJ: 1,
@@ -104,7 +104,7 @@ export function createWatch(p: WatchPhysics): WatchState {
   return {
     // tooth 3 rests on the engaged exit shelf; gentle balance start (the
     // escapement itself must pump the amplitude up - that is the validation)
-    e: -0.1117, we: 0, p: -p.bankAngle, wp: 0,
+    e: -0.2904, we: 0, p: -p.bankAngle, wp: 0,   // tooth 3 on the exit lock face at -bank
     b: 0, wb: w0 * 4.4,   // running amplitude; unlock needs b ~ 1.5+ against full-wind draw
     wind: 1, crown: 0, beats: 0, lastForkSign: -1,
     amp: 4.4, t: 0, acc: 0, seeded: true, stopped: false,
@@ -158,10 +158,13 @@ type Face = { ax: number; ay: number; nx: number; ny: number; tx: number; ty: nu
 /* fork-local face definitions at fork angle 0 (pivot at local origin);
    world = rotate(p) + (0, forkPivot). Positions from the measurements
    above, scaled to escapeR = 10. */
-const ENTRY_LOCK = { ax: -5.975, ay: -17.23, tx: 0, ty: 1, nx: -1, ny: 0, len: 3.2 };
-const ENTRY_IMP  = { ax: -5.975, ay: -17.23, tx: 1, ty: 0, nx: 0, ny: -1, len: 0.9 };
-const EXIT_LOCK  = { ax: 4.5, ay: -16.58, tx: 1, ty: 0, nx: 0, ny: 1, len: 0.6 };
-const EXIT_IMP   = { ax: 5.1, ay: -16.58, tx: 0.423, ty: 0.906, nx: -0.906, ny: 0.423, len: 0.8 };
+/* verified by probe4.mjs (resist / draw sign / creep / corner-cone margin):
+   entry corner (-4.82,-4.72) polar 119 deg, exit corner (5.72,-5.23) polar
+   55 deg; engaged depth 0.4 at the banking, clearance ~0.34 at the other. */
+const ENTRY_LOCK = { ax: -4.82, ay: -4.72, tx: -0.292, ty: 0.957, nx: -0.957, ny: -0.292, len: 1.5 };
+const ENTRY_IMP  = { ax: -4.82, ay: -4.72, tx: -1, ty: 0, nx: 0, ny: -1, len: 1.2 };
+const EXIT_LOCK  = { ax: 5.61, ay: -5.33, tx: 0.743, ty: 0.669, nx: -0.669, ny: 0.743, len: 1.4 };
+const EXIT_IMP   = { ax: 5.72, ay: -5.23, tx: -0.342, ty: 0.940, nx: -0.940, ny: -0.342, len: 1.2 };
 
 function rotFace(local: Face, c: number, s: number, F: number, out: Face) {
   out.ax = local.ax * c - local.ay * s;

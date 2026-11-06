@@ -3,10 +3,10 @@ const P = WATCH_DEFAULTS;
 const s = createWatch(P);
 const F = P.forkPivot;
 const faces = [
-  { ax: -5.975, ay: -17.23, tx: 0, ty: 1, nx: -1, ny: 0, len: 3.2, name: 'E-lock' },
-  { ax: -5.975, ay: -17.23, tx: 1, ty: 0, nx: 0, ny: -1, len: 0.9, name: 'E-imp' },
-  { ax: 4.5, ay: -16.58, tx: 1, ty: 0, nx: 0, ny: 1, len: 0.6, name: 'X-lock' },
-  { ax: 5.1, ay: -16.58, tx: 0.423, ty: 0.906, nx: -0.906, ny: 0.423, len: 0.8, name: 'X-imp' },
+  { ax: -4.82, ay: -4.72, tx: -0.292, ty: 0.957, nx: -0.957, ny: -0.292, len: 1.5, name: 'E-lock' },
+  { ax: -4.82, ay: -4.72, tx: -1, ty: 0, nx: 0, ny: -1, len: 1.2, name: 'E-imp' },
+  { ax: 5.61, ay: -5.33, tx: 0.743, ty: 0.669, nx: -0.669, ny: 0.743, len: 1.4, name: 'X-lock' },
+  { ax: 5.72, ay: -5.23, tx: -0.342, ty: 0.940, nx: -0.940, ny: -0.342, len: 1.2, name: 'X-imp' },
 ];
 function contacts() {
   const c = Math.cos(s.p), sn = Math.sin(s.p);

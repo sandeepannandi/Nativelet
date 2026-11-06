@@ -167,3 +167,24 @@ a feasibility checker (resist / draw-to-engaged-bank / corner-cone contains
 angles as anchors; new fork tail proportions (hornR ~9, rollerR ~2.5,
 balancePivot ~12); retune driveTorque (reflected inertia drops ~(13/18.8)^2);
 validate diag5 (exit arrests on lock face, half-pitch/beat) + diag2.
+
+## Run 7 (~13:56 IST): exit lock HOLDS; entry clearance defect remains
+All four faces re-derived for the corrected arbor (0,13.4) and verified by
+probe4.mjs (ALL PASS: resist/draw-sign/creep/corner-cone margin):
+  E-lock n=197, E-imp n=270, X-lock n=132, X-imp n=200 (deg, math frame);
+  corners (-4.82,-4.72) pol 119 / (5.72,-5.23) pol 55; fork tail hornR 9.5,
+  rollerR 2.5, balancePivot 12, slotHalf 0.5; e0=-0.2904 (tooth 3 on X-lock).
+diag5 steady-state cycle (~1/3 s = 2 beats, pace already ~6 beats/s):
+exit lock ARRESTS and HOLDS the tooth (we ~ 0 while the fork flaps) - the
+digitized geometry works. Remaining defect: after exit release the wheel
+runs ~1.5 pitches and is caught by ENTRY faces TWICE (tooth on E-imp, next
+on E-lock while fork still heading to -bank) instead of one half-pitch
+arrest -> 2 pitches advance per 2 beats (want 1.0). Cause: entry faces too
+long/tilted, so at the DISengaged bank the entry lock plane still passes
+within ~0.15 of the tooth circle (nominal clearance 0.25) and catches teeth.
+NEXT RUN: (a) entry faces shorter (len 1.5 -> 0.9 / imp 1.2 -> 0.8) and/or
+lock depth 0.4 -> 0.3, bankAngle 0.05 -> 0.06 for real clearance; (b) count
+beats on lock-ARREST events (contact begins on a lock face), not fork sign
+crossings; (c) re-validate diag2 (6/s sustained, half-pitch/beat, amp
+sustained, unwind stops). Also note: amplitude decayed slowly (4.0 -> 1.1
+over 10s) - check energy balance after arrest fix (impulse may be short).
