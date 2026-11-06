@@ -50,3 +50,38 @@ print(open(os.path.join(p,'summary.txt')).read())
 assert all(ok for _,ok,_ in checks),'watch behavior failed'
 with open(os.path.join(p,'summary.txt'),'a') as f: f.write('watch-session ok crash=no\n')
 PY
+
+# Fail-closed packaging (same shape as android-smoke.sh per-route evidence).
+# Flat files are the ACTUAL tested frames and full-session records above:
+# watch-1.png/watch-2.png are the initial/later frames the movement check
+# compared, the logcat is the full session since `adb logcat -c`, start.txt
+# is the actual launch record. No re-shot or substituted frames.
+cp "$OUT/initial.png" smoke-out/watch-1.png
+cp "$OUT/later.png" smoke-out/watch-2.png
+adb logcat -d > smoke-out/watch.logcat.txt || true
+cp "$OUT/start.txt" smoke-out/watch.start.txt
+CRASH=no
+grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" smoke-out/watch.logcat.txt | grep -q . && CRASH=yes
+JSERR=$(grep -c 'ReactNativeJS.*\(Error\|error\)' smoke-out/watch.logcat.txt || true)
+ALIVE=$(adb shell pidof "$PKG" | tr -d '\r' || true)
+H1=$(md5sum < smoke-out/watch-1.png | cut -c1-8); H2=$(md5sum < smoke-out/watch-2.png | cut -c1-8)
+echo "watch crash=$CRASH jserr=$JSERR alive=${ALIVE:+yes} changed_after_interaction=$([ "$H1" != "$H2" ] && echo yes || echo no)" | tee -a "$OUT/summary.txt"
+
+
+# Fail-closed packaging (same shape as android-smoke.sh per-route evidence):
+# flat artifacts + route line for scripts/check-android-results.py.
+adb shell input swipe 540 1500 540 700 400
+sleep 1
+adb shell input swipe 540 700 540 1500 400
+sleep 1
+adb exec-out screencap -p > smoke-out/watch-2.png
+cp "$OUT/initial.png" smoke-out/watch-1.png
+adb logcat -d > smoke-out/watch.logcat.txt || true
+cp "$OUT/start.txt" smoke-out/watch.start.txt
+CRASH=no
+grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG" smoke-out/watch.logcat.txt | grep -q . && CRASH=yes
+JSERR=$(grep -c 'ReactNativeJS.*\(Error\|error\)' smoke-out/watch.logcat.txt || true)
+ALIVE=$(adb shell pidof "$PKG" | tr -d '\r' || true)
+H1=$(md5sum < smoke-out/watch-1.png | cut -c1-8); H2=$(md5sum < smoke-out/watch-2.png | cut -c1-8)
+echo "watch crash=$CRASH jserr=$JSERR alive=${ALIVE:+yes} changed_after_interaction=$([ "$H1" != "$H2" ] && echo yes || echo no)" | tee -a "$OUT/summary.txt"
+
