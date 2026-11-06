@@ -124,3 +124,25 @@ trace one full beat cycle (diag4) at 960 Hz: check which face each tooth
 lands on after each drop; verify exit-entry stagger (2.5-pitch corner
 separation) against actual contact polar angles; check jewel-in-slot
 coverage through the full swing; then tune.
+
+## Run 5 (~13:40 IST): exit-lock topology finding (the real bug)
+diag5.mjs lock-event trace (960 Hz): the entry lock works (arrests every other
+tooth); the EXIT lock never engages - arriving teeth always land on X-imp,
+which pushes the fork +p (unlock direction), so the wheel streams half a
+pitch extra per cycle and the fork rattles. Analysis: at the exit corner
+(polar ~57 deg) the tooth's travel reaction -T is at ~147 deg; a corner seat
+between a draw-correct lock face (~87 deg) and the impulse face (~152 deg)
+puts the reaction almost entirely on the IMPULSE face -> the corner cannot
+hold, it unlocks. A horizontal shelf lock face catches the tooth only within
+a tiny radial window and slides straight into the same corner. CONCLUSION:
+my idealized exit stone topology is wrong, not just its parameters. The real
+exit-stone/tooth contact must use the tooth's club tip shape (contact on the
+tooth's trailing face), which the point-tip model cannot represent.
+NEXT RUN (decisive grounding, no more cone guessing): digitize the exit
+region of reference frame f001 (and f040/f080 for phase) at high
+magnification from /tmp/anker_frames (re-fetch the GIF from Wikimedia if
+wiped: upload.wikimedia.org/wikipedia/commons/7/75/Paletteankerhemmung.gif):
+extract actual exit stone outline + contacting tooth outline + contact
+point; reproduce those true shapes as face lists, incl. a club-tooth polygon
+for the wheel (tooth becomes 2-3 contact points, or SAT polygon-vs-polygon).
+Also still open: jewel slot coverage at high amplitude (rattle episodes).
