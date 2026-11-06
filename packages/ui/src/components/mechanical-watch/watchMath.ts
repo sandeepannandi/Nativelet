@@ -28,15 +28,12 @@
 export type WatchPhysics = {
   escapeTeeth: number;      // 15 club teeth
   escapeR: number;          // tip circle radius
-  forkPivot: number;        // distance escape center -> pallet arbor
+  forkPivot: number;        // distance escape center -> pallet arbor (pivot ABOVE wheel)
   balancePivot: number;     // distance pallet arbor -> balance staff
   rollerR: number;          // roller jewel radius from balance staff
   hornR: number;            // pallet arbor -> horn slot center
   slotHalf: number;         // half width of horn slot
-  bankAngle: number;        // fork throw limit (rad)
-  drawDeg: number;          // locking-face draw angle
-  impulseDeg: number;       // impulse-face angle from radial
-  stoneIn: number;          // how far a banking stone dips inside tip circle
+  bankAngle: number;        // fork throw limit (rad), half the lock-to-lock throw
   balanceHz: number;        // 3 Hz -> 21,600 vph
   balanceJ: number;
   balanceDamp: number;
@@ -54,15 +51,12 @@ export type WatchPhysics = {
 export const WATCH_DEFAULTS: WatchPhysics = {
   escapeTeeth: 15,
   escapeR: 10,
-  forkPivot: 13.4,
-  balancePivot: 12.2,
-  rollerR: 2.0,
-  hornR: 9.9,
-  slotHalf: 0.62,
-  bankAngle: 0.11,
-  drawDeg: 12,
-  impulseDeg: 25,
-  stoneIn: 0.55,
+  forkPivot: 25.2,   // 2.52 x tip radius, measured from reference anchor escapement
+  balancePivot: 16,
+  rollerR: 3.0,
+  hornR: 13,
+  slotHalf: 0.6,
+  bankAngle: 0.05,   // total throw 5.7 deg; set so engaged lock depth ~0.5, disengaged clearance ~0.4
   balanceHz: 3,
   balanceJ: 1,
   balanceDamp: 0.55,
@@ -108,10 +102,12 @@ export type WatchState = {
 export function createWatch(p: WatchPhysics): WatchState {
   const w0 = 2 * Math.PI * p.balanceHz;
   return {
-    e: 0, we: 0, p: -p.bankAngle, wp: 0,
-    b: 0, wb: w0 * 4.4,          // starts running, near full amplitude
+    // tooth 3 rests on the engaged exit shelf; gentle balance start (the
+    // escapement itself must pump the amplitude up - that is the validation)
+    e: -0.1117, we: 0, p: -p.bankAngle, wp: 0,
+    b: 0, wb: w0 * 0.3,
     wind: 1, crown: 0, beats: 0, lastForkSign: -1,
-    amp: 4.4, t: 0, acc: 0, seeded: true, stopped: false,
+    amp: 1.0, t: 0, acc: 0, seeded: true, stopped: false,
   };
 }
 
@@ -139,163 +135,172 @@ export function windCrown(s: WatchState, p: WatchPhysics, turns: number) {
 }
 
 /* ------- escapement geometry -------
-   World frame: escape wheel center at origin, tip circle escapeR.
-   Fork pivot at (forkPivot, 0); balance at (forkPivot, balancePivot).
-   Stones are defined at fork angle 0; rotating the fork moves exit stone
-   INTO the wheel on positive throw, entry stone on negative throw. */
+   World frame: y-up math coords. Escape wheel center at origin, tip circle
+   escapeR. THE WHEEL TURNS CLOCKWISE (e decreases under mainspring torque).
+   Pallet pivot ABOVE the wheel at (0, forkPivot) - the long anchor arms are
+   load-bearing: a short straight fork makes correct draw physically
+   impossible (probe2 cone search, see STATUS.md). Geometry measured from the
+   Wikimedia anchor-escapement reference and verified against the three
+   contact constraints (resists tooth, tooth outside, draw toward the engaged
+   banking) in probe3.mjs:
+   - entry stone at polar 120 deg: a vertical slab; its LEFT face is the
+     locking face (normal (-1,0)), its BOTTOM face is the impulse face
+     (normal (0,-1)); engaged at the +banking.
+   - exit stone at polar 60 deg: its locking face is a shallow shelf tilted
+     12 deg from the tooth travel direction (the draw angle: the locked
+     tooth wedges the fork onto its banking), its impulse face rises at
+     30 deg with normal (-0.5, 0.866); engaged at the -banking.
+   Corner separation 60 deg = 2.5 tooth pitches: the half-pitch stagger that
+   gives exactly 2 beats per tooth is structural, not scheduled. */
 
 type Face = { ax: number; ay: number; nx: number; ny: number; tx: number; ty: number; len: number };
-type StoneGeo = { cornerX: number; cornerY: number; lock: Face; impulse: Face };
 
-const ENTRY_POLAR = (-30 * Math.PI) / 180;  // entry locking corner, wheel-centered
-const EXIT_POLAR = (30 * Math.PI) / 180;    // exit locking corner (half-pitch stagger is built by the throw)
+/* fork-local face definitions at fork angle 0 (pivot at local origin);
+   world = rotate(p) + (0, forkPivot). Positions from the measurements
+   above, scaled to escapeR = 10. */
+const ENTRY_LOCK = { ax: -5.975, ay: -17.23, tx: 0, ty: 1, nx: -1, ny: 0, len: 3.2 };
+const ENTRY_IMP  = { ax: -5.975, ay: -17.23, tx: 1, ty: 0, nx: 0, ny: -1, len: 0.9 };
+const EXIT_LOCK  = { ax: 4.5, ay: -16.58, tx: 1, ty: 0, nx: 0, ny: 1, len: 0.6 };
+const EXIT_IMP   = { ax: 5.1, ay: -16.58, tx: 0.423, ty: 0.906, nx: -0.906, ny: 0.423, len: 0.8 };
 
-function rot(x: number, y: number, c: number, s: number): [number, number] {
-  return [x * c - y * s, x * s + y * c];
+function rotFace(local: Face, c: number, s: number, F: number, out: Face) {
+  out.ax = local.ax * c - local.ay * s;
+  out.ay = local.ax * s + local.ay * c + F;
+  out.tx = local.tx * c - local.ty * s;
+  out.ty = local.tx * s + local.ty * c;
+  out.nx = local.nx * c - local.ny * s;
+  out.ny = local.nx * s + local.ny * c;
+  out.len = local.len;
 }
 
-/* Build both stones' faces for the current fork angle.
-   Derived from first principles at each locking corner (wheel-centered
-   polar position pol, outward radial R, tooth-travel tangent T):
-   - locking face: from the corner heading outward; its normal is
-     -T tilted by the draw angle toward +R, so wheel torque drags the
-     stone deeper into the wheel (draw: the fork is held on its banking
-     by the locked tooth, emergent, not scripted).
-   - impulse face: from the corner heading forward+inward, tilted
-     impulseDeg off the tangent circle; its normal resists tooth travel
-     while its lever arm about the fork pivot drives the fork through
-     its throw. The tooth slides down it, dropping toward the wheel
-     center, and exits at the far end (drop).
-   Corner separation is 2.5 tooth pitches (+-30 deg), the half-pitch
-   stagger that makes entry and exit stones arrest alternate teeth:
-   per beat the wheel advances exactly half a pitch (12 deg). */
-function stones(p: WatchPhysics, fork: number, out: StoneGeo[]) {
-  const c = Math.cos(fork), s = Math.sin(fork);
-  const F = p.forkPivot;
-  const R = p.escapeR - p.stoneIn;
-  const draw = (p.drawDeg * Math.PI) / 180;
-  const imp = (p.impulseDeg * Math.PI) / 180;
-  for (let i = 0; i < 2; i++) {
-    const pol = i === 0 ? ENTRY_POLAR : EXIT_POLAR;
-    const cx0 = R * Math.cos(pol), cy0 = R * Math.sin(pol);
-    const rx = cx0 - F, ry = cy0;
-    const wx = rx * c - ry * s + F, wy = rx * s + ry * c;
-    const g = out[i];
-    g.cornerX = wx; g.cornerY = wy;
-    const radx = Math.cos(pol), rady = Math.sin(pol);
-    const tanx = -Math.sin(pol), tany = Math.cos(pol);
-    // locking normal = rot(-T, +draw)
-    const cd = Math.cos(draw), sd = Math.sin(draw);
-    const lnx = (-tanx) * cd - (-tany) * sd;
-    const lny = (-tanx) * sd + (-tany) * cd;
-    g.lock.nx = lnx; g.lock.ny = lny;
-    // locking face dir = rot(n_lock, -90deg), flipped outward
-    let ltx = lny, lty = -lnx;
-    if (ltx * radx + lty * rady < 0) { ltx = -ltx; lty = -lty; }
-    g.lock.ax = wx; g.lock.ay = wy; g.lock.tx = ltx; g.lock.ty = lty; g.lock.len = 0.95;
-    // impulse face dir = rot(T, +imp toward wheel center), normal = rot(dir, +90)
-    const ci = Math.cos(imp), si = Math.sin(imp);
-    const idx = tanx * ci - tany * si, idy = tanx * si + tany * ci;
-    const inx = -idy, iny = idx;
-    g.impulse.nx = inx; g.impulse.ny = iny;
-    g.impulse.ax = wx; g.impulse.ay = wy; g.impulse.tx = idx; g.impulse.ty = idy; g.impulse.len = 2.3;
-  }
-}
-
-/* Point-vs-face contact: returns penetration depth (>=0 means touching)
-   and writes the world-space contact normal into out. */
+/* Point-vs-face contact: returns penetration depth (>=0 means touching). */
 function contactFace(tx: number, ty: number, f: Face): number {
   const rx = tx - f.ax, ry = ty - f.ay;
   const u = rx * f.tx + ry * f.ty;
   if (u < -0.08 || u > f.len + 0.08) return -1;
   const d = rx * f.nx + ry * f.ny;
-  return d <= 0.06 ? -d : -1;          // small skin; negative d = penetration
+  // skin 0.06; deeper than 0.35 the point has tunneled through the thin
+  // stone model - release it (a dropped lock recoils and the next tooth locks)
+  return d <= 0.06 && d >= -0.35 ? -d : -1;
 }
 
 /* One escapement substep: semi-implicit Euler + sequential impulses. */
-function substep(s: WatchState, p: WatchPhysics, dt: number, geo: StoneGeo[]) {
+function substep(s: WatchState, p: WatchPhysics, dt: number, geo: Face[]) {
   const k = (2 * Math.PI * p.balanceHz) ** 2 * p.balanceJ;
   const torque = p.driveTorque * (p.torqueFloor + (1 - p.torqueFloor) * s.wind);
+  const F = p.forkPivot;
 
-  // free dynamics
-  s.we += (torque / p.escapeJ) * dt;
+  // free dynamics; CLOCKWISE wheel: drive torque is negative
+  s.we += (-torque / p.escapeJ) * dt;
   s.we *= 1 - 0.04 * dt * 60 * 0.001;  // tiny train drag
   s.wb += ((-k * s.b - p.balanceDamp * s.wb) / p.balanceJ) * dt;
   s.wp *= 1 - 2.2 * dt; // pivot friction (fork is contact-driven)
 
   // banking pins as hard one-sided constraints (before contacts, so the
-  // draw presses the fork onto the pin instead of rattling the stone
-  // into the locked tooth)
+  // draw presses the fork onto the pin instead of rattling)
   if (s.p >= p.bankAngle && s.wp > 0) s.wp = 0;
   if (s.p <= -p.bankAngle && s.wp < 0) s.wp = 0;
 
-  stones(p, s.p, geo);
+  const c = Math.cos(s.p), sn = Math.sin(s.p);
+  rotFace(ENTRY_LOCK, c, sn, F, geo[0]);
+  rotFace(ENTRY_IMP, c, sn, F, geo[1]);
+  rotFace(EXIT_LOCK, c, sn, F, geo[2]);
+  rotFace(EXIT_IMP, c, sn, F, geo[3]);
 
   const pitch = (2 * Math.PI) / p.escapeTeeth;
-  // escape wheel contacts: each tooth tip vs each stone face
   for (let kTooth = 0; kTooth < p.escapeTeeth; kTooth++) {
     const a = s.e + kTooth * pitch;
     const tx = p.escapeR * Math.cos(a), ty = p.escapeR * Math.sin(a);
     const vtx = -s.we * ty, vty = s.we * tx; // point velocity = w x r
-    for (let i = 0; i < 2; i++) {
-      const g = geo[i];
-      for (let f = 0; f < 2; f++) {
-        const face = f === 0 ? g.lock : g.impulse;
-        const pen = contactFace(tx, ty, face);
-        if (pen < 0) continue;
-        // contact point approx = tooth tip; face point velocity from fork
-        const cpx = face.ax - p.forkPivot, cpy = face.ay;
-        const fvx = -s.wp * cpy, fvy = s.wp * cpx;
-        const rvx = vtx - fvx, rvy = vty - fvy;
-        const vn = rvx * face.nx + rvy * face.ny;
-        if (vn >= 0 && pen < 0.02) continue; // separating and not sunk
-        // effective masses along the normal
-        const reX = tx, reY = ty;
-        const ce = (reX * face.ny - reY * face.nx) ** 2 / p.escapeJ;
-        const cf = (cpx * face.ny - cpy * face.nx) ** 2 / p.forkJ;
-        const meff = ce + cf;
-        if (meff <= 0) continue;
-        const rest = 0.0;
-        let j = (-(1 + rest) * vn + Math.min(pen, 0.04) * 0.25 / dt) / meff;
-        if (j < 0) j = 0;
-        // Coulomb friction on the tangential slide
-        const tnx = -face.ny, tny = face.nx;
-        const vt = rvx * tnx + rvy * tny;
-        const ceT = (reX * tny - reY * tnx) ** 2 / p.escapeJ;
-        const cfT = (cpx * tny - cpy * tnx) ** 2 / p.forkJ;
-        let jt = -vt / (ceT + cfT + 1e-9);
-        const cap = p.friction * j;
-        if (jt > cap) jt = cap; else if (jt < -cap) jt = -cap;
-        const ix = face.nx * j + tnx * jt, iy = face.ny * j + tny * jt;
-        s.we += ((reX * iy - reY * ix) / p.escapeJ) * 1;
-        s.wp -= ((cpx * iy - cpy * ix) / p.forkJ) * 1;
+    for (let i = 0; i < 4; i++) {
+      const face = geo[i];
+      const pen = contactFace(tx, ty, face);
+      if (pen < 0) continue;
+      const cpx = face.ax, cpy = face.ay - F;   // lever from fork pivot
+      const fvx = -s.wp * cpy, fvy = s.wp * cpx;
+      const rvx = vtx - fvx, rvy = vty - fvy;
+      const vn = rvx * face.nx + rvy * face.ny;
+      if (vn >= 0 && pen < 0.02) continue; // separating and not sunk
+      const reX = tx, reY = ty;
+      const ce = (reX * face.ny - reY * face.nx) ** 2 / p.escapeJ;
+      let cf = (cpx * face.ny - cpy * face.nx) ** 2 / p.forkJ;
+      // banking pin is a bilateral constraint at its limit: if this contact
+      // presses the fork INTO the pin it already rests on, the pin (not the
+      // fork inertia) absorbs it - treat the fork as grounded for this contact
+      const cn = cpx * face.ny - cpy * face.nx;
+      const dwpSign = -cn; // sign of fork velocity change per unit j (j >= 0)
+      const onPin =
+        (s.p >= p.bankAngle - 1e-6 && dwpSign > 0) ||
+        (s.p <= -p.bankAngle + 1e-6 && dwpSign < 0);
+      if (onPin) cf = 0;
+      const meff = ce + cf;
+      if (meff <= 0) continue;
+      let j = -vn / meff;  // restitution 0; positional correction is separate below
+      if (j < 0) j = 0;
+      const tnx = -face.ny, tny = face.nx;
+      const vt = rvx * tnx + rvy * tny;
+      const ceT = (reX * tny - reY * tnx) ** 2 / p.escapeJ;
+      let cfT = (cpx * tny - cpy * tnx) ** 2 / p.forkJ;
+      if (onPin) cfT = 0;
+      let jt = -vt / (ceT + cfT + 1e-9);
+      const cap = p.friction * j;
+      if (jt > cap) jt = cap; else if (jt < -cap) jt = -cap;
+      const ix = face.nx * j + tnx * jt, iy = face.ny * j + tny * jt;
+      s.we += (reX * iy - reY * ix) / p.escapeJ;
+      s.wp -= (cpx * iy - cpy * ix) / p.forkJ;
+    }
+  }
+
+  // positional depenetration (pseudo-impulse, no kinetic energy injection):
+  // split between wheel and fork by inverse effective mass
+  for (let kTooth = 0; kTooth < p.escapeTeeth; kTooth++) {
+    const a = s.e + kTooth * pitch;
+    const tx = p.escapeR * Math.cos(a), ty = p.escapeR * Math.sin(a);
+    for (let i = 0; i < 4; i++) {
+      const face = geo[i];
+      const pen = contactFace(tx, ty, face);
+      if (pen <= 0.005) continue;
+      const cpx = face.ax, cpy = face.ay - F;
+      const reX = tx, reY = ty;
+      const ce = (reX * face.ny - reY * face.nx) ** 2 / p.escapeJ;
+      const cf = (cpx * face.ny - cpy * face.nx) ** 2 / p.forkJ;
+      const meff = ce + cf;
+      if (meff <= 0) continue;
+      const rn = reX * face.ny - reY * face.nx;
+      const cn = cpx * face.ny - cpy * face.nx;
+      const dP = -((cn / p.forkJ) * 0.4 * Math.min(pen - 0.004, 0.3)) / meff;
+      const pinned =
+        (s.p >= p.bankAngle - 1e-6 && dP > 0) || (s.p <= -p.bankAngle + 1e-6 && dP < 0);
+      if (pinned) {
+        // fork is on its banking: the whole correction goes to the wheel
+        if (Math.abs(rn) > 1e-6) s.e += (0.8 * Math.min(pen - 0.004, 0.3)) / rn;
+      } else {
+        const lambda = 0.4 * Math.min(pen - 0.004, 0.3) / meff;
+        s.e += (rn / p.escapeJ) * lambda;
+        s.p += dP;
       }
     }
   }
 
-  // roller jewel vs fork horns: unlock + impulse transfer to balance
+  // roller jewel vs fork slot walls: unlock + impulse transfer to balance
   {
-    const Bx = p.forkPivot, By = p.balancePivot;
-    const ja = s.b;                       // jewel angle on roller
+    const Bx = 0, By = F + p.balancePivot;
+    const ja = s.b;
     const jx = Bx + p.rollerR * Math.sin(ja), jy = By - p.rollerR * Math.cos(ja);
-    // horn slot: line along fork axis at hornR, two side walls at +/- slotHalf
-    const c = Math.cos(s.p), sn = Math.sin(s.p);
-    // slot center in world:
     const hx0 = 0, hy0 = p.hornR;         // fork-local: slot toward balance
-    const hx = hx0 * c - hy0 * sn + p.forkPivot, hy = hx0 * sn + hy0 * c;
-    // slot walls perpendicular to fork axis
+    const hx = hx0 * c - hy0 * sn, hy = hx0 * sn + hy0 * c + F;
     const ax = -sn, ay = c;               // fork axis (toward balance)
     const dx = jx - hx, dy = jy - hy;
-    const along = dx * ax + dy * ay;      // along fork axis
-    const side = dx * ay - dy * ax;       // signed distance to slot centerline
-    const wxn = ay, wyn = -ax;            // wall normal
+    const along = dx * ax + dy * ay;
+    const side = dx * ay - dy * ax;
+    const wxn = ay, wyn = -ax;
     if (Math.abs(along) < 1.6 && Math.abs(side) < p.slotHalf + 0.9) {
       const penS = Math.abs(side) - p.slotHalf;
       if (penS > 0) {
         const sgn = side > 0 ? 1 : -1;
         const nx = wxn * sgn, ny = wyn * sgn;
         const vjx = s.wb * p.rollerR * Math.cos(ja), vjy = s.wb * p.rollerR * Math.sin(ja);
-        const cpx = hx - p.forkPivot, cpy = hy;
+        const cpx = hx, cpy = hy - F;
         const fvx = -s.wp * cpy, fvy = s.wp * cpx;
         const vn = (vjx - fvx) * nx + (vjy - fvy) * ny;
         const rjX = jx - Bx, rjY = jy - By;
@@ -303,10 +308,10 @@ function substep(s: WatchState, p: WatchPhysics, dt: number, geo: StoneGeo[]) {
         const cf = (cpx * ny - cpy * nx) ** 2 / p.forkJ;
         const meff = cb + cf;
         if (meff > 0 && (vn < 0 || penS > 0.02)) {
-          let j = (-vn + Math.min(penS, 0.05) * 0.25 / dt) / meff;
+          let j = -vn / meff;
           if (j < 0) j = 0;
-          s.wb += ((rjX * (ny * j) - rjY * (nx * j)) / p.balanceJ);
-          s.wp -= ((cpx * (ny * j) - cpy * (nx * j)) / p.forkJ);
+          s.wb += (rjX * (ny * j) - rjY * (nx * j)) / p.balanceJ;
+          s.wp -= (cpx * (ny * j) - cpy * (nx * j)) / p.forkJ;
         }
       }
     }
@@ -339,14 +344,13 @@ function substep(s: WatchState, p: WatchPhysics, dt: number, geo: StoneGeo[]) {
 }
 
 export function stepWatch(s: WatchState, p: WatchPhysics, dtFrame: number) {
-  const geo: StoneGeo[] = [newStone(), newStone()];
+  const geo: Face[] = [newFace(), newFace(), newFace(), newFace()];
   s.acc = Math.min(s.acc + dtFrame, 0.12);
   const n = Math.floor(s.acc / p.fixedDt);
   for (let i = 0; i < n; i++) { substep(s, p, p.fixedDt, geo); s.t += p.fixedDt; }
   s.acc -= n * p.fixedDt;
 }
 
-function newStone(): StoneGeo {
-  const f = (): Face => ({ ax: 0, ay: 0, nx: 0, ny: 0, tx: 0, ty: 0, len: 0 });
-  return { cornerX: 0, cornerY: 0, lock: f(), impulse: f() };
+function newFace(): Face {
+  return { ax: 0, ay: 0, nx: 0, ny: 0, tx: 0, ty: 0, len: 0 };
 }

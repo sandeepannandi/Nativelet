@@ -73,3 +73,33 @@ solver, fork banking clamps +-forkLimit). Stone bodies: slabs ~14 x 4 (GIF),
 tilt entry slab 59 deg screen -> math -59 deg at corner 120 deg; exit slab
 mirror-ish by cone (exit lock near-horizontal => slab ~85 deg).
 Then diag validation, then mesh/render.
+
+## Dynamic sim status (run 3, ~13:24 IST) - locking HOLDS, unlock stalls
+watchMath.ts rewritten to the measured anchor geometry (fork pivot ABOVE wheel
+at (0,25.2), CW wheel, measured stone faces). Three solver bugs found+fixed:
+1. Baumgarte velocity bias pumped energy into a resting contact (0.25/dt at
+   960 Hz) and spun the wheel backward through the lock -> REMOVED, replaced
+   with a separate positional pseudo-impulse pass (no KE injection).
+2. Positional pass split correction by inverse mass even when the fork is
+   pinned on a banking: the clamp ate the fork's share and the wheel
+   position-walked through the lock -> when the contact presses the fork into
+   its pin, the WHEEL takes the whole correction.
+3. Thin-wall faces accepted unbounded penetration; a tooth starting on the
+   far side of a face was "resolved" violently -> penetration capped at 0.35
+   (deeper = tunneled, release; a dropped lock recoils, next tooth locks).
+4. Velocity contacts now treat a fork pressed into its banking pin as
+   grounded (cf=0 for that contact): the pin is a bilateral constraint at
+   its limit, not the fork's tiny free inertia. This made locking SOLID:
+   we ~ 0, wheel holds against full-wind torque indefinitely.
+5. Start conditions: tooth 3 seeded resting on the engaged exit shelf
+   (e0 = -0.1117), balance starts GENTLE (0.3 x resonance) - the escapement
+   must pump amplitude up by itself; that is the energy validation.
+
+REMAINING FAILURE (next run): unlock stalls. The balance's jewel pushes the
+fork from -bank to p ~ 0 but never across; the system then sits in a static
+double-locked equilibrium (both stones half-dipped at p~0, wheel held, amp
+decays to 0). Next: instrument the unlock attempt (jewel torque vs draw
+torque at the locked tooth), then tune in order: lock depth (0.5 -> less),
+slot clearance (0.6 vs rollerR 3.0 path), banking angle, draw tilt. Watch for
+double-lock: stagger may need the exit shelf shifted ~0.1. Diags: diag2.mjs
+(10s overview), diag3.mjs (substep trace). Committing as WIP.
