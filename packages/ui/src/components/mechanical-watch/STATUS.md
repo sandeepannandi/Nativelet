@@ -103,3 +103,24 @@ torque at the locked tooth), then tune in order: lock depth (0.5 -> less),
 slot clearance (0.6 vs rollerR 3.0 path), banking angle, draw tilt. Watch for
 double-lock: stagger may need the exit shelf shifted ~0.1. Diags: diag2.mjs
 (10s overview), diag3.mjs (substep trace). Committing as WIP.
+
+## Run 4 (~13:30 IST): escapement RUNS and sustains amplitude - beat geometry still wrong
+Torque-scale fix: fork+balance reflected inertia about the pallet arbor is
+~18.8 (J_b x (hornR/rollerR)^2) vs forkJ 0.0045, so the old driveTorque 0.028
+was ~1e5 too weak to lift the fork during a beat. Now driveTorque 3000,
+escapeJ 0.5 (bounds free-flight drop speed so locks don't tunnel),
+balanceDamp 0.35, tunnel cap 0.5. Unlock needs the balance at running
+amplitude (draw torque ~= 2x wheel torque at the fork) - gentle start cannot
+self-start; start restored to amp 4.4. RESULT: wheel turns CW (correct),
+impulse DELIVERS energy (amplitude sustained ~3.5 indefinitely against
+damping), lock holds between beats. Banking hard stop added at integration
+(post-contact wp could jump the pin in one substep).
+REMAINING: (a) wheel advances ~1 pitch/beat instead of half-pitch - the
+alternate-stone arrest lands late or misses (stagger timing); (b) beat rate
+irregular 2-4 per 0.5s and intermittent fork rattle episodes with the wheel
+streaming at the -40 clamp (suspect jewel leaves the slot gate at high
+amplitude, freeing the fork; also drop impacts at clamp speed). NEXT RUN:
+trace one full beat cycle (diag4) at 960 Hz: check which face each tooth
+lands on after each drop; verify exit-entry stagger (2.5-pitch corner
+separation) against actual contact polar angles; check jewel-in-slot
+coverage through the full swing; then tune.

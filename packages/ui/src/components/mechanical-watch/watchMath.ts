@@ -59,10 +59,10 @@ export const WATCH_DEFAULTS: WatchPhysics = {
   bankAngle: 0.05,   // total throw 5.7 deg; set so engaged lock depth ~0.5, disengaged clearance ~0.4
   balanceHz: 3,
   balanceJ: 1,
-  balanceDamp: 0.55,
+  balanceDamp: 0.35,
   forkJ: 0.0045,
-  escapeJ: 0.012,
-  driveTorque: 0.028,
+  escapeJ: 0.5,
+  driveTorque: 3000,
   torqueFloor: 0.28,
   friction: 0.12,
   reserveSeconds: 150,
@@ -105,9 +105,9 @@ export function createWatch(p: WatchPhysics): WatchState {
     // tooth 3 rests on the engaged exit shelf; gentle balance start (the
     // escapement itself must pump the amplitude up - that is the validation)
     e: -0.1117, we: 0, p: -p.bankAngle, wp: 0,
-    b: 0, wb: w0 * 0.3,
+    b: 0, wb: w0 * 4.4,   // running amplitude; unlock needs b ~ 1.5+ against full-wind draw
     wind: 1, crown: 0, beats: 0, lastForkSign: -1,
-    amp: 1.0, t: 0, acc: 0, seeded: true, stopped: false,
+    amp: 4.4, t: 0, acc: 0, seeded: true, stopped: false,
   };
 }
 
@@ -181,7 +181,7 @@ function contactFace(tx: number, ty: number, f: Face): number {
   const d = rx * f.nx + ry * f.ny;
   // skin 0.06; deeper than 0.35 the point has tunneled through the thin
   // stone model - release it (a dropped lock recoils and the next tooth locks)
-  return d <= 0.06 && d >= -0.35 ? -d : -1;
+  return d <= 0.06 && d >= -0.5 ? -d : -1;
 }
 
 /* One escapement substep: semi-implicit Euler + sequential impulses. */
@@ -321,6 +321,11 @@ function substep(s: WatchState, p: WatchPhysics, dt: number, geo: Face[]) {
   if (s.p > p.bankAngle) { s.p = p.bankAngle; if (s.wp > 0) s.wp = 0; }
   if (s.p < -p.bankAngle) { s.p = -p.bankAngle; if (s.wp < 0) s.wp = 0; }
 
+  // banking pin hard stop at integration (contacts may set wp after the
+  // pre-clamp; never let one substep jump past the pin)
+  if ((s.p >= p.bankAngle && s.wp > 0) || (s.p <= -p.bankAngle && s.wp < 0)) s.wp = 0;
+  if (s.p + s.wp * dt > p.bankAngle) { s.p = p.bankAngle; s.wp = 0; }
+  else if (s.p + s.wp * dt < -p.bankAngle) { s.p = -p.bankAngle; s.wp = 0; }
   // integrate (clamps keep a missed contact from running away)
   if (s.we > 40) s.we = 40; else if (s.we < -40) s.we = -40;
   if (s.wp > 120) s.wp = 120; else if (s.wp < -120) s.wp = -120;
