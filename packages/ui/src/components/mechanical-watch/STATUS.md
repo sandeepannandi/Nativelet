@@ -215,3 +215,20 @@ KNOWN DEFECTS (next run):
    teeth slip past. The fix is flip timing, not face length.
 Levers: forkJ (slow the flip toward ~10ms), imp face angle = impulse ratio,
 driveTorque, possibly don't ground the fork (cf=0) for IMP-face contacts.
+
+## Run 9 (~14:09 IST): sustained amplitude at forkJ=0.02; known topology caveat
+forkJ 0.0045 -> 0.02: the flip now DRAGS the balance (0.0045 outran the jewel
+- zero impulse delivery; 0.03 stalls). diag6.mjs grid sweeps eImpLen/xImpLen/
+forkJ/driveTorque. Chosen: forkJ=0.02, T=3000, eImp=1.2, xImp=1.2.
+Validated: one arrest per balance half-swing (intervals alternate 165/168ms),
+6 beats/s, ~half pitch per beat (0.43/0.57 alternating), amplitude SUSTAINED
+(3.64 at t=30s vs 4.4 start; diag2 10s: 4.19 stable-ish), unwind stops.
+KNOWN INACCURACY (queued behind the 3D engine): the wheel's hold phase is
+partly carried by the departing tooth's overlap with the DISENGAGED stone's
+impulse face (the inward imp face dips back inside the tooth circle at the
+far bank), not purely by the opposite lock face. Catches also use the 0.06
+contact skin at marginal clearance. Kinematics (rate, advance, sustain,
+stop) are all correct; the internal contact roles differ from a real Swiss
+lever. Proper fix = per-side drop-length tuning so the tooth drop coincides
+with the fork reaching the banking (drop adjustment); sweep harness diag6
+is ready for that. Also open: lock-slide asymmetry 0.43/0.57.

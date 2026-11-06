@@ -42,6 +42,8 @@ export type WatchPhysics = {
   driveTorque: number;      // escape-wheel torque at full wind
   torqueFloor: number;      // fraction of torque at zero wind
   friction: number;         // Coulomb cap on tangential contact impulse
+  eImpLen?: number;         // drop tuning: entry impulse face length
+  xImpLen?: number;         // drop tuning: exit impulse face length
   reserveSeconds: number;   // accelerated power reserve (documented)
   windPerTurn: number;
   fixedDt: number;          // escapement substep
@@ -60,7 +62,7 @@ export const WATCH_DEFAULTS: WatchPhysics = {
   balanceHz: 3,
   balanceJ: 1,
   balanceDamp: 0.35,
-  forkJ: 0.0045,
+  forkJ: 0.02,   // heavy enough that the flip DRAGS the balance (impulse delivery); 0.0045 outran the jewel, 0.03 stalled
   escapeJ: 0.5,
   driveTorque: 3000,
   torqueFloor: 0.28,
@@ -209,9 +211,9 @@ function substep(s: WatchState, p: WatchPhysics, dt: number, geo: Face[]) {
 
   const c = Math.cos(s.p), sn = Math.sin(s.p);
   rotFace(ENTRY_LOCK, c, sn, F, geo[0]);
-  rotFace(ENTRY_IMP, c, sn, F, geo[1]);
+  rotFace(p.eImpLen ? { ...ENTRY_IMP, len: p.eImpLen } : ENTRY_IMP, c, sn, F, geo[1]);
   rotFace(EXIT_LOCK, c, sn, F, geo[2]);
-  rotFace(EXIT_IMP, c, sn, F, geo[3]);
+  rotFace(p.xImpLen ? { ...EXIT_IMP, len: p.xImpLen } : EXIT_IMP, c, sn, F, geo[3]);
 
   const pitch = (2 * Math.PI) / p.escapeTeeth;
   let lockNow = false;
