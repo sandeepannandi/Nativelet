@@ -12,8 +12,9 @@ export type Tri = {
   z0: number; z1: number; z2: number;   // view-space depth per vertex (>0)
   env?: boolean;                        // large polished face: add per-pixel env reflection in rasterizeZB
   enx?: number; eny?: number; enz?: number;   // cam-space face normal (unit, camera-facing)
+  nv?: Float32Array;                    // 9 floats: per-VERTEX cam-space normals (smooth env on curved metal); absent = flat
 };
-const ENV_MIN_AREA = 30;   // px^2 at projection size; smaller metal tris keep per-face shading
+const ENV_MIN_AREA = 3;   // px^2 at projection size: SUBPIXEL cutoff only - a surface-scale threshold cuts one polished face's triangulation into env/flat mottle (the gear-wedge artifact)
 
 type V3 = [number, number, number];
 
@@ -38,13 +39,6 @@ function pushTriN(p: number[], n: number[], i: number[], a: V3, na: V3, b: V3, n
   p.push(...a, ...b, ...c);
   n.push(...na, ...nb, ...nc);
   i.push(base, base + 1, base + 2);
-}
-
-/** Mean of two unit normals (for quad-shared shading). */
-function nMean(x: V3, y: V3): V3 {
-  const mx = x[0] + y[0], my = x[1] + y[1], mz = x[2] + y[2];
-  const l = Math.sqrt(mx * mx + my * my + mz * mz) || 1;
-  return [mx / l, my / l, mz / l];
 }
 
 /** Surface of revolution around the Y... around the Z axis. profile = [r, z][]. */
@@ -86,11 +80,19 @@ export function lathe(profile: [number, number][], seg: number, col: V3, metal: 
       const [r0, z0] = profile[k], [r1, z1] = profile[k + 1];
       const A: V3 = [r0 * c0, r0 * s0, z0], B: V3 = [r1 * c0, r1 * s0, z1];
       const C: V3 = [r1 * c1, r1 * s1, z1], D: V3 = [r0 * c1, r0 * s1, z0];
-      const nA: V3 = [pn[k][0] * cm, pn[k][0] * sm, pn[k][1]];
-      const nB: V3 = [pnL[k + 1][0] * cm, pnL[k + 1][0] * sm, pnL[k + 1][1]];
-      if (r0 > 1e-6 && r1 > 1e-6) { const nQ = nMean(nA, nB); pushTriN(p, nr, idx, A, nQ, B, nQ, C, nQ); pushTriN(p, nr, idx, A, nQ, C, nQ, D, nQ); }
-      else if (r1 > 1e-6) pushTriN(p, nr, idx, A, [0, 0, pn[k][1] >= 0 ? 1 : -1], B, nB, C, nB);       // r0 = 0: A == D on the axis
-      else if (r0 > 1e-6) pushTriN(p, nr, idx, A, nA, D, nA, B, [0, 0, pn[k][1] >= 0 ? 1 : -1]);       // r1 = 0: B == C on the axis
+      // per-vertex normals: profile normal rotated to each vertex's own
+      // azimuth. Segment-center quad-shared normals make the reflection
+      // direction constant within a segment and step at every boundary
+      // (rim banding); true radial normals sweep smoothly across it.
+      // Radial profile runs (caps) have a zero radial component, so they
+      // still get identical normals at every vertex and stay perfectly flat.
+      const nA0: V3 = [pn[k][0] * c0, pn[k][0] * s0, pn[k][1]];
+      const nA1: V3 = [pn[k][0] * c1, pn[k][0] * s1, pn[k][1]];
+      const nB0: V3 = [pnL[k + 1][0] * c0, pnL[k + 1][0] * s0, pnL[k + 1][1]];
+      const nB1: V3 = [pnL[k + 1][0] * c1, pnL[k + 1][0] * s1, pnL[k + 1][1]];
+      if (r0 > 1e-6 && r1 > 1e-6) { pushTriN(p, nr, idx, A, nA0, B, nB0, C, nB1); pushTriN(p, nr, idx, A, nA0, C, nB1, D, nA1); }
+      else if (r1 > 1e-6) pushTriN(p, nr, idx, A, [0, 0, pn[k][1] >= 0 ? 1 : -1], B, nB0, C, nB1);       // r0 = 0: A == D on the axis
+      else if (r0 > 1e-6) pushTriN(p, nr, idx, A, nA0, D, nA1, B, [0, 0, pn[k][1] >= 0 ? 1 : -1]);       // r1 = 0: B == C on the axis
     }
   }
   return { pos: new Float32Array(p), idx: new Uint32Array(idx), col, metal, nrm: new Float32Array(nr) };
@@ -128,10 +130,13 @@ export function ring(rOut: number, rIn: number, z0: number, z1: number, seg: num
     const o0: V3 = [rOut * c0, rOut * s0, z1], o1: V3 = [rOut * c1, rOut * s1, z1];
     const I0: V3 = [rIn * c0, rIn * s0, z0], I1: V3 = [rIn * c1, rIn * s1, z0];
     const i0: V3 = [rIn * c0, rIn * s0, z1], i1: V3 = [rIn * c1, rIn * s1, z1];
+    // per-vertex true radial normals: the pair at each azimuth is shared by
+    // both tris of the quad, so the two halves stay consistent while the
+    // shading sweeps smoothly across the segment (real cylinder), instead of
+    // stepping at every segment boundary (banding).
     const nO0: V3 = [c0, s0, 0], nO1: V3 = [c1, s1, 0], nI0: V3 = [-c0, -s0, 0], nI1: V3 = [-c1, -s1, 0];
-    const nOQ = nMean(nO0, nO1), nIQ = nMean(nI0, nI1);   // quad-shared: both halves shade identically
-    pushTriN(p, nr, idx, O0, nOQ, O1, nOQ, o1, nOQ); pushTriN(p, nr, idx, O0, nOQ, o1, nOQ, o0, nOQ);   // outer wall: true-cylinder shading
-    pushTriN(p, nr, idx, I0, nIQ, i1, nIQ, I1, nIQ); pushTriN(p, nr, idx, I0, nIQ, i0, nIQ, i1, nIQ);   // inner wall
+    pushTriN(p, nr, idx, O0, nO0, O1, nO1, o1, nO1); pushTriN(p, nr, idx, O0, nO0, o1, nO1, o0, nO0);   // outer wall
+    pushTriN(p, nr, idx, I0, nI0, i1, nI1, I1, nI1); pushTriN(p, nr, idx, I0, nI0, i0, nI0, i1, nI1);   // inner wall
     pushTriN(p, nr, idx, o0, ZUP, o1, ZUP, i1, ZUP); pushTriN(p, nr, idx, o0, ZUP, i1, ZUP, i0, ZUP);   // top ring
     pushTriN(p, nr, idx, O0, ZDN, I1, ZDN, O1, ZDN); pushTriN(p, nr, idx, O0, ZDN, I0, ZDN, I1, ZDN);   // bottom ring
   }
@@ -368,8 +373,47 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       // mirror reflections vary with the per-pixel view ray, which per-face
       // shading cannot express - that flatness is what reads as plastic.
       if (sm) {
+        // eligibility is per-SURFACE, not per-triangle: a 30px^2 threshold
+        // cut through one polished face's own triangulation (the gear cap
+        // fan's small tris fell below it while spoke tops cleared it) and
+        // painted alternating env/flat pie-slice mottle. Only subpixel tris
+        // stay on the packed path (tooth-scale silhouette sparkle control).
         const area = 0.5 * Math.abs((qx1 - qx0) * (qy2 - qy0) - (qx2 - qx0) * (qy1 - qy0));
-        if (area > ENV_MIN_AREA) { tri.env = true; tri.enx = nx; tri.eny = nyy; tri.enz = nzz; }
+        if (area > ENV_MIN_AREA) {
+          tri.env = true; tri.enx = nx; tri.eny = nyy; tri.enz = nzz;
+          if (nrms) {
+            // per-vertex normals through the same spin + camera transform:
+            // flat per-segment normals step at every segment boundary and
+            // read as coarse rim banding once the buffer tier quantizes them.
+            const nv = new Float32Array(9);
+            for (let vv = 0; vv < 3; vv++) {
+              const vj = idx[k + vv] * 3;
+              let pnx = nrms[vj], pny = nrms[vj + 1], pnz = nrms[vj + 2];
+              if (genRot) {
+                const ux2 = spn!.axis[0], uy2 = spn!.axis[1], uz2 = spn!.axis[2];
+                const dot = ux2 * pnx + uy2 * pny + uz2 * pnz;
+                const t2 = 1 - sc;
+                const qx = pnx * sc + (uy2 * pnz - uz2 * pny) * ss + ux2 * dot * t2;
+                const qy = pny * sc + (uz2 * pnx - ux2 * pnz) * ss + uy2 * dot * t2;
+                const qz = pnz * sc + (ux2 * pny - uy2 * pnx) * ss + uz2 * dot * t2;
+                pnx = qx; pny = qy; pnz = qz;
+              } else if (spn) { const qx = pnx * sc - pny * ss; pny = pnx * ss + pny * sc; pnx = qx; }
+              let vnx = pnx * cyw - pny * syw, vny = pnx * syw + pny * cyw;
+              const vnyy = vny * cp + pnz * sp, vnzz = vny * sp - pnz * cp;
+              const vflip = vnzz > 0 ? -1 : 1;
+              const vl = Math.sqrt(vnx * vnx + vnyy * vnyy + vnzz * vnzz) || 1;
+              nv[vv * 3] = vflip * vnx / vl; nv[vv * 3 + 1] = vflip * vnyy / vl; nv[vv * 3 + 2] = vflip * vnzz / vl;
+            }
+            // flat face (all vertex normals agree): interpolation would be
+            // identity - drop it so pass 2 keeps the cheap flat path.
+            let dev = 0;
+            for (let c = 0; c < 3; c++) {
+              dev = Math.max(dev,
+                Math.abs(nv[c] - nv[3 + c]) + Math.abs(nv[c] - nv[6 + c]));
+            }
+            if (dev > 1e-3) tri.nv = nv;
+          }
+        }
       }
       out.push(tri);
       if (zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; ZMESH[zCount] = mi; zCount++; }
@@ -670,7 +714,24 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
       const ti = winner[p];
       if (ti < 0) continue;
       const t = tris[ti];
-      const enx = t.enx!, eny = t.eny!, enz = t.enz!;
+      let enx = t.enx!, eny = t.eny!, enz = t.enz!;
+      if (t.nv) {
+        // barycentric-interpolated vertex normal: smooth reflection across
+        // segment boundaries (rim/bezel banding fix)
+        const px2 = (p % R) + 0.5, py2 = Math.floor(p / R) + 0.5;
+        const d = (t.y1 - t.y2) * (t.x0 - t.x2) + (t.x2 - t.x1) * (t.y0 - t.y2);
+        if (d !== 0) {
+          const w0 = ((t.y1 - t.y2) * (px2 / (R / size) - t.x2) + (t.x2 - t.x1) * (py2 / (R / size) - t.y2)) / d;
+          const w1 = ((t.y2 - t.y0) * (px2 / (R / size) - t.x2) + (t.x0 - t.x2) * (py2 / (R / size) - t.y2)) / d;
+          const w2 = 1 - w0 - w1;
+          const nv = t.nv;
+          enx = w0 * nv[0] + w1 * nv[3] + w2 * nv[6];
+          eny = w0 * nv[1] + w1 * nv[4] + w2 * nv[7];
+          enz = w0 * nv[2] + w1 * nv[5] + w2 * nv[8];
+          const il = 1 / (Math.sqrt(enx * enx + eny * eny + enz * enz) || 1);
+          enx *= il; eny *= il; enz *= il;
+        }
+      }
       const p3 = 3 * p;
       const dx = ray[p3], dy = ray[p3 + 1], dz = ray[p3 + 2];
       const dn = dx * enx + dy * eny + dz * enz;   // negative: normal faces camera
