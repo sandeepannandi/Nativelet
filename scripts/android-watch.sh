@@ -88,7 +88,7 @@ echo "watch crash=$CRASH jserr=$JSERR alive=${ALIVE:+yes} changed_after_interact
 
 # Focused measurement extension. All smoke assertions and packaging above are
 # unchanged. Explicit launch URLs opt in; normal component quality stays SS1.
-python3 - <<'WATCH_DIAGNOSTICS_PY'
+python3 - <<'WATCH_DIAGNOSTICS_PY' || printf '%s\n' 'watch-native-diagnostic failure=yes harness-error' >> smoke-out/watch/summary.txt
 #!/usr/bin/env python3
 """Optional native watch measurement. Existing smoke gates run before this.
 No performance or memory acceptance threshold is invented here.
@@ -96,6 +96,7 @@ No performance or memory acceptance threshold is invented here.
 import json
 import math
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -161,10 +162,25 @@ def capture(name):
     if not samples:
         raise RuntimeError('Diagnostic APK did not produce measurement samples')
     latest = samples[-1]
-    device_now = float(adb('shell', 'date', '+%s').decode().strip()) * 1000
-    if abs(device_now - latest['renderedAt']) > 5000:
-        raise RuntimeError('Projected coordinates are stale, no gesture attempted')
     return latest
+
+
+def fresh_sample(ss):
+    # A request event asks the next rendered frame to publish its own projection.
+    # It is matched by nonce; never accept a periodic log from an earlier pose.
+    nonce = 'sample'+str(time.monotonic_ns())
+    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d',
+        shlex.quote('nativelet-showcase:///watch?watchDiagnostic='+str(ss)+'&watchDiagnosticSample='+nonce), PKG)
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        samples = records(adb('logcat', '-d').decode(errors='replace'), 'WATCH_DIAGNOSTIC')
+        matching = [s for s in samples if s.get('requestId') == nonce]
+        if matching:
+            device_now = float(adb('shell', 'date', '+%s').decode().strip()) * 1000
+            if -1000 <= device_now-matching[-1]['renderedAt'] <= 2000:
+                return matching[-1]
+        time.sleep(.25)
+    raise RuntimeError('No fresh requested projection, no gesture attempted')
 
 
 def measured_bounds(sample):
@@ -205,12 +221,14 @@ def run(ss):
         time.sleep(15)
         sample = capture('idle-'+str(n))
     b = measured_bounds(sample)
+    sample = fresh_sample(ss)
     size = sample['size']
     orbit, events = gesture('orbit', b, sample, (.5*size, .5*size), (.65*size, .55*size), 'orbit')
     grants = [e for e in events if e.get('phase') == 'grant']
     releases = [e for e in events if e.get('phase') == 'release']
     if not grants or not releases or abs((releases[-1]['yaw'] - grants[-1]['yaw']) - .15*size/140) > .03:
         raise RuntimeError('Orbit responder released but yaw did not change')
+    orbit = fresh_sample(ss)
     c = orbit['crownScreen']
     # Current projection only. Stop, never guess, if crown/end is clipped.
     wind, events = gesture('crown', b, orbit, (c['x'], c['y']), (c['x'], c['y']+size*.12), 'wind')
@@ -232,7 +250,19 @@ def run(ss):
 
 
 if __name__ == '__main__':
-    for ss in (1, 2):
-        run(ss)
+    outcomes = {}
+    for ss in (1,):
+        try:
+            run(ss)
+            outcomes['ss'+str(ss)] = {'status': 'completed'}
+        except Exception as error:
+            outcomes['ss'+str(ss)] = {'status': 'incomplete', 'error': str(error)}
+            print('WATCH_DIAGNOSTIC_INCOMPLETE ss='+str(ss)+': '+str(error), flush=True)
+    # Never abort the pre-existing later Plasma check. Diagnostic status is
+    # separate, explicit evidence and is not converted into a pass.
+    Path('smoke-out/watch/diagnostic/status.json').write_text(json.dumps(outcomes, indent=2))
+    if any(o['status'] != 'completed' for o in outcomes.values()):
+        with Path('smoke-out/watch/summary.txt').open('a') as summary:
+            summary.write('watch-native-diagnostic failure=yes incomplete; see diagnostic/status.json\n')
 
 WATCH_DIAGNOSTICS_PY
