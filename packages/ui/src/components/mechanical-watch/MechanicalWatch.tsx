@@ -42,18 +42,25 @@ let PIX = new Uint8Array(0);
 
 export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Mechanical watch", style }: MechanicalWatchProps) {
   const [systemReduce, setSystemReduce] = useState(false);
+  const diagnosticRequest = useRef("");
   const [diagnosticConfig, setDiagnosticConfig] = useState({ enabled: false, ss: 1 });
   const WATCH_DIAGNOSTICS = diagnosticConfig.enabled;
   const WATCH_DIAGNOSTIC_SS = diagnosticConfig.ss;
   useEffect(() => {
     let alive = true;
+    const acceptSampleRequest = (url: string | null) => {
+      const match = url?.match(/[?&]watchDiagnosticSample=([a-zA-Z0-9_-]+)(&|$)/);
+      if (match) diagnosticRequest.current = match[1];
+    };
+    const sub = Linking.addEventListener("url", event => acceptSampleRequest(event.url));
     Linking.getInitialURL().then(url => {
+      acceptSampleRequest(url);
       if (alive && url && /[?&]watchDiagnostic=(1|2)(&|$)/.test(url)) {
         const ss = Number(url.match(/[?&]watchDiagnostic=(1|2)(&|$)/)![1]);
         setDiagnosticConfig({ enabled: true, ss });
       }
     }).catch(() => {});
-    return () => { alive = false; };
+    return () => { alive = false; sub.remove(); };
   }, []);
 
   useEffect(() => {
@@ -134,9 +141,11 @@ export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Me
     let lastBeats = 0;
     let tier = 1;
     let ema = 20;
-    const diagnosticSamples: { sim: number; project: number; raster: number; publish: number; frame: number }[] = [];
+    const diagnosticSamples: { sim: number; project: number; raster: number; publish: number; frame: number; setup: number; geometry: number; reflection: number; resolve: number }[] = [];
+    const rasterProfile = { setup: 0, geometry: 0, reflection: 0, resolve: 0 };
     let diagnosticFrames = 0;
     let lastDiagnosticAt = 0;
+    let lastDiagnosticReportAt = 0;
     const tick = (t: number) => {
       raf = requestAnimationFrame(tick);
       const dt = Math.min(48, last ? t - last : 16.7) / 1000;
@@ -182,7 +191,7 @@ export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Me
         };
       }
       const projectEnd = WATCH_DIAGNOSTICS ? monotonicNow() : 0;
-      rasterizeZB(TRIS, px, WATCH_DIAGNOSTICS ? WATCH_DIAGNOSTIC_SS : 1, BG, buf, px / (2 * Math.tan(cam.current.fov / 2)));
+      rasterizeZB(TRIS, px, WATCH_DIAGNOSTICS ? WATCH_DIAGNOSTIC_SS : 1, BG, buf, px / (2 * Math.tan(cam.current.fov / 2)), WATCH_DIAGNOSTICS ? rasterProfile : undefined);
       const rasterEnd = WATCH_DIAGNOSTICS ? monotonicNow() : 0;
       // Publish the frame: a typed array crosses as a copied shareable.
       pxSV.value = px;
@@ -190,21 +199,24 @@ export function MechanicalWatch({ size = 340, reducedMotion, onBeat, label = "Me
       frameSV.value = frameSV.value + 1;
       if (WATCH_DIAGNOSTICS) {
         const now = monotonicNow();
-        diagnosticSamples.push({ sim: simEnd - simStart, project: projectEnd - simEnd,
+        diagnosticSamples.push({ ...rasterProfile, sim: simEnd - simStart, project: projectEnd - simEnd,
           raster: rasterEnd - projectEnd, publish: now - rasterEnd,
           frame: lastDiagnosticAt ? now - lastDiagnosticAt : 0 });
         lastDiagnosticAt = now;
         if (diagnosticSamples.length > 600) diagnosticSamples.shift();
-        if (++diagnosticFrames % 30 === 0) {
-          const timing = Object.fromEntries((["sim", "project", "raster", "publish", "frame"] as const).map(key => {
+        diagnosticFrames++;
+        if (diagnosticRequest.current || now - lastDiagnosticReportAt >= 1000) {
+          lastDiagnosticReportAt = now;
+          const timing = Object.fromEntries((["sim", "project", "raster", "publish", "frame", "setup", "geometry", "reflection", "resolve"] as const).map(key => {
             const xs = diagnosticSamples.map(x => x[key]).sort((a, b) => a - b);
             return [key, { median: xs[Math.floor(xs.length * .5)], p95: xs[Math.min(xs.length - 1, Math.floor(xs.length * .95))], max: xs[xs.length - 1] }];
           }));
-          console.log("WATCH_DIAGNOSTIC", JSON.stringify({ renderedAt: Date.now(), frames: diagnosticFrames, samples: diagnosticSamples.length,
+          console.log("WATCH_DIAGNOSTIC", JSON.stringify({ requestId: diagnosticRequest.current, renderedAt: Date.now(), frames: diagnosticFrames, samples: diagnosticSamples.length,
             px, ss: WATCH_DIAGNOSTIC_SS, size, pixelRatio: PixelRatio.get(), timing, yaw: cam.current.yaw, pitch: cam.current.pitch,
             crown: s.crown, wind: s.wind, slowmo: slowmo.current, dragging: dragging.current,
             gestureMode: gesture.current.mode, beats: s.beats, simulationTime: s.t,
             crownScreen: crownScreen.current }));
+          diagnosticRequest.current = "";
         }
       }
       // Adaptive quality: rolling render cost steers the resolution tier.
