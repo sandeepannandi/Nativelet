@@ -151,7 +151,7 @@ export function spokedWheel(rOut: number, rIn: number, hubR: number, z0: number,
   // machined finishing: bright polished lip on the rim top, dark recess ring around the hub
   parts.push(ring(rOut + 0.02, rOut - 0.5, z1, z1 + 0.14, 40, lighten(col, 1.22), metal));
   parts.push(ring(hubR + 1.0, hubR + 0.4, z1 + 0.01, z1 + 0.05, 28, lighten(col, 0.55), metal));
-  const armW = (rIn - hubR) * 0.42;
+  const armW = Math.max(0.65, (rIn - hubR) * 0.085);
   for (let s = 0; s < spokes; s++) {
     const a = (s / spokes) * 2 * Math.PI;
     const ca = Math.cos(a), sa = Math.sin(a);
@@ -183,6 +183,31 @@ export function gear(teeth: number, rootR: number, tipR: number, z0: number, z1:
     for (const [aa, rr] of prof) pts.push([rr * Math.cos(aa), rr * Math.sin(aa)]);
   }
   return extrude(pts, z0, z1, col, metal);
+}
+
+/** Visual prototype: a toothed rim with a genuine open center.
+ * Geometry only, keeps the tooth count, outer profile, z tiers and sim unchanged. */
+function openGear(teeth: number, rootR: number, tipR: number, innerR: number, z0: number, z1: number, col: V3, metal: number): Mesh {
+  const outer: V3[] = [], inner: V3[] = [];
+  const step = 2 * Math.PI / teeth;
+  for (let i = 0; i < teeth; i++) {
+    for (const [phase, r] of [[0, rootR], [.30, rootR], [.42, tipR], [.52, tipR], [.60, rootR]]) {
+      const a = (i + phase) * step;
+      outer.push([r * Math.cos(a), r * Math.sin(a), z0]);
+      inner.push([innerR * Math.cos(a), innerR * Math.sin(a), z0]);
+    }
+  }
+  const p: number[] = [], ix: number[] = [];
+  for (let i = 0; i < outer.length; i++) {
+    const j = (i + 1) % outer.length;
+    const a=outer[i], b=outer[j], c=inner[j], d=inner[i];
+    const A: V3=[a[0],a[1],z1], B: V3=[b[0],b[1],z1], C: V3=[c[0],c[1],z1], D: V3=[d[0],d[1],z1];
+    pushTri(p,ix,A,B,C); pushTri(p,ix,A,C,D);
+    pushTri(p,ix,a,c,b); pushTri(p,ix,a,d,c);
+    pushTri(p,ix,a,b,B); pushTri(p,ix,a,B,A);
+    pushTri(p,ix,d,D,C); pushTri(p,ix,d,C,c);
+  }
+  return {pos:new Float32Array(p),idx:new Uint32Array(ix),col,metal};
 }
 
 export function merge(meshes: Mesh[]): Mesh {
@@ -528,19 +553,19 @@ export function buildWatchScene(): WatchScene {
   ]);
   bake(barrel, -20, 15, 0);
   const center = merge([
-    gear(80, 12.6, 13.2, 0.8, 1.6, BRASS, 1),
+    openGear(80, 12.6, 13.2, 11.6, 0.8, 1.6, BRASS, 1),
     spokedWheel(12.4, 11.6, 2.2, 1.6, 2.2, 5, BRASS, 1),
     lathe([[0, 0.2], [1.1, 0.2], [1.1, 8.6], [0, 8.6]], 10, STEEL, 1),
   ]);
   bake(center, 0, 2, 0);
   const third = merge([
-    gear(75, 9.5, 10, 2.2, 2.9, BRASS, 1),
+    openGear(75, 9.5, 10, 8.6, 2.2, 2.9, BRASS, 1),
     spokedWheel(9.3, 8.6, 1.6, 2.9, 3.4, 5, BRASS, 1),
     lathe([[0, 1.6], [0.9, 1.6], [0.9, 3.8], [0, 3.8]], 10, STEEL, 1),
   ]);
   bake(third, 17, 11, 0);
   const fourth = merge([
-    gear(72, 8.5, 9, 3.0, 3.7, BRASS, 1),
+    openGear(72, 8.5, 9, 7.6, 3.0, 3.7, BRASS, 1),
     spokedWheel(8.3, 7.6, 1.5, 3.7, 4.2, 4, BRASS, 1),
     lathe([[0, 2.4], [0.8, 2.4], [0.8, 8.8], [0, 8.8]], 10, STEEL, 1),
   ]);
@@ -770,4 +795,4 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
       out[d] = sr / a; out[d + 1] = sg / a; out[d + 2] = sb / a; out[d + 3] = 255;
     }
   }
-}
+        }
