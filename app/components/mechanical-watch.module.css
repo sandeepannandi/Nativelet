@@ -1,0 +1,16 @@
+.frame {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #09090e;
+}
+.canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+  cursor: grab;
+}
+.canvas:active {
+  cursor: grabbing;
+}
