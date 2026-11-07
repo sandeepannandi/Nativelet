@@ -663,7 +663,9 @@ let ZB_COL = new Uint8Array(0);   // 4 bytes per pixel (RGBX) so a Uint32 view c
 let ZB_WINNER = new Int32Array(0);
 let ZB_RAY = new Float32Array(0);
 let ZB_RAY_R = 0, ZB_RAY_F = 0;
-export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, number, number], out: Uint8ClampedArray | Uint8Array, focal?: number): void {
+const rasterClock = () => globalThis.performance?.now?.() ?? Date.now();
+export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, number, number], out: Uint8ClampedArray | Uint8Array, focal?: number, profile?: { setup: number; geometry: number; reflection: number; resolve: number }): void {
+  let stageAt = profile ? rasterClock() : 0;
   const R = size * ss;
   const n = R * R;
   if (ZB_DEPTH.length < n) { ZB_DEPTH = new Float32Array(n); ZB_COL = new Uint8Array(n * 4); ZB_WINNER = new Int32Array(n); }
@@ -683,38 +685,54 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
     ZB_RAY_R = R; ZB_RAY_F = fsc;
   }
   depth.fill(0);   // q = 1/z > 0 always; larger q = nearer
-  for (let i = 0; i < n * 4; i += 4) { col[i] = bg[0]; col[i + 1] = bg[1]; col[i + 2] = bg[2]; }
+  for (let i = 0; i < n * 4; i += 4) { col[i] = bg[0]; col[i + 1] = bg[1]; col[i + 2] = bg[2]; col[i + 3] = 255; }
   const col32 = new Uint32Array(col.buffer, 0, n);
   const scale = R / size;   // tris were projected for a `size` buffer; scale up for SSAA
+  if (profile) { const t = rasterClock(); profile.setup = t-stageAt; stageAt = t; }
   for (let ti = 0; ti < tris.length; ti++) {
     const t = tris[ti];
     const xs0 = t.x0 * scale, xs1 = t.x1 * scale, xs2 = t.x2 * scale;
     const ys0 = t.y0 * scale, ys1 = t.y1 * scale, ys2 = t.y2 * scale;
     const q0 = 1 / t.z0, q1 = 1 / t.z1, q2 = 1 / t.z2;
-    const yMin = Math.max(0, Math.floor(Math.min(ys0, ys1, ys2)));
-    const yMax = Math.min(R - 1, Math.ceil(Math.max(ys0, ys1, ys2)));
+    const yMin = Math.max(0, Math.ceil(Math.min(ys0, ys1, ys2) - 0.5));
+    const yMax = Math.min(R - 1, Math.ceil(Math.max(ys0, ys1, ys2) - 0.5) - 1);
     if (yMax < yMin) continue;
     const xMin = Math.min(xs0, xs1, xs2), xMax = Math.max(xs0, xs1, xs2);
     if (xMax < 0 || xMin >= R) continue;
     const packed = (255 << 24) | (Math.round(t.b * 255) << 16) | (Math.round(t.g * 255) << 8) | Math.round(t.r * 255);
+    const ay0 = ys0, by0 = ys1;
+    const lo0 = Math.min(ay0, by0), hi0 = Math.max(ay0, by0);
+    const dy0 = by0-ay0, dx0 = xs1-xs0, dq0 = q1-q0;
+    const ay1 = ys1, by1 = ys2;
+    const lo1 = Math.min(ay1, by1), hi1 = Math.max(ay1, by1);
+    const dy1 = by1-ay1, dx1 = xs2-xs1, dq1 = q2-q1;
+    const ay2 = ys2, by2 = ys0;
+    const lo2 = Math.min(ay2, by2), hi2 = Math.max(ay2, by2);
+    const dy2 = by2-ay2, dx2 = xs0-xs2, dq2 = q0-q2;
     for (let y = yMin; y <= yMax; y++) {
       const yy = y + 0.5;
       // gather edge crossings (x and q)
       let hx0 = 0, hq0 = 0, hx1 = 0, hq1 = 0, cnt = 0;
-      for (let e = 0; e < 3; e++) {
-        const ax = e === 0 ? xs0 : e === 1 ? xs1 : xs2;
-        const ay = e === 0 ? ys0 : e === 1 ? ys1 : ys2;
-        const aq = e === 0 ? q0 : e === 1 ? q1 : q2;
-        const bx = e === 0 ? xs1 : e === 1 ? xs2 : xs0;
-        const by = e === 0 ? ys1 : e === 1 ? ys2 : ys0;
-        const bq = e === 0 ? q1 : e === 1 ? q2 : q0;
-        if (ay === by) continue;
-        if (yy < Math.min(ay, by) || yy >= Math.max(ay, by)) continue;
-        const u = (yy - ay) / (by - ay);
-        const x = ax + u * (bx - ax), q = aq + u * (bq - aq);
-        if (cnt === 0) { hx0 = x; hq0 = q; cnt = 1; }
-        else if (x < hx0) { hx1 = hx0; hq1 = hq0; hx0 = x; hq0 = q; cnt = 2; }
-        else { hx1 = x; hq1 = q; cnt = 2; }
+      if (yy >= lo0 && yy < hi0) {
+        const u = (yy-ay0)/dy0;
+        const x = xs0+u*dx0, q = q0+u*dq0;
+        if (cnt === 0) { hx0=x; hq0=q; cnt=1; }
+        else if (x < hx0) { hx1=hx0; hq1=hq0; hx0=x; hq0=q; cnt=2; }
+        else { hx1=x; hq1=q; cnt=2; }
+      }
+      if (yy >= lo1 && yy < hi1) {
+        const u = (yy-ay1)/dy1;
+        const x = xs1+u*dx1, q = q1+u*dq1;
+        if (cnt === 0) { hx0=x; hq0=q; cnt=1; }
+        else if (x < hx0) { hx1=hx0; hq1=hq0; hx0=x; hq0=q; cnt=2; }
+        else { hx1=x; hq1=q; cnt=2; }
+      }
+      if (yy >= lo2 && yy < hi2) {
+        const u = (yy-ay2)/dy2;
+        const x = xs2+u*dx2, q = q2+u*dq2;
+        if (cnt === 0) { hx0=x; hq0=q; cnt=1; }
+        else if (x < hx0) { hx1=hx0; hq1=hq0; hx0=x; hq0=q; cnt=2; }
+        else { hx1=x; hq1=q; cnt=2; }
       }
       if (cnt < 2) continue;
       const x0 = Math.max(0, Math.ceil(hx0 - 0.5)), x1 = Math.min(R - 1, Math.floor(hx1 - 0.5));
@@ -729,6 +747,7 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
       }
     }
   }
+  if (profile) { const t = rasterClock(); profile.geometry = t-stageAt; stageAt = t; }
   /* Pass 2: per-pixel studio-environment reflection on large polished faces.
      The mirror direction varies with the view ray even across a flat face;
      adding it per-pixel is what makes brass/steel read as metal. Rational
@@ -780,6 +799,10 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
     }
   }
 
+  if (profile) { const t = rasterClock(); profile.reflection = t-stageAt; stageAt = t; }
+  // SS1 already has the final pixels, including opaque background.
+  if (ss === 1) { out.set(col); if (profile) profile.resolve = rasterClock()-stageAt; return; }
+
   // box downsample ss x ss -> size x size RGBA
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -795,4 +818,5 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
       out[d] = sr / a; out[d + 1] = sg / a; out[d + 2] = sb / a; out[d + 3] = 255;
     }
   }
-        }
+  if (profile) profile.resolve = rasterClock()-stageAt;
+}
