@@ -13,6 +13,8 @@ export type Tri = {
   env?: boolean;                        // large polished face: add per-pixel env reflection in rasterizeZB
   enx?: number; eny?: number; enz?: number;   // cam-space face normal (unit, camera-facing)
   nv?: Float32Array;                    // 9 floats: per-VERTEX cam-space normals (smooth env on curved metal); absent = flat
+  brush?: number;                       // circular-graining frequency (size-space) for spinning-wheel cap faces
+  bcx?: number; bcy?: number;           // projected wheel-center (size-space) for the brush rings
 };
 const ENV_MIN_AREA = 3;   // px^2 at projection size: SUBPIXEL cutoff only - a surface-scale threshold cuts one polished face's triangulation into env/flat mottle (the gear-wedge artifact)
 
@@ -24,6 +26,7 @@ export type Mesh = {
   col: V3;                // base color 0..1
   metal: number;          // 0 dielectric .. 1 metal (specular strength/tint)
   spin?: { axis: V3; center: V3; angle: number };  // rigid transform per frame
+  brush?: number;                     // circular-graining frequency for this mesh's flat cap faces (wheel finishing)
   nrm?: Float32Array;     // per-vertex analytic normals (smooth shading); absent = flat face normals
 };
 
@@ -385,8 +388,10 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       // into stripes/teeth on curved steel - removed, not retuned.
       const specA = Math.pow(Math.max(0, -rz / (rl > 1e-9 ? rl : 1)), 24);
       const spec = specA * (0.22 + 1.0 * metal);
-      const amb = 0.22;
-      const dif = 0.78 * (keyD > 0 ? keyD : 0) + 0.25 * (fillD > 0 ? fillD : 0);
+      // lighting tuned in look-dev sweep (V1): lower ambient, harder key for modeling
+      const LP = (globalThis as any).__lightP || { amb: 0.17, key: 0.9, fill: 0.25 };
+      const amb = LP.amb;
+      const dif = LP.key * (keyD > 0 ? keyD : 0) + LP.fill * (fillD > 0 ? fillD : 0);
       let r = mcr * (amb + dif), g = mcg * (amb + dif), b = mcb * (amb + dif);
       const sa = sm ? 1.6 : 1;
       r += spec * (sm ? Math.min(1, mcr * sa) : 1);
@@ -402,6 +407,7 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       tri.r=r>1?1:r; tri.g=g>1?1:g; tri.b=b>1?1:b;
       tri.z0=azc; tri.z1=bzc; tri.z2=czc;
       tri.env=undefined; tri.enx=undefined; tri.eny=undefined; tri.enz=undefined; tri.nv=undefined;
+      tri.brush=undefined; tri.bcx=undefined; tri.bcy=undefined;
       // large polished faces get per-pixel environment reflection in the rasterizer:
       // mirror reflections vary with the per-pixel view ray, which per-face
       // shading cannot express - that flatness is what reads as plastic.
@@ -448,6 +454,16 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
           }
         }
       }
+      if (tri.env && m.brush && spn && spn.axis[0] === 0 && spn.axis[1] === 0 && spn.axis[2] === 1 && Math.abs(nrz0) > 0.9 * nl) {
+        // circular graining (brush rings) on spinning-wheel cap faces: project
+        // the wheel center so pass 2 can ring-modulate the env reflection
+        const wx = spn.center[0], wy = spn.center[1], wz = spn.center[2];
+        const wx2 = wx * cyw - wy * syw, wyw = wx * syw + wy * cyw;
+        const wzc = wyw * sp - wz * cp + cam.dist;
+        const wys = wyw * cp + wz * sp;
+        tri.brush = m.brush;
+        tri.bcx = half + (wx2 * f) / wzc; tri.bcy = half - (wys * f) / wzc;
+      }
       out.push(tri);
       if (sort && zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; ZMESH[zCount] = mi; zCount++; }
     }
@@ -490,7 +506,7 @@ const BLUED: V3 = [0.16, 0.28, 0.62];
 const PLATE: V3 = [0.30, 0.30, 0.34];
 const RUBY: V3 = [0.72, 0.10, 0.16];
 const GOLD: V3 = [0.85, 0.68, 0.30];   // jewel chatons
-const PLATE_DARK: V3 = [0.26, 0.26, 0.30];   // Geneva stripe alternation
+const PLATE_DARK: V3 = [0.205, 0.205, 0.24];   // Geneva stripe alternation: deeper contrast so the bands actually read
 
 function hand(len: number, w: number, tail: number, z0: number, z1: number, col: V3): Mesh {
   // tapered dauphine-ish hand pointing +Y from the center
@@ -498,6 +514,45 @@ function hand(len: number, w: number, tail: number, z0: number, z1: number, col:
     [-w * 0.5, -tail], [w * 0.5, -tail], [w * 0.42, len * 0.55], [0, len], [-w * 0.42, len * 0.55],
   ];
   return extrude(pts, z0, z1, col, 1);
+}
+
+function handFaceted(len: number, w: number, tail: number, z0: number, z1: number, ridge: number, col: V3): Mesh {
+  // true dauphine: center spine raised by `ridge`, top split into flat facets
+  // that catch the light differently on each side of the ridge
+  const pts: [number, number][] = [
+    [-w * 0.5, -tail], [w * 0.5, -tail], [w * 0.42, len * 0.55], [0, len], [-w * 0.42, len * 0.55],
+  ];
+  const p: number[] = [], nr: number[] = [], idx: number[] = [];
+  const zr = z1 + ridge;
+  const topZ = (i: number): number => (i === 3 ? zr : z1);   // tip lies on the raised spine
+  const S0: V3 = [0, -tail, zr], S1: V3 = [0, len, zr];
+  const facet = (a: V3, b: V3, c: V3) => {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+    const l = Math.hypot(nx, ny, nz) || 1;
+    const N: V3 = [nx / l, ny / l, nz / l];
+    pushTriN(p, nr, idx, a, N, b, N, c, N);
+  };
+  const P = (i: number): V3 => [pts[i][0], pts[i][1], topZ(i)];
+  // top facets: tail, right of spine, left of spine
+  facet(P(0), P(1), S0);
+  facet(S0, P(1), P(2)); facet(S0, P(2), S1);
+  facet(S0, S1, P(4)); facet(S0, P(4), P(0));
+  const ZDN: V3 = [0, 0, -1];
+  for (let i = 0; i < 5; i++) {   // side walls rise to the per-point top z
+    const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % 5];
+    const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1;
+    const W: V3 = [dy / l, -dx / l, 0];
+    const t0 = topZ(i), t1 = topZ((i + 1) % 5);
+    pushTriN(p, nr, idx, [x0, y0, z0], W, [x1, y1, z0], W, [x1, y1, t1], W);
+    pushTriN(p, nr, idx, [x0, y0, z0], W, [x1, y1, t1], W, [x0, y0, t0], W);
+  }
+  for (let i = 1; i < 4; i++) {   // bottom cap
+    pushTriN(p, nr, idx, [pts[0][0], pts[0][1], z0], ZDN, [pts[i + 1][0], pts[i + 1][1], z0], ZDN, [pts[i][0], pts[i][1], z0], ZDN);
+  }
+  return { pos: new Float32Array(p), idx: new Uint32Array(idx), col, metal: 1, nrm: new Float32Array(nr) };
 }
 
 export function buildWatchScene(): WatchScene {
@@ -556,25 +611,25 @@ export function buildWatchScene(): WatchScene {
   // gear train: z-tiered for depth separation (barrel low, rising toward escape)
   const barrel = merge([
     gear(84, 15.2, 16, 0.4, 1.6, BRASS, 1),
-    spokedWheel(14.9, 14.1, 3.2, 1.6, 2.4, 6, BRASS, 1),
+    spokedWheel(14.9, 14.1, 3.2, 1.54, 2.4, 6, BRASS, 1),
     lathe([[0, 0.2], [1.8, 0.2], [1.8, 3.0], [0, 3.0]], 12, STEEL, 1),
   ]);
   bake(barrel, -20, 15, 0);
   const center = merge([
     openGear(80, 12.6, 13.2, 11.6, 0.8, 1.6, BRASS, 1),
-    spokedWheel(12.4, 11.6, 2.2, 1.6, 2.2, 5, BRASS, 1),
+    spokedWheel(12.4, 11.6, 2.2, 1.54, 2.2, 5, BRASS, 1),
     lathe([[0, 0.2], [1.1, 0.2], [1.1, 8.6], [0, 8.6]], 10, STEEL, 1),
   ]);
   bake(center, 0, 2, 0);
   const third = merge([
     openGear(75, 9.5, 10, 8.6, 2.2, 2.9, BRASS, 1),
-    spokedWheel(9.3, 8.6, 1.6, 2.9, 3.4, 5, BRASS, 1),
+    spokedWheel(9.3, 8.6, 1.6, 2.84, 3.4, 5, BRASS, 1),
     lathe([[0, 1.6], [0.9, 1.6], [0.9, 3.8], [0, 3.8]], 10, STEEL, 1),
   ]);
   bake(third, 17, 11, 0);
   const fourth = merge([
     openGear(72, 8.5, 9, 7.6, 3.0, 3.7, BRASS, 1),
-    spokedWheel(8.3, 7.6, 1.5, 3.7, 4.2, 4, BRASS, 1),
+    spokedWheel(8.3, 7.6, 1.5, 3.64, 4.2, 4, BRASS, 1),
     lathe([[0, 2.4], [0.8, 2.4], [0.8, 8.8], [0, 8.8]], 10, STEEL, 1),
   ]);
   bake(fourth, 18, -7, 0);
@@ -615,9 +670,9 @@ export function buildWatchScene(): WatchScene {
   bake(hairspring, 0, 3.4, 0);
   hairspring.spin = { axis: [0, 0, 1], center: [0, 3.4, 0], angle: 0 };
   // hands: bright steel hour/minute, red seconds
-  const hourHand = hand(17, 2.8, 4, 7.6, 8.3, STEEL);
+  const hourHand = handFaceted(17, 2.8, 4, 7.6, 8.3, 0.32, STEEL);
   hourHand.spin = { axis: [0, 0, 1], center: [0, 0, 0], angle: 0 };
-  const minuteHand = hand(29, 2.2, 5, 8.5, 9.1, STEEL);
+  const minuteHand = handFaceted(29, 2.2, 5, 8.5, 9.1, 0.26, STEEL);
   minuteHand.spin = { axis: [0, 0, 1], center: [0, 0, 0], angle: 0 };
   const secondHand = merge([
     hand(36, 0.7, 7, 9.4, 9.8, RUBY),
@@ -634,6 +689,7 @@ export function buildWatchScene(): WatchScene {
     wheels: [barrel, center, third, fourth, escape],
     fork, balance, hairspring, hourHand, minuteHand, secondHand, crown,
   };
+  for (const w of [barrel, center, third, fourth, escape]) w.brush = 1.2;   // circular-grained caps
 }
 
 /** Per-frame: set spin angles from the sim state and render everything. */
@@ -671,6 +727,10 @@ let ZB_COL = new Uint8Array(0);   // 4 bytes per pixel (RGBX) so a Uint32 view c
 let ZB_WINNER = new Int32Array(0);
 let ZB_RAY = new Float32Array(0);
 let ZB_RAY_R = 0, ZB_RAY_F = 0;
+let ZB_BC = new Float64Array(0);   // per-triangle barycentric coefficient cache (values identical to per-pixel recompute)
+let ZB_BCS = new Int32Array(0);    // per-triangle stamp for ZB_BC validity this call
+let ZB_BCSTAMP = 0;
+let ZB_WSTAMP = 0;                 // winner-buffer frame stamp: avoids clearing winner every frame
 const rasterClock = () => globalThis.performance?.now?.() ?? Date.now();
 export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, number, number], out: Uint8ClampedArray | Uint8Array, focal?: number, profile?: { setup: number; geometry: number; reflection: number; resolve: number }): void {
   let stageAt = profile ? rasterClock() : 0;
@@ -678,7 +738,13 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
   const n = R * R;
   if (ZB_DEPTH.length < n) { ZB_DEPTH = new Float32Array(n); ZB_COL = new Uint8Array(n * 4); ZB_WINNER = new Int32Array(n); }
   const depth = ZB_DEPTH.subarray(0, n), col = ZB_COL.subarray(0, n * 4), winner = ZB_WINNER.subarray(0, n);
-  winner.fill(-1);
+  // frame-stamped winner buffer: a pixel's winner entry is valid only if its
+  // upper bits match this call's stamp, so the old per-frame fill(-1) is gone.
+  // Geometry stores (stamp<<16)|ti for env faces and (stamp<<16)|0xFFFF for
+  // non-env faces; pass 2 treats anything else as no-env. On stamp wrap the
+  // buffer is zeroed once (stamp 0 then matches nothing).
+  if (++ZB_WSTAMP === 32767) { winner.fill(0); ZB_WSTAMP = 1; }
+  const wStamp16 = ZB_WSTAMP << 16;
   // normalized per-pixel view rays, rebuilt only when size/focal changes
   const fsc = (focal ?? 0) * (R / size);
   if (focal && (ZB_RAY_R !== R || ZB_RAY_F !== fsc || ZB_RAY.length < 3 * n)) {
@@ -707,6 +773,9 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
     if (yMax < yMin) continue;
     const xMin = Math.min(xs0, xs1, xs2), xMax = Math.max(xs0, xs1, xs2);
     if (xMax < 0 || xMin >= R) continue;
+    // every per-scanline span is a subset of the bbox x-range, so an empty bbox
+    // column range means this triangle fills zero pixels (exact skip, no output change)
+    if (Math.ceil(xMin - 0.5) > Math.floor(xMax - 0.5)) continue;
     const packed = (255 << 24) | (Math.round(t.b * 255) << 16) | (Math.round(t.g * 255) << 8) | Math.round(t.r * 255);
     const ay0 = ys0, by0 = ys1;
     const lo0 = Math.min(ay0, by0), hi0 = Math.max(ay0, by0);
@@ -748,10 +817,10 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
       const dq = span > 1e-9 ? (hq1 - hq0) / span : 0;
       let q = hq0 + ((x0 + 0.5) - hx0) * dq;
       const row = y * R;
-      const isEnv = focal !== undefined && t.env === true;
+      const winVal = focal !== undefined && t.env === true ? wStamp16 | ti : wStamp16 | 0xffff;
       for (let x = x0; x <= x1; x++, q += dq) {
         const p = row + x;
-        if (q > depth[p]) { depth[p] = q; col32[p] = packed; if (isEnv) winner[p] = ti; else if (winner[p] >= 0) winner[p] = -1; }
+        if (q > depth[p]) { depth[p] = q; col32[p] = packed; winner[p] = winVal; }
       }
     }
   }
@@ -762,19 +831,37 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
      falloffs instead of exp() - this runs ~100k times per frame. */
   if (focal !== undefined) {
     const ray = ZB_RAY;
-    for (let p = 0; p < n; p++) {
-      const ti = winner[p];
-      if (ti < 0) continue;
+    const RS = R / size;   // loop-invariant; identical value to the old inline (R / size)
+    // per-triangle barycentric coefficient cache for this call: identical
+    // arithmetic per pixel, just not recomputed from scratch each pixel
+    if (ZB_BC.length < tris.length * 6) { ZB_BC = new Float64Array(tris.length * 6); ZB_BCS = new Int32Array(tris.length); }
+    const bc = ZB_BC, bcs = ZB_BCS, stamp = ++ZB_BCSTAMP;
+    for (let y = 0; y < R; y++) {
+      const pyv = (y + 0.5) / RS, rowOff = y * R;
+      for (let x = 0; x < R; x++) {
+      const p = rowOff + x;
+      const w = winner[p];
+      if ((w >>> 16) !== ZB_WSTAMP) continue;
+      const ti = w & 0xffff;
+      if (ti === 0xffff) continue;
       const t = tris[ti];
       let enx = t.enx!, eny = t.eny!, enz = t.enz!;
       if (t.nv) {
         // barycentric-interpolated vertex normal: smooth reflection across
         // segment boundaries (rim/bezel banding fix)
-        const px2 = (p % R) + 0.5, py2 = Math.floor(p / R) + 0.5;
-        const d = (t.y1 - t.y2) * (t.x0 - t.x2) + (t.x2 - t.x1) * (t.y0 - t.y2);
-        if (d !== 0) {
-          const w0 = ((t.y1 - t.y2) * (px2 / (R / size) - t.x2) + (t.x2 - t.x1) * (py2 / (R / size) - t.y2)) / d;
-          const w1 = ((t.y2 - t.y0) * (px2 / (R / size) - t.x2) + (t.x0 - t.x2) * (py2 / (R / size) - t.y2)) / d;
+        const pxv = (x + 0.5) / RS;
+        const o6 = ti * 6;
+        if (bcs[ti] !== stamp) {
+          const d = (t.y1 - t.y2) * (t.x0 - t.x2) + (t.x2 - t.x1) * (t.y0 - t.y2);
+          bc[o6] = d; bc[o6 + 1] = t.y1 - t.y2; bc[o6 + 2] = t.x2 - t.x1;
+          bc[o6 + 3] = t.y2 - t.y0; bc[o6 + 4] = t.x0 - t.x2;
+          bc[o6 + 5] = d !== 0 ? 1 : 0;
+          bcs[ti] = stamp;
+        }
+        if (bc[o6 + 5] === 1) {
+          const d = bc[o6];
+          const w0 = (bc[o6 + 1] * (pxv - t.x2) + bc[o6 + 2] * (pyv - t.y2)) / d;
+          const w1 = (bc[o6 + 3] * (pxv - t.x2) + bc[o6 + 4] * (pyv - t.y2)) / d;
           const w2 = 1 - w0 - w1;
           const nv = t.nv;
           enx = w0 * nv[0] + w1 * nv[3] + w2 * nv[6];
@@ -796,18 +883,89 @@ export function rasterizeZB(tris: Tri[], size: number, ss: number, bg: [number, 
       const w2x = rx - 0.55, w2y = ry - 0.35;
       const d2 = 1 + w2x * w2x * 9 + w2y * w2y * 3;
       env += 0.55 / (d2 * d2);
+      if (t.brush !== undefined) {
+        // concentric circular-graining rings around the wheel center (triangle wave)
+        const bdx = (x + 0.5) / RS - t.bcx!, bdy = (y + 0.5) / RS - t.bcy!;
+        const rr = Math.sqrt(bdx * bdx + bdy * bdy) * t.brush;
+        const fr2 = rr - Math.floor(rr);
+        const tw = 1 - 2 * (fr2 > 0.5 ? fr2 - 0.5 : 0.5 - fr2);
+        env *= 0.94 + 0.06 * tw;
+      }
       const ct = -dn, om = 1 - ct, om2 = om * om;
-      const fr = 0.25 + 0.75 * om2 * om2 * om;
-      const e = env * fr * 0.85;
-      if (e <= 0.004) continue;
+      const om5 = om2 * om2 * om;
+      // metal Fresnel: F0 is the tinted base reflectance, not a dielectric
+      // 0.25 - metals stay reflective at normal incidence, which is what makes
+      // brass/steel read as metal instead of matte plastic
+      const e255 = env * 0.85 * 255;
+      // metal Fresnel tuning (look-dev sweep winner, variant A): tinted F0 with
+      // partial energy conservation so highlights enrich instead of washing out
+      const P = { f0a: 0.10, f0t: 0.38, conserve: 0.45 };
+      const f0r = P.f0a + P.f0t * (0.55 + 0.45 * t.r);
+      const f0g = P.f0a + P.f0t * (0.55 + 0.45 * t.g);
+      const f0b = P.f0a + P.f0t * (0.55 + 0.45 * t.b);
+      const fr = f0r + (1 - f0r) * om5, fg = f0g + (1 - f0g) * om5, fb = f0b + (1 - f0b) * om5;
       const o = 4 * p;
-      const er = e * (0.55 + 0.45 * t.r) * 255, eg = e * (0.55 + 0.45 * t.g) * 255, eb = e * (0.55 + 0.45 * t.b) * 255;
-      const nr = col[o] + er, ng = col[o + 1] + eg, nb = col[o + 2] + eb;
+      const er = e255 * fr, eg = e255 * fg, eb = e255 * fb;
+      const nr = col[o] * (1 - P.conserve * fr) + er, ng = col[o + 1] * (1 - P.conserve * fg) + eg, nb = col[o + 2] * (1 - P.conserve * fb) + eb;
       col[o] = nr > 255 ? 255 : nr; col[o + 1] = ng > 255 ? 255 : ng; col[o + 2] = nb > 255 ? 255 : nb;
+      }
     }
   }
 
   if (profile) { const t = rasterClock(); profile.reflection = t-stageAt; stageAt = t; }
+  /* Fused finishing pass over the live color+depth buffers:
+     (a) contact shading (SSAO-lite, 8 taps): a pixel whose neighbors sit much
+         nearer is in a contact zone (plate under a gear edge, gear under a
+         hand) - darken it; the depth cue that grounds the movement;
+     (b) edge anti-aliasing: pixels near a depth or color discontinuity blend
+         0.3 toward their across-edge neighbors, softening staircases without
+         SS2's 4x cost. One traversal shares the depth reads between both. */
+  if (ss === 1) {   // SS2 tier gets AA from the downsample; finishing runs at final res only
+    const rad = 3;
+    const T = 36 * 3;
+    for (let y = rad; y < R - rad; y++) {
+      for (let x = rad; x < R - rad; x++) {
+        const p = y * R + x;
+        const q = depth[p];
+        if (q > 0) {
+          const thr = q * 1.014;   // ~2 scene units nearer at watch distance
+          let occ = 0;
+          if (depth[p - rad] > thr) occ++;
+          if (depth[p + rad] > thr) occ++;
+          if (depth[p - rad * R] > thr) occ++;
+          if (depth[p + rad * R] > thr) occ++;
+          if (depth[p - rad - rad * R] > thr) occ++;
+          if (depth[p + rad - rad * R] > thr) occ++;
+          if (depth[p - rad + rad * R] > thr) occ++;
+          if (depth[p + rad + rad * R] > thr) occ++;
+          if (occ > 0) {
+            const sh = 1 - 0.5 * (occ / 8);
+            const o = 4 * p;
+            col[o] = col[o] * sh; col[o + 1] = col[o + 1] * sh; col[o + 2] = col[o + 2] * sh;
+          }
+        }
+        // edge detect: depth discontinuity (silhouette) or strong color step
+        const qx = depth[p + 1], qy = depth[p + R];
+        const ex = (q === 0) !== (qx === 0) || (qx > 0 && (q > qx ? q - qx > q * 0.014 : qx - q > qx * 0.014));
+        const ey = (q === 0) !== (qy === 0) || (qy > 0 && (q > qy ? q - qy > q * 0.014 : qy - q > qy * 0.014));
+        let axis = ex ? 0 : ey ? 1 : -1;
+        const o = 4 * p;
+        if (axis < 0) {
+          const l = col[o] + col[o + 1] + col[o + 2];
+          const lx = col[o + 4] + col[o + 5] + col[o + 6];
+          const dxc = l > lx ? l - lx : lx - l;
+          const ly = col[o + R * 4] + col[o + R * 4 + 1] + col[o + R * 4 + 2];
+          const dyc = l > ly ? l - ly : ly - l;
+          if (dxc > T || dyc > T) axis = dxc >= dyc ? 0 : 1;
+        }
+        if (axis === 0) {
+          for (let c = 0; c < 3; c++) col[o + c] = (col[o + c] * 7 + ((col[o - 4 + c] + col[o + 4 + c]) >> 1) * 3) / 10;
+        } else if (axis === 1) {
+          for (let c = 0; c < 3; c++) col[o + c] = (col[o + c] * 7 + ((col[o - R * 4 + c] + col[o + R * 4 + c]) >> 1) * 3) / 10;
+        }
+      }
+    }
+  }
   // SS1 already has the final pixels, including opaque background.
   if (ss === 1) { out.set(col); if (profile) profile.resolve = rasterClock()-stageAt; return; }
 
