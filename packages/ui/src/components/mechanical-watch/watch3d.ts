@@ -269,7 +269,13 @@ const ZIDX = new Uint32Array(65536);
 const ZMESH = new Uint16Array(65536);
 const TIE_EPS = 0.35;   // depths closer than this are the same physical layer: mesh order decides (meshes are assembled far -> near)
 
+// Each output stream owns its scratch objects; separate component instances do
+// not overwrite one another. Consumers already replace each frame's output.
+const TRI_POOLS = new WeakMap<Tri[], { tris: Tri[]; normals: Float32Array[] }>();
 export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[], sort = true): void {
+  // Painter clients may retain triangle objects; reuse only for the bitmap path.
+  let pool = sort ? { tris: [] as Tri[], normals: [] as Float32Array[] } : TRI_POOLS.get(out);
+  if (!pool) { pool = { tris: [], normals: [] }; TRI_POOLS.set(out, pool); }
   out.length = 0;
   let zCount = 0;
   const cyw = Math.cos(cam.yaw), syw = Math.sin(cam.yaw);
@@ -389,11 +395,13 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
       const qx0 = half + (ax2 * f) / azc, qy0 = half - (ays * f) / azc;
       const qx1 = half + (bx2 * f) / bzc, qy1 = half - (bys * f) / bzc;
       const qx2 = half + (cx2 * f) / czc, qy2 = half - (cys * f) / czc;
-      const tri: Tri = {
-        x0: qx0, y0: qy0, x1: qx1, y1: qy1, x2: qx2, y2: qy2,
-        r: r > 1 ? 1 : r, g: g > 1 ? 1 : g, b: b > 1 ? 1 : b,
-        z0: azc, z1: bzc, z2: czc,
-      };
+      const ti = out.length;
+      let tri = pool.tris[ti];
+      if (!tri) { tri = { x0:0,y0:0,x1:0,y1:0,x2:0,y2:0,r:0,g:0,b:0,z0:0,z1:0,z2:0 }; pool.tris[ti] = tri; }
+      tri.x0=qx0; tri.y0=qy0; tri.x1=qx1; tri.y1=qy1; tri.x2=qx2; tri.y2=qy2;
+      tri.r=r>1?1:r; tri.g=g>1?1:g; tri.b=b>1?1:b;
+      tri.z0=azc; tri.z1=bzc; tri.z2=czc;
+      tri.env=undefined; tri.enx=undefined; tri.eny=undefined; tri.enz=undefined; tri.nv=undefined;
       // large polished faces get per-pixel environment reflection in the rasterizer:
       // mirror reflections vary with the per-pixel view ray, which per-face
       // shading cannot express - that flatness is what reads as plastic.
@@ -410,7 +418,7 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
             // per-vertex normals through the same spin + camera transform:
             // flat per-segment normals step at every segment boundary and
             // read as coarse rim banding once the buffer tier quantizes them.
-            const nv = new Float32Array(9);
+            const nv = pool.normals[ti] ?? (pool.normals[ti] = new Float32Array(9));
             for (let vv = 0; vv < 3; vv++) {
               const vj = idx[k + vv] * 3;
               let pnx = nrms[vj], pny = nrms[vj + 1], pnz = nrms[vj + 2];
@@ -441,7 +449,7 @@ export function renderFrame(meshes: Mesh[], cam: Camera, size: number, out: Tri[
         }
       }
       out.push(tri);
-      if (zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; ZMESH[zCount] = mi; zCount++; }
+      if (sort && zCount < 65536) { ZKEY[zCount] = (azc + bzc + czc) / 3; ZIDX[zCount] = out.length - 1; ZMESH[zCount] = mi; zCount++; }
     }
   }
   // painter sort: far (large z) drawn first (skipped by the z-buffer path)
