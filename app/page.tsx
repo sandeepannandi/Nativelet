@@ -3,6 +3,7 @@ import { join } from "node:path";
 import NativeletSite from "./components/nativelet-site";
 
 const components = {
+  gyro: { dir: "packages/ui/src/components/gyroscope", files: ["Gyroscope.tsx", "gyroMath.ts", "gyroControl.ts", "gyroShader.ts", "Example.tsx", "README.md", "LICENSE"] },
   cradle: { dir: "packages/ui/src/components/newtons-cradle", files: ["NewtonsCradle.tsx", "cradleMath.ts", "cradleDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   galton: { dir: "packages/ui/src/components/galton-board", files: ["GaltonBoard.tsx", "galtonMath.ts", "galtonDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   pins: { dir: "packages/ui/src/components/pin-art-board", files: ["PinArtBoard.tsx", "pinMath.ts", "Example.tsx", "README.md", "LICENSE"] },
@@ -70,6 +71,7 @@ export default function Home() {
   const sources = {
     cradle: read(components.cradle.dir, components.cradle.files),
     galton: read(components.galton.dir, components.galton.files),
+    gyro: read(components.gyro.dir, components.gyro.files),
     pins: read(components.pins.dir, components.pins.files),
     plasma: read(components.plasma.dir, components.plasma.files),
     cymatics: read(components.cymatics.dir, components.cymatics.files),
@@ -118,4 +120,4 @@ export default function Home() {
     capsule: read(components.capsule.dir, components.capsule.files),
   };
   return <NativeletSite sources={sources} />;
-}
+  }
