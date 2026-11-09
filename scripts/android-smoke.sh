@@ -12,6 +12,7 @@ adb shell pm list packages | grep -i nativelet > "$OUT/packages.txt"
 PKG=$(sed 's/package://' "$OUT/packages.txt" | head -1 | tr -d '\r')
 echo "package=$PKG" | tee "$OUT/summary.txt"
 # Run new focused evidence first so unrelated old suites cannot skip it.
+bash scripts/android-gyroscope.sh || exit 1
 bash scripts/android-galton.sh || exit 1
 bash scripts/android-pin-art.sh || exit 1
 bash scripts/android-cradle.sh || exit 1
