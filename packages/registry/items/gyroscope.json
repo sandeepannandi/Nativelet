@@ -1,0 +1,21 @@
+{
+  "slug": "gyroscope",
+  "title": "Gyroscope",
+  "category": "interaction",
+  "files": [
+    "Gyroscope.tsx",
+    "gyroMath.ts",
+    "gyroControl.ts",
+    "gyroShader.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-reanimated"
+  ],
+  "nativeDeviceVerified": false
+}
