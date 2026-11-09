@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.json","include":["../../packages/ui/src/components/gyroscope/**/*.ts","../../packages/ui/src/components/gyroscope/**/*.tsx","app/gyroscope.tsx"],"exclude":["node_modules"]}
