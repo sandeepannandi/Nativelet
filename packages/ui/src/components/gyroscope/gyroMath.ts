@@ -75,4 +75,4 @@ export function impulseGyro(st:GyroState,yaw:number,tilt:number,spin:number){'wo
 export function gyroPose(v:number[]){'worklet';
  const a=v[0],b=v[1],c=Math.cos(a),s=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b);
  return {axis:[s*sb,-c*sb,cb],yaw:a,tilt:b,rotor:v[2]};
-                                    }
+}
