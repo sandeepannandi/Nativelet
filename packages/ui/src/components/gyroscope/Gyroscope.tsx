@@ -9,9 +9,8 @@ let effect:ReturnType<typeof Skia.RuntimeEffect.Make>|undefined;
 function shader(){if(effect===undefined)effect=Skia.RuntimeEffect.Make(GYRO_SHADER+'\nhalf4 main(float2 p){return half4(gyroColor(p));}');return effect;}
 export type GyroscopeProps={reducedMotion?:boolean;style?:ViewStyle;onFeedback?:(event:'grab'|'spin'|'reset')=>void};
 export function Gyroscope({reducedMotion,style,onFeedback}:GyroscopeProps){
- const [beat,setBeat]=useState(0),[systemReduce,setSystemReduce]=useState(false),[mode,setMode]=useState<'spin'|'frame'>('spin'),[slow,setSlow]=useState(false),[error,setError]=useState(false);
+ const [systemReduce,setSystemReduce]=useState(false),[mode,setMode]=useState<'spin'|'frame'>('spin'),[slow,setSlow]=useState(false),[error,setError]=useState(false);
  const reduce=reducedMotion??systemReduce,sim=useSharedValue(createGyro()),input=useSharedValue<GyroInput>({...GYRO_IDLE}),frame=useSharedValue(0),lastImpulse=useSharedValue(0),slowSV=useSharedValue(false),reduceSV=useSharedValue(false),resetSV=useSharedValue(0),seenReset=useSharedValue(0);
- useEffect(()=>{if(reduce)return;let id=0,alive=true;const tick=()=>{if(!alive)return;setBeat(x=>(x+1)%2);id=requestAnimationFrame(tick);};id=requestAnimationFrame(tick);return()=>{alive=false;cancelAnimationFrame(id);};},[reduce]);
  const effect=useMemo(()=>shader(),[]),latest=useRef({mode,reduce,onFeedback});latest.current={mode,reduce,onFeedback};
  const drag=useRef({a:0,b:0,mode:'spin' as 'spin'|'frame'});
  useEffect(()=>{let alive=true;AccessibilityInfo.isReduceMotionEnabled().then(x=>{if(alive)setSystemReduce(x);}).catch(()=>{});const sub=AccessibilityInfo.addEventListener('reduceMotionChanged',setSystemReduce);return()=>{alive=false;sub.remove();};},[]);
@@ -38,7 +37,6 @@ export function Gyroscope({reducedMotion,style,onFeedback}:GyroscopeProps){
  const button=(label:string,onPress:()=>void,selected=false)=><Pressable accessibilityRole="button" accessibilityState={{selected}} onPress={onPress} style={{minHeight:44,paddingHorizontal:13,justifyContent:'center',borderRadius:12,backgroundColor:selected?'#31513b':'#e6edde'}}><Text style={{color:selected?'#fff':'#31513b',fontSize:12}}>{label}</Text></Pressable>;
  return <View style={[{alignItems:'center',gap:12},style]}>
   <View {...pan.panHandlers} accessible accessibilityRole="adjustable" accessibilityActions={[{name:"increment",label:"Add rotor spin"},{name:"decrement",label:"Reverse rotor spin"}]} onAccessibilityAction={e=>{if(reduce)return;const j=e.nativeEvent.actionName==="increment"?.003:-.003;input.value={...input.value,spinImpulse:j,impulseId:input.value.impulseId+1};}} accessibilityLabel={reduce?'Gyroscope, motion paused':'Gyroscope. Choose flick rotor or drag frame below.'} style={{width:GYRO_W,height:GYRO_H,borderRadius:18,overflow:'hidden',backgroundColor:'#171c21'}}>
-   <View pointerEvents="none" style={{position:'absolute',width:1,height:1,opacity:0,transform:[{translateX:beat}]}}/>
    <Canvas pointerEvents="none" style={{width:GYRO_W,height:GYRO_H}}>{effect?<Fill><Shader source={effect} uniforms={uniforms}/></Fill>:null}</Canvas>
    {error?<Text style={{position:'absolute',top:24,left:16,right:16,color:'white'}}>Gyroscope shader unavailable on this renderer.</Text>:null}
   </View>
