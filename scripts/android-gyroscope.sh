@@ -11,7 +11,7 @@ sleep 9
 bash scripts/android-system-ready.sh
 sleep 2
 shot(){ adb exec-out screencap -p > "$OUT/$1.png"; }
-ui(){ adb shell uiautomator dump /sdcard/gyro.xml >/dev/null; adb pull /sdcard/gyro.xml "$OUT/$1.xml" >/dev/null 2>&1; }
+ui(){ bash scripts/android-ui-dump.sh "$OUT" "$1"; }
 shot initial; ui initial
 python3 - "$OUT" <<'PY'
 import re,sys,xml.etree.ElementTree as ET
