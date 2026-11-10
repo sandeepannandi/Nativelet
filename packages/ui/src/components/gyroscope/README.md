@@ -19,3 +19,5 @@ Perspective rays intersect finite annular cylinders for the rings, rotor, axle, 
 ## Verification
 
 Run `node gyroMath.test.mjs`, `node gyroControl.test.mjs` and `node gyroGeometry.test.mjs` (Node22.23 or newer) for energy, cyclic momenta, analytic steady precession, balanced/no-torque behavior, force-free world angular momentum, step refinement, dissipative energy and frame-partition checks. These validate this idealized model and its numerics, not physical hardware. Skia shader compilation, Android gestures, crash history and native performance still need native evidence. Web checks do not replace those gates. No native-device verification flag is set.
+
+`node gyroWorklets.test.cjs` (with showcase dependencies installed) checks the actual Expo transform, default constructor and a10-second isolated generated-closure replay. Keep helper worklets before their callers: generated factories capture functions at module initialization. Resolve captured parameter defaults in the body, after closure binding. These regression checks do not replace Android execution.
