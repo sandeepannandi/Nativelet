@@ -4,7 +4,18 @@
 set -eu
 OUT=smoke-out/gyroscope; mkdir -p "$OUT"
 PKG=com.anonymous.nativeletshowcase
-trap 'adb logcat -d > "$OUT/logcat-onexit.txt" 2>/dev/null || true' EXIT
+capture_native_anr_evidence(){
+  local dir="$OUT/anr-evidence"
+  local remote base
+  mkdir -p "$dir"
+  adb shell 'ls -t /data/anr/anr_* 2>/dev/null | head -5' > "$dir/anr-files.txt" 2> "$dir/anr-list.err" || true
+  sed 's/\r$//' "$dir/anr-files.txt" | while read -r remote; do
+    [ -n "$remote" ] || continue
+    base=$(basename "$remote")
+    timeout 10 adb pull "$remote" "$dir/$base" > "$dir/$base.pull.txt" 2>&1 || true
+  done
+}
+trap 'status=$?; adb logcat -d > "$OUT/logcat-onexit.txt" 2>/dev/null || true; if [ "$status" -ne 0 ]; then capture_native_anr_evidence; fi' EXIT
 adb shell am force-stop "$PKG"; adb logcat -c
 adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///gyroscope' "$PKG" > "$OUT/start.txt"
 sleep 9
