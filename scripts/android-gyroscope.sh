@@ -8,7 +8,7 @@ trap 'adb logcat -d > "$OUT/logcat-onexit.txt" 2>/dev/null || true' EXIT
 adb shell am force-stop "$PKG"; adb logcat -c
 adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///gyroscope' "$PKG" > "$OUT/start.txt"
 sleep 9
-bash scripts/android-system-ready.sh
+bash scripts/android-system-ready.sh "$PKG" 'nativelet-showcase:///gyroscope'
 sleep 2
 shot(){ adb exec-out screencap -p > "$OUT/$1.png"; }
 ui(){ bash scripts/android-ui-dump.sh "$OUT" "$1"; }
