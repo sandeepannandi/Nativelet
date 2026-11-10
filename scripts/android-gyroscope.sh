@@ -12,24 +12,42 @@ bash scripts/android-system-ready.sh
 sleep 2
 shot(){ adb exec-out screencap -p > "$OUT/$1.png"; }
 ui(){ bash scripts/android-ui-dump.sh "$OUT" "$1"; }
+failure_context(){
+  echo 'gyroscope-failure-context begin'
+  adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity|ACTIVITY' | tail -20 || true
+  adb logcat -d | grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG|ReactNativeJS|AndroidRuntime|Gyroscope|Error|Exception" | tail -80 || true
+  echo 'gyroscope-failure-context end'
+}
 shot initial; ui initial
-python3 - "$OUT" <<'PY'
-import re,sys,xml.etree.ElementTree as ET
+if ! python3 - "$OUT" <<'PY'
+import json,re,sys,xml.etree.ElementTree as ET
 from pathlib import Path
 p=Path(sys.argv[1]);root=ET.parse(p/'initial.xml')
 nodes=list(root.iter('node'))
 canvas=next((x for x in nodes if x.get('content-desc','').startswith('Gyroscope.')),None)
-assert canvas is not None,'Gyroscope accessible canvas absent, route or render may have failed'
+def visible_summary():
+ texts=[n.get('text','') for n in nodes if n.get('text','')]
+ descs=[n.get('content-desc','') for n in nodes if n.get('content-desc','')]
+ print('gyroscope-visible-texts '+json.dumps(texts[:40]))
+ print('gyroscope-visible-descriptions '+json.dumps(descs[:40]))
+if canvas is None:
+ print('gyroscope-controls FAIL accessible canvas absent')
+ visible_summary();raise SystemExit(1)
 def bounds(x):return list(map(int,re.findall(r'\d+',x.get('bounds',''))))
 coords={};coords['canvas']=bounds(canvas)
 for name in ['Drag frame','Flick rotor','Slow motion','Reset']:
  n=next((x for x in nodes if x.get('text')==name),None)
- assert n is not None,'missing control '+name
+ if n is None:
+  print('gyroscope-controls FAIL missing control '+name)
+  visible_summary();raise SystemExit(1)
  coords[name]=bounds(n)
-import json
 (p/'coords.json').write_text(json.dumps(coords))
 print('gyroscope-controls PASS canvas and four controls present')
 PY
+then
+  failure_context
+  exit 1
+fi
 coord(){ python3 - "$OUT/coords.json" "$1" "$2" <<'PY'
 import json,sys
 x0,y0,x1,y1=json.load(open(sys.argv[1]))[sys.argv[2]]
@@ -55,7 +73,7 @@ adb shell pidof "$PKG" > "$OUT/pid.txt"
 if grep -E "Process: $PKG|Process $PKG .*has died|ANR in $PKG|ReactNativeJS.*(Error|Exception)" "$OUT/logcat.txt";then
  echo 'gyroscope-session FAIL crash_or_js_error' | tee "$OUT/summary.txt";exit 1
 fi
-python3 - "$OUT" <<'PY'
+if ! python3 - "$OUT" <<'PY'
 import sys,hashlib,xml.etree.ElementTree as ET
 from pathlib import Path
 p=Path(sys.argv[1])
@@ -67,3 +85,7 @@ assert len(set(hashes.values()))>=4,'native pixels did not change across interac
 (p/'summary.txt').write_text('gyroscope-session PASS process_alive no_recorded_crash controls_present slow_toggle screenshot_changes\nNOT_TESTED reduced_motion native_state_impulse physical_accuracy realism_acceptance\nGFXINFO is frame evidence, not a GPU-time measurement\n')
 print((p/'summary.txt').read_text());print(hashes)
 PY
+then
+  failure_context
+  exit 1
+fi
