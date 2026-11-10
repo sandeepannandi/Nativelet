@@ -4,7 +4,7 @@
 set -u
 OUT="$1"
 NAME="$2"
-REMOTE="/sdcard/gyro-$NAME.xml"
+REMOTE="${3:-/sdcard/gyro-$NAME.xml}"
 TARGET="$OUT/$NAME.xml"
 ATTEMPTS=3
 mkdir -p "$OUT"
