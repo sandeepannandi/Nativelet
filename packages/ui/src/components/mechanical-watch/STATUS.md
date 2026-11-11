@@ -339,3 +339,25 @@ through the reserve-exhaustion transition, with separate balance energy, wheel
 progression and contact identity measurements. Require long unwind, powered
 stall and one-restart cases in addition to the short rate test before adoption.
 Native rendering/cost/crash and visual acceptance gates remain open.
+
+
+## Run 13 (2026-11-11): isolated slot-normal investigation, unadopted
+
+For the jewel/slot pair, `side = dx*ay - dy*ax` is the displacement along
+`n = (ay, -ax)`. With positive side penetration, this normal points out of
+the permitted slot: outward relative velocity has vn>0 and needs a -n
+impulse. The present solver instead applies +n for vn<0. The negative-side
+case is symmetric. This is a unilateral contact-direction concern, not a
+beat-threshold problem.
+
+One isolated control reversed the relative-velocity test and both impulse
+signs for this slot contact only. No parameter or threshold was swept.
+Empty-rest and powered-rest counter increments fell to 1 each over 60s
+(from 7768 and 7285), but the factory natural-unwind case stalled after
+5 counter increments. Reversing the factory balance velocity as a separate
+phase control still stalled (22 increments). Neither is a viable repair.
+No production slot-contact, phase, torque, stop or seed behavior changed.
+
+The contact direction, actual engagement geometry and energy transfer must
+be checked together. Do not fix the stop flag or add a repeated seed to
+conceal this running failure. The existing short rate test is insufficient.
