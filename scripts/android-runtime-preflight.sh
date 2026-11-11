@@ -24,7 +24,11 @@ for sample in 1 2 3; do
   adb exec-out screencap -p > "$OUT/screen-$sample.png"
   adb shell dumpsys activity activities > "$OUT/activity-$sample.txt"
   adb shell dumpsys window > "$OUT/window-$sample.txt"
-  adb shell 'cat /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io' > "$OUT/pressure-$sample.txt"
+  # PSI is optional diagnostic telemetry. Some stock AOSP images deny shell
+  # access; preserve the denial instead of aborting before mandatory UI checks.
+  if ! adb shell 'cat /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io' > "$OUT/pressure-$sample.txt" 2>&1; then
+    printf '%s\n' 'UNAVAILABLE: ADB shell cannot read PSI; no pressure clearance inferred.' >> "$OUT/pressure-$sample.txt"
+  fi
   adb shell dumpsys cpuinfo > "$OUT/cpu-$sample.txt"
   adb shell uiautomator dump /sdcard/runtime-root.xml > "$OUT/dump-$sample.txt" 2>&1
   adb pull /sdcard/runtime-root.xml "$OUT/root-$sample.xml" > "$OUT/pull-$sample.txt" 2>&1
