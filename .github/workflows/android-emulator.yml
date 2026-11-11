@@ -1,12 +1,19 @@
 name: Android emulator smoke
 on:
   workflow_dispatch:
+    inputs:
+      runtime_qualification_only:
+        description: 'Run only the AOSP runtime preflight. No app install or component tests.'
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [ci/android-emulator-smoke, "parity/**"]
 permissions:
   contents: read
 jobs:
   build:
+    if: ${{ inputs.runtime_qualification_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -32,6 +39,7 @@ jobs:
           name: apk
           path: apps/showcase/android/app/build/outputs/apk/release/*.apk
   emulator:
+    if: ${{ inputs.runtime_qualification_only != true }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -90,3 +98,33 @@ jobs:
         with:
           name: android-smoke-results
           path: smoke-out
+  runtime-qualification:
+    if: ${{ inputs.runtime_qualification_only == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Qualify full AOSP runtime before any app testing
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          cores: 2
+          ram-size: 2048M
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: false
+          script: bash scripts/android-runtime-preflight.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-qualification
+          path: runtime-qualification
