@@ -21,3 +21,38 @@ Perspective rays intersect finite annular cylinders for the rings, rotor, axle, 
 Run `node gyroMath.test.mjs`, `node gyroControl.test.mjs` and `node gyroGeometry.test.mjs` (Node22.23 or newer) for energy, cyclic momenta, analytic steady precession, balanced/no-torque behavior, force-free world angular momentum, step refinement, dissipative energy and frame-partition checks. These validate this idealized model and its numerics, not physical hardware. Skia shader compilation, Android gestures, crash history and native performance still need native evidence. Web checks do not replace those gates. No native-device verification flag is set.
 
 `node gyroWorklets.test.cjs` (with showcase dependencies installed) checks the actual Expo transform, default constructor and a10-second isolated generated-closure replay. Keep helper worklets before their callers: generated factories capture functions at module initialization. Resolve captured parameter defaults in the body, after closure binding. `node gyroHarness.test.cjs` guards the Android recovery path against BACKing out of a foreground showcase activity before relaunch. These regression checks do not replace Android execution.
+
+
+## Android evidence checkpoint (2026-11-11, run 269)
+
+Not ready for native clearance. Exact source 57076138caaa78dc18a8b08b1edbd8830446dffb:
+https://github.com/sandeepannandi/Nativelet/actions/runs/43024804824
+
+The Android release build passed. The emulator failed in system readiness,
+before the gyro controls, gesture, screenshot, video or frame-stat assertions
+ran. All hierarchy dumps returned `null root node`. The corrected recovery
+cold-launched MainActivity (`LaunchState: COLD`, `TotalTime: 1668`), unlike
+the prior dying-instance relaunch, but readiness still failed. A successful
+launch is not a usable native rendering or foreground proof.
+
+Logcat records an ANR in `com.google.android.gms.persistent` while executing
+Nearby Discovery service. The recorded window has CPU pressure avg10=76.56%,
+memory pressure avg10=50.24%, graphics composer CPU=58%, SurfaceFlinger=22%.
+These establish system contention; they do not establish a gyro-specific
+crash as the cause or clear gyro crash/performance gates. Android denied
+access to the listed ANR trace. No screenshots or native gesture measurements
+were captured before failure.
+
+Results artifact:
+https://github.com/sandeepannandi/Nativelet/actions/runs/43024804824/artifacts/13859180144
+
+Local checks additionally passed with the locked showcase dependencies:
+`gyroWorklets.test.cjs` (Expo transform, default construction, 10s isolated
+closure replay with zero state difference), the scoped TypeScript check
+`npx tsc --noEmit -p tsconfig.gyro.json`, plus the math, controller, geometry
+and recovery-source regressions named above. These are not native clearance.
+
+Do not rerun unchanged on the unsuitable emulator or relax readiness gates.
+Next evidence must come from a usable native runtime at verified exact source,
+then exercise controls/gestures, reduced motion, crash history, actual visual
+finish and native performance. No native-device verification flag is set.
