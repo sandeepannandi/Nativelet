@@ -56,3 +56,47 @@ Do not rerun unchanged on the unsuitable emulator or relax readiness gates.
 Next evidence must come from a usable native runtime at verified exact source,
 then exercise controls/gestures, reduced motion, crash history, actual visual
 finish and native performance. No native-device verification flag is set.
+
+
+### Runtime-only AOSP qualification attempt (2026-11-11, run270)
+
+Run: https://github.com/sandeepannandi/Nativelet/actions/runs/43028097762
+Artifact: https://github.com/sandeepannandi/Nativelet/actions/runs/43028097762/artifacts/13860740150
+
+Both component jobs were skipped, and no app was installed. API34 default
+x86_64 image booted without com.google.android.gms. The first screenshot
+was visually inspected: a full rendered launcher, status/navigation bars
+and icons, with no error dialog in that frame. This is not app evidence.
+
+The preflight then failed because ADB shell cannot read /proc/pressure/*;
+set -e aborted before any mandatory UI hierarchy sampling. This is a
+preflight portability error, not proof the AOSP runtime is unsuitable.
+There are no three UI roots and no runtime, performance or component
+clearance. No ANR/FATAL EXCEPTION marker was observed in the short
+on-exit capture; that does not establish health under app load.
+
+The pressure capture now records an explicit UNAVAILABLE marker and the
+denial, then continues to mandatory screenshot/UI root checks. Those
+checks remain fail-closed, as does the ANR/fatal gate. This correction
+is unvalidated on Android until the separately bounded corrected qualification settles. No automatic component dispatch follows qualification.
+
+
+### Corrected runtime-only AOSP qualification (2026-11-11, run271)
+
+Run: https://github.com/sandeepannandi/Nativelet/actions/runs/43029255367
+Artifact: https://github.com/sandeepannandi/Nativelet/actions/runs/43029255367/artifacts/13859282823
+Source: 5fc8ec1bc6a4dc4af44bf4d0e751fdb48601e419
+
+SUCCESS for the short unloaded launcher/root preflight only. Both component
+jobs skipped and no app installed. The three 719x1598 screenshots were
+inspected as actual pixels: launcher, status/navigation bars, icons and
+search widget rendered normally, no visible error dialog. Initial boot
+layout settles by sample 2. All three UIAutomator XMLs contain 26 nodes
+with launcher/search packages. No ANR in / FATAL EXCEPTION marker observed
+in captured logs. GMS absent. PSI remains explicitly UNAVAILABLE with the
+permission denials preserved, so no pressure clearance is inferred.
+
+This is a candidate runtime baseline, not Gyroscope native clearance. It
+does not test app startup, controls, gestures, rendering cost or crashes
+under app load. No component run dispatched automatically. Run270 remains
+a preflight portability failure, not a runtime rejection.
