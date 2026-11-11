@@ -100,3 +100,32 @@ This is a candidate runtime baseline, not Gyroscope native clearance. It
 does not test app startup, controls, gestures, rendering cost or crashes
 under app load. No component run dispatched automatically. Run270 remains
 a preflight portability failure, not a runtime rejection.
+
+
+### Exact-source gyro AOSP attempt (2026-11-11, run272)
+
+Run: https://github.com/sandeepannandi/Nativelet/actions/runs/43030250539
+Artifact: https://github.com/sandeepannandi/Nativelet/actions/runs/43030250539/artifacts/13860714495
+Source: 36f4913db819802355d3e694465b53155e707b12
+
+FAILURE before app installation. Same-run exact-source release APK build
+passed. App source and original gyro assertion script are unchanged from
+5707613; only workflow, preflight and these notes changed. Full unrelated
+emulator suite skipped.
+
+Mandatory same-session runtime preflight failed on first UI root:
+UiTestAutomationBridge returned null and /sdcard/runtime-root.xml did not
+exist. mCurrentFocus=null although sys.boot_completed=1 and launcher
+activity was resumed. Actual screenshot pixels were inspected: wallpaper
+only, no launcher icons or status/navigation controls at capture.
+Later logcat records launcher Displayed, so boot-complete alone was not a
+usable-UI gate. This does not establish whether waiting would recover it.
+No ANR/FATAL EXCEPTION marker observed in short captured logs. PSI remains
+UNAVAILABLE with permission denials, not pressure clearance.
+
+No app installed, no component controls/gestures/screens/video/frame
+evidence, and no Gyroscope native clearance. Run271 remains a successful
+unloaded sample, not proof of repeatable startup. No automatic rerun or
+component dispatch after this new failure. A grounded usable-launcher
+readiness gate, rather than a fixed sleep or skipped root check, is the
+next investigation if work resumes. No proof transfers to Mechanical Watch.
