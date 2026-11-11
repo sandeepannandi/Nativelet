@@ -60,10 +60,14 @@ print_dump_errors(){
 }
 recover_system(){
   reason="$1"
-  echo "system-recovery action=back-force-stop-launcher reason=$reason" | tee -a "$OUT/summary.txt"
-  adb shell input keyevent KEYCODE_BACK || true
+  echo "system-recovery action=force-stop-launcher-and-restart-target reason=$reason" | tee -a "$OUT/summary.txt"
+  # Do not send BACK here. When the showcase is foreground, BACK destroys its
+  # task and leaves the launcher resumed; run 42818071333 then delivered the
+  # route to the dying top activity instead of opening the Gyroscope screen.
   adb shell am force-stop com.google.android.apps.nexuslauncher || true
   if [ -n "$ROUTE_URL" ]; then
+    adb shell am force-stop "$PKG" || true
+    sleep 1
     if ! adb shell am start -W -a android.intent.action.VIEW -d "$ROUTE_URL" "$PKG" >"$OUT/relaunch.txt" 2>&1; then
       echo 'system-recovery FAILED app-relaunch' | tee -a "$OUT/summary.txt"
       exit 1
