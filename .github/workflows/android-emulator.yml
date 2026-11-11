@@ -7,6 +7,11 @@ on:
         type: boolean
         required: false
         default: false
+      gyro_validation_only:
+        description: 'Run only exact-source Gyroscope validation on the preflighted AOSP runtime.'
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [ci/android-emulator-smoke, "parity/**"]
 permissions:
@@ -39,7 +44,7 @@ jobs:
           name: apk
           path: apps/showcase/android/app/build/outputs/apk/release/*.apk
   emulator:
-    if: ${{ inputs.runtime_qualification_only != true }}
+    if: ${{ inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -128,3 +133,46 @@ jobs:
         with:
           name: runtime-qualification
           path: runtime-qualification
+  gyro-validation:
+    if: ${{ inputs.gyro_validation_only == true && inputs.runtime_qualification_only != true }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact source
+        run: git rev-parse HEAD
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Validate Gyroscope on full AOSP runtime
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          cores: 2
+          ram-size: 2048M
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: false
+          script: |
+            bash scripts/android-runtime-preflight.sh
+            mkdir -p smoke-out
+            adb install -r apk/*.apk > smoke-out/install.txt 2>&1
+            bash scripts/android-gyroscope.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gyro-aosp-results
+          path: |
+            runtime-qualification
+            smoke-out
