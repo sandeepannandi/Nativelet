@@ -256,3 +256,29 @@ KNOWN ARTIFACTS (queued): bezel silhouette zigzag at grazing arcs
 profile TODO), no crystal/dome yet, hairspring static (animate breathing).
 NEXT: wire sim state -> renderWatch angles (trainAngles), animated orbit,
 then native (createPicture) + web (Canvas2D) renderers.
+
+## Run 11 (2026-11-11): contact-solver timestep causes missed exit locks; local phase consistency restored
+The old production-step failure was not a beat-counter rising-edge artifact.
+A lock identity trace shows zero face/tooth identity changes while the model
+reports a held lock at 480/960/1920/3840 Hz. Raw lock-face events give the
+physical discriminator: at 960 Hz the 10 s run records 38 arrests (29 entry,
+9 exit) over 58.376 wheel half-pitches, with intervals collapsing to ~2.0
+half-pitches after ~2.7 s; at 3840 Hz it records 57 arrests (28 entry,
+29 exit) over 56.382 half-pitches with alternating ~0.8/~1.17 half-pitch
+intervals. At 480 Hz the old solver chatters on one face (252 arrests); at
+1920 Hz it stalls after 2 arrests. A contact-window trace at 960 Hz shows the
+hold carried by entry/exit impulse-face dwell at the banks after the exit
+lock is missed. Summary evidence: diagnostics/run11-contact-trace-summary.json.
+
+Change: keep the public fixed timestep and all physical parameters/start
+conditions unchanged, but integrate each fixed substep through the contact
+solver at the previously converged 1/3840 s micro-step. This is a numerical
+contact-sampling fix, not a beat threshold or rate-target sweep. Validation:
+watchMath.stepconsistency.test.mjs passes 480/960/1920/3840 Hz (57 beats vs
+56.382 wheel half-pitches at each rate, sustained amplitude, not stopped);
+watchMath.diag.mjs now reports 57 beats and 1.924 escape revolutions over 10 s
+(previously 38 beats vs 1.990 revolutions); watch3d.test.mjs still passes.
+Local JS cost after the change is about 3 ms per simulated second at the
+960 Hz production step; native Android cost/crash evidence remains unproven.
+Stopped-state semantics and the preserved repeated-gesture seed proposal are
+still unimplemented and unclaimed.
