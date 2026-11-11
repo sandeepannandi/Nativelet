@@ -282,3 +282,60 @@ Local JS cost after the change is about 3 ms per simulated second at the
 960 Hz production step; native Android cost/crash evidence remains unproven.
 Stopped-state semantics and the preserved repeated-gesture seed proposal are
 still unimplemented and unclaimed.
+
+
+## Run 12 (2026-11-11): unwind regression blocks Run 11 adoption
+
+NOT READY TO MERGE. Run 11's short rate-consistency test does not establish
+unwind/stop behavior or beat-event truth. The microstep repair remains a
+candidate, not a finished physics repair.
+
+Compared baseline b9a76ed with Run 11 d92932e using identical defaults and
+60 calls of stepWatch(state, physics, 1/60) per simulated second. No thresholds,
+seeds, physical parameters or production stop logic were changed for these tests.
+
+| Variant | Initial condition | Duration (s) | Final wind | Final amp (rad) | Stopped | Counter increments | Escape angle (rad) |
+|---|---|---:|---:|---:|---|---:|---:|
+| baseline | natural-unwind | 300 | 0.0000 | 1.97108e-15 | True | 562 | -118.582121 |
+| baseline | empty-running | 60 | 0.0000 | 3.23001e-05 | True | 76 | -1.714874 |
+| baseline | empty-rest | 60 | 0.0000 | 0.0196297 | True | 3614 | -0.296430 |
+| baseline | powered-rest | 60 | 0.6000 | 0.0460124 | True | 5550 | -0.296774 |
+| baseline | one-restart | 60 | 0.0000 | 1.17128e-05 | True | 2 | -0.458237 |
+| current | natural-unwind | 300 | 0.0000 | 1.18139 | False | 1742 | -364.912021 |
+| current | empty-running | 60 | 0.0000 | 1.18556 | False | 326 | -68.345715 |
+| current | empty-rest | 60 | 0.0000 | 0.0232054 | True | 7768 | -0.295919 |
+| current | powered-rest | 60 | 0.6000 | 0.0589949 | True | 7285 | -0.296057 |
+| current | one-restart | 60 | 0.0000 | 1.05808e-05 | True | 2 | -0.444446 |
+
+Initial conditions: natural-unwind uses createWatch unchanged; empty-running
+sets wind=0 only; empty-rest sets wind=0, b=wb=amp=0, stopped=true, seeded=false;
+powered-rest is the same rest state with wind=1; one-restart starts from
+empty-rest then calls windCrown(state, physics, 1) once before the 60s run.
+
+Observed defects:
+- The torque expression retains 28% of driveTorque at wind=0. With the finer
+  solver this sustains motion after the reserve is exhausted: during seconds
+  285-300 the wheel advances -18.011813rad while wind remains zero. Baseline
+  happened to stall despite that nonzero torque. This is an unwind regression.
+- The rest-state beat counter chatters without meaningful wheel progression.
+  Current empty-rest reports 7768 increments in 60s despite total escape
+  displacement of only -0.016319rad. Baseline has the same class of defect
+  (3614 increments). Beat count must not be used as a motion or physical-event
+  oracle for stop/restart acceptance.
+- Stored wind and motion are distinct: powered-rest retains wind=0.6 but its
+  balance amplitude is only 0.058995rad. The stopped flag is not sufficient
+  evidence of the physical state, nor does positive wind prove running.
+- The existing single restart seed does not sustain oscillation in this case.
+  No repeated-gesture seed or new behavior has been implemented.
+
+Isolated diagnostic control only: setting drive torque to zero exactly when
+wind=0 removes empty-rest chatter and lets the balance decay, but natural unwind
+then shows positive escape-wheel drift (20.869092rad in seconds 285-300) even
+with a near-zero balance. Therefore simply removing the torque floor is not a
+validated repair. This control was not adopted in production.
+
+Next physical route: inspect signed contact work and projected position changes
+through the reserve-exhaustion transition, with separate balance energy, wheel
+progression and contact identity measurements. Require long unwind, powered
+stall and one-restart cases in addition to the short rate test before adoption.
+Native rendering/cost/crash and visual acceptance gates remain open.
