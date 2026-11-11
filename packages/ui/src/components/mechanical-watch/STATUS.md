@@ -361,3 +361,30 @@ No production slot-contact, phase, torque, stop or seed behavior changed.
 The contact direction, actual engagement geometry and energy transfer must
 be checked together. Do not fix the stop flag or add a repeated seed to
 conceal this running failure. The existing short rate test is insufficient.
+
+
+## Run 14 (2026-11-11): actual finer-step check rejects convergence claim
+
+The Run 11 test checks public-step partition consistency, not convergence:
+480/960/1920/3840Hz all use the same internal 1/3840s microstep. A physically
+meaningful refinement check must also run finer than that internal limit.
+At fixed defaults/start, 600 frames of 1/60s, with no threshold or geometry
+changes, the finer samples give:
+
+| Actual solver Hz | Final amp rad | Escape displacement rad | Escape displacement in final second rad | Counter increments |
+|---:|---:|---:|---:|---:|
+| 3840 | 2.401088 | -11.808593 | -1.256897183 | 57 |
+| 7680 | 1.886821 | -10.260830 | -1.256703014 | 50 |
+| 15360 | 0.913657 | -0.207685 | -0.000021398 | 2 |
+
+At 15360Hz the balance sits near 0.88rad and the wheel barely advances,
+despite wind=0.9333 and stopped=false. This independently reinforces the
+difference between stored wind, the flag and actual movement. No rate has
+been chosen as a fix; selecting a lucky sample would hide the failure.
+Do not call Run 11 physics converged or ready from its partition test.
+
+An additional isolated control combined the inward slot impulse with
+actual tooth-point fork moment arms and refreshed per-contact velocities.
+It still stalled (natural-unwind case: only -0.583936rad wheel displacement
+over 300s) and is also unadopted. The contact model needs repair, not a
+threshold, seed or internal-rate change chosen for apparent running.
