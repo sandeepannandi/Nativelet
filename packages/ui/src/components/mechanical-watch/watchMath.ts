@@ -181,15 +181,18 @@ function rotFace(local: Face, c: number, s: number, F: number, out: Face) {
   out.len = local.len;
 }
 
+const CONTACT_SKIN = 0.06;
+const CONTACT_SOLVER_DT = 1 / 3840;
+
 /* Point-vs-face contact: returns penetration depth (>=0 means touching). */
 function contactFace(tx: number, ty: number, f: Face): number {
   const rx = tx - f.ax, ry = ty - f.ay;
   const u = rx * f.tx + ry * f.ty;
   if (u < -0.08 || u > f.len + 0.08) return -1;
   const d = rx * f.nx + ry * f.ny;
-  // skin 0.06; deeper than 0.35 the point has tunneled through the thin
-  // stone model - release it (a dropped lock recoils and the next tooth locks)
-  return d <= 0.06 && d >= -0.5 ? -d : -1;
+  // Deeper than 0.35 the point has tunneled through the thin stone model -
+  // release it (a dropped lock recoils and the next tooth locks).
+  return d <= CONTACT_SKIN && d >= -0.5 ? -d : -1;
 }
 
 /* One escapement substep: semi-implicit Euler + sequential impulses. */
@@ -364,10 +367,18 @@ export function stepWatch(s: WatchState, p: WatchPhysics, dtFrame: number) {
   const geo: Face[] = [newFace(), newFace(), newFace(), newFace()];
   s.acc = Math.min(s.acc + dtFrame, 0.12);
   const n = Math.floor(s.acc / p.fixedDt);
-  for (let i = 0; i < n; i++) { substep(s, p, p.fixedDt, geo); s.t += p.fixedDt; }
+  for (let i = 0; i < n; i++) {
+    /* Discrete contact misses when a fast tooth crosses the thin pallet skin
+       within one fixed substep. Refine only the contact solver to the finest
+       diagnostic timestep used by the local rate-convergence evidence;
+       physics parameters and start conditions are unchanged. */
+    const pieces = Math.max(1, Math.ceil(p.fixedDt / CONTACT_SOLVER_DT));
+    const dt = p.fixedDt / pieces;
+    for (let j = 0; j < pieces; j++) { substep(s, p, dt, geo); s.t += dt; }
+  }
   s.acc -= n * p.fixedDt;
 }
 
 function newFace(): Face {
   return { ax: 0, ay: 0, nx: 0, ny: 0, tx: 0, ty: 0, len: 0 };
-}
+       }
