@@ -10,7 +10,7 @@ set -u
 OUT=smoke-out/gyro-diagnostics; mkdir -p "$OUT"
 PKG=com.anonymous.nativeletshowcase
 adb shell am force-stop "$PKG"; adb logcat -c
-adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///gyroscope?telemetry=1' "$PKG" > "$OUT/start.txt" 2>&1
+adb shell am start -W -a android.intent.action.VIEW -d "'nativelet-showcase:///gyroscope?telemetry=1'" "$PKG" > "$OUT/start.txt" 2>&1
 STARTED=$SECONDS
 sample(){
   local n="$1"
@@ -134,7 +134,9 @@ else
   tesseract "$CAP/slow_after.png" stdout --psm 11 -l eng tsv 2>/dev/null > "$CAP/slow_after.tsv" || true
   # Flick gesture on canvas center (mirrors validation script geometry).
   capshot flick_before
-  adb shell input swipe 610 968 470 968 160 < /dev/null
+  # Longer injection window (800ms) so the velocity tracker gets spread
+  # samples on a saturated main thread; 160ms batched to zero velocity.
+  adb shell input swipe 610 968 470 968 800 < /dev/null
   sleep 6; capshot flick_after
   # Drag-frame mode + drag gesture.
   adb shell input tap 523 1555 < /dev/null
@@ -167,7 +169,9 @@ VERIFY_RC=0
 if grep -q 'interaction_capture=captured' "$OUT/dump-timeline.txt"; then
   adb shell log -p i -t gyrotest 'LEG-RM-BEGIN' < /dev/null 2>/dev/null || true
   adb shell am force-stop "$PKG" < /dev/null 2>/dev/null
-  adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///gyroscope?telemetry=1&reducedMotion=1' "$PKG" > "$CAP/rm-start.txt" 2>&1
+  # Double-quote + inner single quotes: adb shell joins argv with spaces and
+  # the device sh re-parses, so a bare '&' splits the command (run 282 rm-leg).
+  adb shell am start -W -a android.intent.action.VIEW -d "'nativelet-showcase:///gyroscope?telemetry=1&reducedMotion=1'" "$PKG" > "$CAP/rm-start.txt" 2>&1
   sleep 25
   adb logcat -d < /dev/null > "$CAP/logcat-telemetry.txt" 2>&1 || true
   python3 "$(dirname "$0")/gyro-telemetry-verify.py" "$CAP/logcat-telemetry.txt" > "$CAP/verify.txt" 2>&1 || VERIFY_RC=$?
