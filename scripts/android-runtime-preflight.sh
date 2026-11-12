@@ -20,6 +20,7 @@ if grep -q 'package:com.google.android.gms' "$OUT/packages.txt"; then
   echo 'FAIL unexpected Google Play Services image' | tee "$OUT/summary.txt"
   exit 1
 fi
+bash scripts/android-home-readiness.sh "$OUT/home-readiness"
 for sample in 1 2 3; do
   adb exec-out screencap -p > "$OUT/screen-$sample.png"
   adb shell dumpsys activity activities > "$OUT/activity-$sample.txt"
