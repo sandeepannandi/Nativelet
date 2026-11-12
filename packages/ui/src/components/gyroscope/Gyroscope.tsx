@@ -62,4 +62,4 @@ export function Gyroscope({reducedMotion,style,onFeedback}:GyroscopeProps){
   <Text style={{color:'#4b6053',fontSize:12,textAlign:'center',maxWidth:GYRO_W}}>{reduce?'Motion paused for reduced motion.':mode==='spin'?'Flick horizontally to add or reverse spin.':'Drag to apply torque to the gimbals, then release.'}</Text>
   <Text style={{color:'#718177',fontSize:10,textAlign:'center',maxWidth:GYRO_W}}>Coupled rigid-body model · 1.5mm rotor imbalance · linear bearing drag</Text>
  </View>;
-                                                                                                                                              }
+}
