@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Measurement-only Gyroscope runtime diagnostic. NOT a validation run.
+# Gyroscope runtime diagnostic + fail-closed telemetry assertions.
 # Collects frame production and UiAutomation availability evidence on the
-# same AOSP runtime as the component suite. No assertions are weakened or
-# replaced: this script changes nothing about rendering, physics or gates,
-# and its output must not be cited as component clearance.
+# same AOSP runtime as the component suite, streams test-only '[gyro-test]'
+# sim-state telemetry (showcase launched with ?telemetry=1) and verifies it
+# against an independent model port (scripts/gyro-telemetry-verify.py):
+# missing or inconsistent evidence FAILS the script. The script changes
+# nothing about rendering, physics or gates.
 set -u
 OUT=smoke-out/gyro-diagnostics; mkdir -p "$OUT"
 PKG=com.anonymous.nativeletshowcase
 adb shell am force-stop "$PKG"; adb logcat -c
-adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///gyroscope' "$PKG" > "$OUT/start.txt" 2>&1
+adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///gyroscope?telemetry=1' "$PKG" > "$OUT/start.txt" 2>&1
 STARTED=$SECONDS
 sample(){
   local n="$1"
@@ -155,6 +157,26 @@ adb shell dumpsys gfxinfo "$PKG" < /dev/null > "$OUT/gfxinfo-summary.txt" 2>&1 |
 adb shell dumpsys SurfaceFlinger --latency < /dev/null > "$OUT/surfaceflinger-latency.txt" 2>&1 || true
 adb shell dumpsys cpuinfo < /dev/null > "$OUT/cpuinfo.txt" 2>&1 || true
 adb logcat -d < /dev/null > "$OUT/logcat.txt" 2>&1 || true
+
+# --- Reduced-motion freeze leg + fail-closed telemetry assertions ---
+# Relaunch with reducedMotion pinned: the worklet must not step the sim at
+# all, so snapshots must show an exactly frozen state. The verifier
+# recomputes every normal-leg snapshot from an independent port of the
+# documented model and fails closed on any mismatch or missing evidence.
+VERIFY_RC=0
+if grep -q 'interaction_capture=captured' "$OUT/dump-timeline.txt"; then
+  adb shell log -p i -t gyrotest 'LEG-RM-BEGIN' < /dev/null 2>/dev/null || true
+  adb shell am force-stop "$PKG" < /dev/null 2>/dev/null
+  adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///gyroscope?telemetry=1&reducedMotion=1' "$PKG" > "$CAP/rm-start.txt" 2>&1
+  sleep 25
+  adb logcat -d < /dev/null > "$CAP/logcat-telemetry.txt" 2>&1 || true
+  python3 "$(dirname "$0")/gyro-telemetry-verify.py" "$CAP/logcat-telemetry.txt" > "$CAP/verify.txt" 2>&1 || VERIFY_RC=$?
+  grep -E '^ASSERT|^VERIFY' "$CAP/verify.txt" | tee -a "$OUT/dump-timeline.txt"
+  echo "telemetry_asserts=$([ "$VERIFY_RC" -eq 0 ] && echo PASS || echo FAIL) rc=$VERIFY_RC" | tee -a "$OUT/dump-timeline.txt"
+else
+  echo "telemetry_asserts=skipped (interaction stage did not run)" | tee -a "$OUT/dump-timeline.txt"
+fi
+
 {
   echo 'MEASUREMENT ONLY. No component validation, clearance or readiness claim.'
   echo "davey_events=$(grep -c 'Davey!' "$OUT/logcat.txt" 2>/dev/null || echo 0)"
@@ -165,5 +187,6 @@ adb logcat -d < /dev/null > "$OUT/logcat.txt" 2>&1 || true
   echo "dump_timeouts=$(grep -c 'dump_result=timeout' "$OUT/dump-timeline.txt" 2>/dev/null || echo 0)"
   echo "dump_attempts=6"
   echo "interaction_capture=$(grep -m1 -o 'interaction_capture=captured\|interaction_capture=skipped' "$OUT/dump-timeline.txt" 2>/dev/null || echo not_run)"
+  echo "telemetry_asserts=$(grep -m1 -o 'telemetry_asserts=[A-Za-z]*' "$OUT/dump-timeline.txt" 2>/dev/null || echo not_run)"
 } | tee "$OUT/summary.txt"
-exit 0
+exit "${VERIFY_RC:-0}"
