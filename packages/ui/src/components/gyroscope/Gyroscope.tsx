@@ -32,7 +32,8 @@ export function Gyroscope({reducedMotion,style,onFeedback}:GyroscopeProps){
   const dtReq=Math.max(0,(info.timeSincePreviousFrame??16.667)/1000)*(slowSV.value?.25:1);
   let stepMs=0;
   if(!reduceSV.value){const t0=Date.now();lastImpulse.value=driveGyro(sim.value,GYRO_DEFAULTS,input.value,dtReq,lastImpulse.value);stepMs=Date.now()-t0;frame.value+=1;}
-  // Test-only snapshot, inert unless a hook installed telemetryOn. stepMs is
+  // Test-only snapshot: gated by telemetryOn, so a shipped build emits
+  // nothing and pays only one shared-value read per frame. stepMs is
   // sim-step compute only, never a render-smoothness signal.
   if(telemetryOn.value){snapTick.value+=1;if(dtReq>.1||snapTick.value%60===0)runOnJS(emitSnap)({kind:'snap',wallT:Date.now(),dtReq,stepMs,simT:sim.value.t,dropped:sim.value.droppedTime,acc:sim.value.acc,v:sim.value.v.slice(),input:{...input.value},seenImpulse:lastImpulse.value,seenReset:seenReset.value,slow:slowSV.value,reduce:reduceSV.value,frame:frame.value});}
  });
