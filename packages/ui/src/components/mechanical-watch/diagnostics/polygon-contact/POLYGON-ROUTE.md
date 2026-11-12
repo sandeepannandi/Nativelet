@@ -80,8 +80,14 @@ uninformative. Alternative explanations are not excluded: residual solver
 defects, contact-model formulation limits, or an incorrect escapement
 dynamic design in the measurement itself.
 
-Also established earlier and standing: the point-face production model
-sustains oscillation only through an energy-pump artifact.
+Earlier finding on the production point-face model, stated with its limits:
+the grounded-pin impulse demonstrably injects energy (an identified defect -
+the impulse is counted in the solve but not consistently removed from
+application), and the consistent alternatives tested so far lose sustained
+motion. This establishes an identified defect plus the failure of those
+tested alternatives. It does NOT establish that every physically consistent
+formulation cannot sustain oscillation, nor that the defect is the sole
+cause of production's sustained motion; that causal question stays open.
 
 Next routes within scope: (1) source-backed higher-fidelity escapement
 geometry or an analytic physical escapement design (manufacturer dimensions,
