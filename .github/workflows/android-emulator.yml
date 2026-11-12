@@ -162,6 +162,12 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
           test -r /dev/kvm && test -w /dev/kvm
+      - name: Install tesseract OCR (gyro diagnostics content guard only)
+        if: ${{ inputs.gyro_diagnostics_only == true }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends tesseract-ocr
+          tesseract --version | head -2
       - name: Validate Gyroscope on full AOSP runtime
         uses: reactivecircus/android-emulator-runner@v2
         with:
