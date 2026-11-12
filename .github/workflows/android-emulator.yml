@@ -7,6 +7,11 @@ on:
         type: boolean
         required: false
         default: false
+      gyro_diagnostics_only:
+        description: 'Measurement-only Gyroscope runtime diagnostics. No component assertions or clearance.'
+        type: boolean
+        required: false
+        default: false
       gyro_validation_only:
         description: 'Run only exact-source Gyroscope validation on the preflighted AOSP runtime.'
         type: boolean
@@ -134,7 +139,7 @@ jobs:
           name: runtime-qualification
           path: runtime-qualification
   gyro-validation:
-    if: ${{ inputs.gyro_validation_only == true && inputs.runtime_qualification_only != true }}
+    if: ${{ (inputs.gyro_validation_only == true || inputs.gyro_diagnostics_only == true) && inputs.runtime_qualification_only != true }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -168,11 +173,15 @@ jobs:
             bash scripts/android-runtime-preflight.sh
             mkdir -p smoke-out
             adb install -r apk/*.apk > smoke-out/install.txt 2>&1
-            bash scripts/android-gyroscope.sh
+            if [ "${{ inputs.gyro_diagnostics_only }}" == "true" ]; then
+              bash scripts/android-gyro-diagnostics.sh
+            else
+              bash scripts/android-gyroscope.sh
+            fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gyro-aosp-results
+          name: ${{ inputs.gyro_diagnostics_only == true && 'gyro-diagnostics-results' || 'gyro-aosp-results' }}
           path: |
             runtime-qualification
             smoke-out
