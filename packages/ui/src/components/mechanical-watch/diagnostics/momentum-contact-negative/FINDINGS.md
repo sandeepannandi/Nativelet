@@ -107,9 +107,12 @@ runner output, reproduced in the agent report):
   bookkeeping caught it before interpretation; fixed and rerun.
 
 Structural conclusion: the production behavior was partly an artifact of
-the energy-injecting grounded impulse - under any consistent contact
-physics the point-face escapement does not sustain oscillation at any
-tested rate. Local fixes cannot separate the defect from the behavior.
+the energy-injecting grounded impulse - in the consistent point-face
+variants tested here, the escapement does not sustain oscillation at any
+tested rate. This establishes the defect plus failure of the tested
+alternatives, not that every consistent formulation must fail; the causal
+question stays open. Local fixes cannot separate the defect from the
+behavior.
 Remaining grounded route: polygon contacts from measured reference
 geometry (club tooth + stone slabs), now in progress.
 
