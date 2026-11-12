@@ -4,6 +4,7 @@ import {Canvas,Fill,Shader,Skia} from '@shopify/react-native-skia';
 import {runOnJS,useDerivedValue,useFrameCallback,useSharedValue} from 'react-native-reanimated';
 import {createGyro,GYRO_DEFAULTS} from './gyroMath';
 import {driveGyro,GYRO_IDLE,GYRO_W,GYRO_H,type GyroInput} from './gyroControl';
+import {pushPoint,recentVelocity,type TouchPoint} from './velocityTracker';
 import {GYRO_SHADER} from './gyroShader';
 let effect:ReturnType<typeof Skia.RuntimeEffect.Make>|undefined;
 function shader(){if(effect===undefined)effect=Skia.RuntimeEffect.Make(GYRO_SHADER+'\nhalf4 main(float2 p){return half4(gyroColor(p));}');return effect;}
@@ -21,7 +22,7 @@ export function Gyroscope({reducedMotion,style,onFeedback}:GyroscopeProps){
  const reduce=reducedMotion??systemReduce,sim=useSharedValue(createGyro()),input=useSharedValue<GyroInput>({...GYRO_IDLE}),frame=useSharedValue(0),lastImpulse=useSharedValue(0),slowSV=useSharedValue(false),reduceSV=useSharedValue(false),resetSV=useSharedValue(0),seenReset=useSharedValue(0);
  const telemetryOn=useSharedValue(false),snapTick=useSharedValue(0),emitSnap=useMemo(()=>(e:GyroTestEvent)=>{gyroTestHook?.(e);},[]);
  const effect=useMemo(()=>shader(),[]),latest=useRef({mode,reduce,onFeedback});latest.current={mode,reduce,onFeedback};
- const drag=useRef({a:0,b:0,mode:'spin' as 'spin'|'frame'});
+ const drag=useRef({a:0,b:0,mode:'spin' as 'spin'|'frame',points:[] as TouchPoint[]});
  useEffect(()=>{let alive=true;AccessibilityInfo.isReduceMotionEnabled().then(x=>{if(alive)setSystemReduce(x);}).catch(()=>{});const sub=AccessibilityInfo.addEventListener('reduceMotionChanged',setSystemReduce);return()=>{alive=false;sub.remove();};},[]);
  useEffect(()=>{slowSV.value=slow;},[slow,slowSV]);
  useEffect(()=>{reduceSV.value=reduce;input.value={...GYRO_IDLE};},[reduce,reduceSV,input]);
@@ -40,13 +41,19 @@ export function Gyroscope({reducedMotion,style,onFeedback}:GyroscopeProps){
  const uniforms=useDerivedValue(()=>{frame.value;const v=sim.value.v;return {size:[GYRO_W,GYRO_H],angles:[v[0],v[1],v[2]%(2*Math.PI)],exposure:1.2};});
  const pan=useMemo(()=>PanResponder.create({
   onStartShouldSetPanResponder:()=>!latest.current.reduce,onMoveShouldSetPanResponder:()=>!latest.current.reduce,
-  onPanResponderGrant:()=>{drag.current={a:sim.value.v[0],b:sim.value.v[1],mode:latest.current.mode};gyroTestHook?.({kind:'grab',wallT:Date.now(),mode:drag.current.mode,a:drag.current.a,b:drag.current.b});latest.current.onFeedback?.('grab');if(drag.current.mode==='frame')input.value={...input.value,active:true,targetYaw:drag.current.a,targetTilt:drag.current.b};},
-  onPanResponderMove:(_,g)=>{if(drag.current.mode==='frame')input.value={...input.value,active:true,targetYaw:drag.current.a+g.dx*.012,targetTilt:drag.current.b+g.dy*.012};},
-  onPanResponderRelease:(_,g)=>{const old=input.value;if(drag.current.mode==='spin'){
-   // Hand flick scales to a finite generalized angular impulse, not an assigned rotor speed.
-   const j=Math.max(-.009,Math.min(.009,g.vx*.003));input.value={...old,active:false,spinImpulse:j,impulseId:old.impulseId+1};gyroTestHook?.({kind:'spin',wallT:Date.now(),j,impulseId:old.impulseId+1});latest.current.onFeedback?.('spin');
+  onPanResponderGrant:e=>{drag.current={a:sim.value.v[0],b:sim.value.v[1],mode:latest.current.mode,points:[{x:e.nativeEvent.pageX,t:e.nativeEvent.timestamp}]};gyroTestHook?.({kind:'grab',wallT:Date.now(),mode:drag.current.mode,a:drag.current.a,b:drag.current.b});latest.current.onFeedback?.('grab');if(drag.current.mode==='frame')input.value={...input.value,active:true,targetYaw:drag.current.a,targetTilt:drag.current.b};},
+  onPanResponderMove:(e,g)=>{pushPoint(drag.current.points,{x:e.nativeEvent.pageX,t:e.nativeEvent.timestamp});if(drag.current.mode==='frame')input.value={...input.value,active:true,targetYaw:drag.current.a+g.dx*.012,targetTilt:drag.current.b+g.dy*.012};},
+  onPanResponderRelease:(e,g)=>{const old=input.value;if(drag.current.mode==='spin'){
+   // Hand flick scales to a finite generalized angular impulse, not an assigned
+   // rotor speed. Velocity comes from our own recent-sample tracker fed by raw
+   // native timestamps: gestureState.vx reads exactly 0 when a saturated UI
+   // thread coalesces delivery to down+up (device runs 282/283), and no
+   // impulse is applied when no samples survive inside the horizon.
+   pushPoint(drag.current.points,{x:e.nativeEvent.pageX,t:e.nativeEvent.timestamp});
+   const vx=recentVelocity(drag.current.points,e.nativeEvent.timestamp);
+   const j=vx==null?0:Math.max(-.009,Math.min(.009,vx*.003));input.value={...old,active:false,spinImpulse:j,impulseId:old.impulseId+1};gyroTestHook?.({kind:'spin',wallT:Date.now(),j,impulseId:old.impulseId+1});latest.current.onFeedback?.('spin');
   }else input.value={...old,active:false};},
-  onPanResponderTerminate:()=>{input.value={...input.value,active:false};},onPanResponderTerminationRequest:()=>false,
+  onPanResponderTerminate:()=>{drag.current.points=[];input.value={...input.value,active:false};},onPanResponderTerminationRequest:()=>false,
  }),[input,sim]);
  const button=(label:string,onPress:()=>void,selected=false)=><Pressable accessibilityRole="button" accessibilityState={{selected}} onPress={onPress} style={{minHeight:44,paddingHorizontal:13,justifyContent:'center',borderRadius:12,backgroundColor:selected?'#31513b':'#e6edde'}}><Text style={{color:selected?'#fff':'#31513b',fontSize:12}}>{label}</Text></Pressable>;
  return <View style={[{alignItems:'center',gap:12},style]}>
