@@ -173,11 +173,7 @@ jobs:
             bash scripts/android-runtime-preflight.sh
             mkdir -p smoke-out
             adb install -r apk/*.apk > smoke-out/install.txt 2>&1
-            if [ "${{ inputs.gyro_diagnostics_only }}" == "true" ]; then
-              bash scripts/android-gyro-diagnostics.sh
-            else
-              bash scripts/android-gyroscope.sh
-            fi
+            bash scripts/android-gyro${{ inputs.gyro_diagnostics_only == true && '-diagnostics' || 'scope' }}.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
