@@ -19,16 +19,18 @@ const m=libs.gyroMath,c=libs.gyroControl;
 
 function buildFixture(){
  const out=[];
- let wallT=1000000,frame=0,seenReset=0,slow=false,reduce=false;
+ let wallT=1000000,frame=0,snapTick=0,seenReset=0,slow=false,reduce=false;
  let st=m.createGyro(),input={...c.GYRO_IDLE},lastImpulse=0;
  const emit=e=>out.push("I ReactNativeJS: '[gyro-test]', '"+JSON.stringify(e)+"'");
- const snap=(dtReq,stepMs)=>emit({kind:'snap',wallT,dtReq,stepMs,simT:st.t,dropped:st.droppedTime,acc:st.acc,v:st.v.slice(),input:{...input},seenImpulse:lastImpulse,seenReset,slow,reduce,frame});
+ // Mirrors the component exactly: frame advances only when stepped; the
+ // snapshot gate is dtReq>.1 (saturated) or every 60th tick (hardware cadence).
  const runFrame=dtRaw=>{
   const dtReq=dtRaw*(slow?.25:1);
   const t0=Date.now();
-  if(!reduce)lastImpulse=c.driveGyro(st,m.GYRO_DEFAULTS,input,dtReq,lastImpulse);
-  wallT+=dtRaw*1000;frame++;
-  snap(dtReq,reduce?0:Math.max(0.01,Date.now()-t0));
+  let stepMs=0;
+  if(!reduce){lastImpulse=c.driveGyro(st,m.GYRO_DEFAULTS,input,dtReq,lastImpulse);stepMs=Math.max(0.01,Date.now()-t0);frame++;}
+  wallT+=dtRaw*1000;snapTick++;
+  if(dtReq>.1||snapTick%60===0)emit({kind:'snap',wallT,dtReq,stepMs,simT:st.t,dropped:st.droppedTime,acc:st.acc,v:st.v.slice(),input:{...input},seenImpulse:lastImpulse,seenReset,slow,reduce,frame});
  };
  emit({kind:'bridge',wallT});
  // Idle frames (free precession under gravity imbalance), saturated cadence.
@@ -41,10 +43,18 @@ function buildFixture(){
  for(let i=0;i<3;i++)runFrame(4);
  // Frame mode: PD grip toward pointer-set targets.
  emit({kind:'grab',wallT,mode:'frame',a:st.v[0],b:st.v[1]});
- input={...input,active:true,targetYaw:st.v[0]+1.56,targetTilt:st.v[1]+0.96};
+ input={...input,active:true,targetYaw:st.v[0]+1.56,targetTilt:st.v[1]+0.96,spinImpulse:-0.006,impulseId:1};
  for(let i=0;i<4;i++)runFrame(4);
  input={...input,active:false};
- runFrame(4);
+ // Hardware-like sparse segment: 60fps frames emit only every 60th snapshot,
+ // with a second impulse applied in an unrecorded gap between snapshots.
+ slow=false;
+ emit({kind:'grab',wallT,mode:'spin',a:st.v[0],b:st.v[1]});
+ input={...input,spinImpulse:-0.004,impulseId:2};
+ emit({kind:'spin',wallT,j:-0.004,impulseId:2});
+ for(let i=0;i<130;i++)runFrame(0.0167);
+ // Back to saturated cadence so post-gap contiguous replay resumes.
+ for(let i=0;i<3;i++)runFrame(4);
  // Reset: sim back to documented initial (spin 45), slow persists by design.
  emit({kind:'reset',wallT});
  st=m.createGyro(m.GYRO_DEFAULTS,45);input={...c.GYRO_IDLE};lastImpulse=0;seenReset=1;
@@ -78,6 +88,13 @@ function expect(name,{status,stdout},wantFail,frag){
  if(!ok){console.log('--- '+name+' verifier output ---\n'+stdout);throw new Error(name+' expectation failed');}
 }
 expect('positive',run('positive',positive),false,'VERIFY PASS');
+// Non-contiguous stream: replay across unrecorded frames must not be assumed;
+// doubling frame numbers opens gaps in every pair and must fail closed.
+const sparseOnly=positive.split('\n').map(ln=>{
+ if(!ln.includes('"kind":"snap"'))return ln;
+ return ln.replace(/"frame":(\d+)\}/,(_,n)=>'"frame":'+(Number(n)*2)+'}');
+}).join('\n');
+expect('sparse-noncontiguous',run('sparse',sparseOnly),true,'step-consistency FAIL');
 const corrupted=positive.split('\n').map((ln,i,a)=>{
  if(ln.includes('"kind":"snap"')&&a.slice(0,i).filter(x=>x.includes('"kind":"snap"')).length===6)
   return ln.replace(/"v":\[/,'"v":[0.05,');
