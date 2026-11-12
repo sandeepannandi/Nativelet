@@ -17,6 +17,11 @@ on:
         type: boolean
         required: false
         default: false
+      macos_gpu_probe_only:
+        description: 'Measurement-only Intel-macOS GPU environment probe. No component assertions or clearance.'
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [ci/android-emulator-smoke, "parity/**"]
 permissions:
@@ -49,7 +54,7 @@ jobs:
           name: apk
           path: apps/showcase/android/app/build/outputs/apk/release/*.apk
   emulator:
-    if: ${{ inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true && inputs.gyro_diagnostics_only != true }}
+    if: ${{ inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true && inputs.gyro_diagnostics_only != true && inputs.macos_gpu_probe_only != true }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -109,7 +114,7 @@ jobs:
           name: android-smoke-results
           path: smoke-out
   runtime-qualification:
-    if: ${{ inputs.runtime_qualification_only == true }}
+    if: ${{ inputs.runtime_qualification_only == true && inputs.macos_gpu_probe_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -139,7 +144,7 @@ jobs:
           name: runtime-qualification
           path: runtime-qualification
   gyro-validation:
-    if: ${{ (inputs.gyro_validation_only == true || inputs.gyro_diagnostics_only == true) && inputs.runtime_qualification_only != true }}
+    if: ${{ (inputs.gyro_validation_only == true || inputs.gyro_diagnostics_only == true) && inputs.runtime_qualification_only != true && inputs.macos_gpu_probe_only != true }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -181,3 +186,29 @@ jobs:
           path: |
             runtime-qualification
             smoke-out
+  macos-gpu-probe:
+    if: ${{ inputs.macos_gpu_probe_only == true && inputs.runtime_qualification_only != true }}
+    needs: build
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact source
+        run: git rev-parse HEAD
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: apk
+      - name: Install API 34 x86_64 system image
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-34;default;x86_64'
+      - name: Probe with host GPU requested
+        run: APK=$(ls apk/*.apk | head -1) GPU_MODE=host OUT=probe-out bash scripts/android-macos-gpu-probe.sh
+      - name: Probe with swiftshader control
+        run: APK=$(ls apk/*.apk | head -1) GPU_MODE=swiftshader OUT=probe-out bash scripts/android-macos-gpu-probe.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-gpu-probe-results
+          path: probe-out
