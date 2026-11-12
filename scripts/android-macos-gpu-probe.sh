@@ -34,7 +34,7 @@ say "avd_create_rc=$?"
 "$EMU" -avd "$AVD" -no-window -no-snapshot -no-boot-anim -noaudio -gpu "$GPU_MODE" > "$OUT/emulator-$GPU_MODE.log" 2>&1 &
 EMU_PID=$!
 booted=failed
-for i in $(seq 1 60); do
+for i in $(seq 1 120); do
   bc=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
   [ "$bc" = 1 ] && { booted=ok; break; }
   kill -0 "$EMU_PID" 2>/dev/null || break
