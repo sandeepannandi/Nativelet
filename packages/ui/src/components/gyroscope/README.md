@@ -244,3 +244,28 @@ deadline copy timing out with exit124 while the production script remains
 90s). Still not Android-validated; next step is one bounded runtime-only
 qualification with artifact and pixel inspection. No component run is
 dispatched automatically.
+
+### Runtime qualification run273 (2026-11-12): readiness helper false pass, then stdin fix
+
+Run273 (runtime-only on c3fcc8f,
+https://github.com/sandeepannandi/Nativelet/actions/runs/43158483366) ended
+green in 1m54s, but artifact inspection showed the new readiness helper
+false-passed. Its attempt-1 directory contains only boot.txt and empty
+check logs: real adb forwards stdin, and because the check script arrives
+on stdin (bash -s heredoc), the first adb call consumed the remaining
+commands. The gate therefore verified only boot_completed=1 before
+declaring readiness. The mandatory samples corroborate the miss: sample1
+again captured mCurrentFocus=null and wallpaper-only pixels (the same
+unsettled state as run272), while samples 2-3 show the focused launcher
+with status bar, nav bar and icons and 26-node roots. PSI stayed denied
+(explicit UNAVAILABLE); no ANR/FATAL in the captured log. Run273 adds no
+clearance beyond run271; it reproduces the 272 condition and confirms a
+real settled-home wait is the right correction.
+
+Fix in scripts/android-home-readiness.sh: every adb call now reads stdin
+from /dev/null. Offline regression control: the run273 helper plus a
+stdin-draining mock adb reproduces the false pass exactly (only boot.txt);
+the fixed helper captures the full per-attempt evidence set. Recovery
+(attempt 2), immediate ANR failure and test-only 1s-timeout mocks behave
+as before; the production deadline remains 90s. Not Android-validated
+until a new bounded runtime-only run inspects real artifacts and pixels.
