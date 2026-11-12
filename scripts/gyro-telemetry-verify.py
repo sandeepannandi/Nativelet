@@ -128,27 +128,40 @@ def main():
           'bridge_events=%d' % sum(1 for e in normal if e.get('kind') == 'bridge'))
     check('snap-count', len(snaps) >= 8, 'normal_snaps=%d (need >=8)' % len(snaps))
     check('event-sequence',
-          len(spins) == 1 and len(grabs) >= 2 and len(resets) >= 1
+          len(spins) >= 1 and len(grabs) >= 2 and len(resets) >= 1
           and resets[0].get('wallT', 0) > spins[0].get('wallT', 0)
           and any(g.get('mode') == 'spin' for g in grabs)
           and any(g.get('mode') == 'frame' for g in grabs),
           'grabs=%d spins=%d resets=%d' % (len(grabs), len(spins), len(resets)))
     if spins:
-        j = float(spins[0].get('j', 0))
-        check('spin-impulse-sign', -0.009 <= j < 0,
-              'j=%g (scripted leftward swipe requires -0.009<=j<0)' % j)
-        applied = [s for s in snaps if s.get('seenImpulse', 0) >= spins[0].get('impulseId', -1)]
+        js = [float(e.get('j', 0)) for e in spins]
+        check('spin-impulse-sign',
+              all(-0.009 <= j < 0 for j in js),
+              'j=%s (sign/bound from scripted leftward swipe only; magnitude-vs-gesture is NOT provable from scripted input)'
+              % ','.join('%g' % j for j in js))
+        missing = [e.get('impulseId') for e in spins
+                   if not any(s.get('seenImpulse', 0) >= e.get('impulseId', -1)
+                              and abs(float(s['input']['spinImpulse']) - float(e.get('j', 0))) < 1e-12
+                              for s in snaps)]
         check('impulse-applied',
-              bool(applied) and abs(float(applied[0]['input']['spinImpulse']) - j) < 1e-12,
-              'applied_snaps=%d' % len(applied))
+              not missing,
+              'spin_events=%d unapplied=%s (recorded j must appear in a snapshot)'
+              % (len(spins), missing))
     else:
         check('spin-impulse-sign', False, 'no spin event')
         check('impulse-applied', False, 'no spin event')
 
-    worst_v, worst_t, pairs, skipped = 0.0, 0.0, 0, 0
+    # Replay only PROVABLY contiguous frame pairs (post.frame == pre.frame+1):
+    # with bounded-cadence snapshots, intervening frames and input changes are
+    # not recorded, so replay across a gap is impossible and is skipped, never
+    # assumed. Too few contiguous pairs fails closed.
+    worst_v, worst_t, pairs, epoch_skips, sparse_skips = 0.0, 0.0, 0, 0, 0
     for pre, post in zip(snaps, snaps[1:]):
         if pre.get('seenReset') != post.get('seenReset'):
-            skipped += 1
+            epoch_skips += 1
+            continue
+        if post.get('frame') != pre.get('frame', 0) + 1:
+            sparse_skips += 1
             continue
         st = from_snap(pre)
         drive(st, post['input'], float(post['dtReq']), pre['seenImpulse'])
@@ -157,12 +170,14 @@ def main():
         pairs += 1
     check('step-consistency',
           pairs >= 6 and worst_v <= REL_TOL and worst_t <= 1e-9,
-          'pairs=%d epoch_skips=%d max_rel_v=%.3g max_abs_t=%.3g (independent model port)'
-          % (pairs, skipped, worst_v, worst_t))
+          'contiguous_pairs=%d epoch_skips=%d sparse_skips=%d max_rel_v=%.3g max_abs_t=%.3g (independent model port; non-contiguous pairs skipped, never assumed)'
+          % (pairs, epoch_skips, sparse_skips, worst_v, worst_t))
 
     slow_ok, slow_n = True, 0
     for pre, post in zip(snaps, snaps[1:]):
         if pre.get('seenReset') != post.get('seenReset') or pre.get('slow') != post.get('slow'):
+            continue
+        if post.get('frame') != pre.get('frame', 0) + 1:
             continue
         gap = (post['wallT'] - pre['wallT']) / 1000.0
         if gap <= 0.05:
@@ -174,7 +189,7 @@ def main():
             slow_ok = False
     check('slow-ratio',
           slow_n >= 4 and slow_ok and any(s.get('slow') for s in snaps),
-          'checked_pairs=%d ok=%s (dtReq/wall-gap vs documented x0.25; robust to saturated-fps clamp)'
+          'checked_contiguous_pairs=%d ok=%s (dtReq/wall-gap vs documented x0.25; robust to saturated-fps clamp)'
           % (slow_n, slow_ok))
 
     post_reset = [s for s in snaps if s.get('seenReset', 0) > 0]
