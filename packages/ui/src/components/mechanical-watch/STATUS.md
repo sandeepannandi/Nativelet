@@ -1,0 +1,390 @@
+# Mechanical Watch build - WIP status (end of run 1)
+
+## Proven
+- Train ratios exact & unit-verified: barrel 72->center pinion 12 (6:1),
+  center 80->third 10 (8:1), third 75->fourth 10 (7.5:1), fourth 72->escape
+  pinion 6 (12:1), hour = minute/12. 21,600 vph: 3 Hz balance, 6 beats/s,
+  2 beats per escape tooth (30 beats/rev, 5 s/rev), fourth = seconds 1 rpm,
+  center = minutes 1 rph. (watchMath.ts TRAIN + trainAngles, diag output)
+- Escapement locking half works in sim: wheel locks solidly on the entry
+  pallet locking face, draw holds the fork on its banking pin (banking as
+  one-sided hard constraint, applied before contacts), no runaway.
+- Balance oscillator runs (3 Hz), amplitude tracker works.
+- Failure analysis: straight-fork pallet with pivot on the stone-bisector
+  axis has an EMPTY feasibility cone for the exit stone (impulse torque
+  sign). Confirmed by probe2.mjs cone search. The real Swiss lever needs
+  the anchor-form pallet geometry from an actual layout, not intuition.
+
+## Next run plan (decided)
+1. Reference geometry: download Paletteankerhemmung.gif (Wikimedia,
+   "Lever escapement" article animation), extract frames with ffmpeg,
+   measure entry/exit stone positions + locking/impulse face angles vs
+   wheel center across phases (lock/unlock/impulse/drop).
+2. Replace point-face analytic contacts with generic polygon SAT contacts:
+   club teeth and pallet stones as polygons traced from the measured
+   reference; sequential impulses + banking + roller/horn as now.
+3. Validation (watchMath.test.mjs): 6 beats/s +/-1 over 30 s; escape
+   advance exactly half pitch per beat; winding raises amplitude; wind=0
+   stops; slow-mo stable. Only then build renderers.
+4. Renderers: watch3d.ts mesh engine (extruded gears, conic-gradient
+   brushed metal, Geneva stripes, soft shadows), Skia Picture renderer
+   (createPicture pattern from TextMorph), Canvas2D web adapter, wiring
+   (registry 49, showcase route, card mini CSS, registry json).
+5. CI: scripts/android-watch.sh + android-smoke.sh line = Contents-only.
+   Workflow gate line 87 edit needs Workflows grant (main is asking user).
+   Token rule: Nativelet Contents-only, short-lived, revoke after.
+
+## Recovery if sandbox wiped
+Branch watch-build (local only) had commit 126eeca. Full watchMath.ts
+content is in the agent transcript (heredoc writes) and attached to the
+run-1 status report to main. Re-clone github.com/sandeepannandi/Nativelet.
+
+## Escapement geometry SOLVED (run 2, ~13:00 IST)
+Reference: Wikimedia Paletteankerhemmung.gif, frame 1 + 8 (entry lift). Wheel
+turns CLOCKWISE (screen) = clockwise in math y-up too (y-flip preserves CW here
+when param by screen (cos t, sin t) -> math angle -t). Pivot ABOVE wheel with
+long anchor arms was the missing ingredient; entry/exit faces verified by cone
+analysis + probe3.mjs (all pass):
+- Math frame: y-up, wheel e DECREASES (CW), center (0,0), R_tips = 1 (scaled).
+- Pallet pivot (0, +2.5) (GIF 214/85 = 2.52).
+- Entry stone polar 120 deg from wheel center; arm a = (-45,-135)/85.
+- Exit stone polar 60 deg; arm a = (+45,-135)/85. 60 deg separation = 2.5
+  pitches of 15-tooth wheel -> half-pitch stagger is structural.
+- Engagement: +p (CCW fork) moves entry IN, exit OUT. Entry engaged at +bank,
+  exit at -bank.
+- entry LOCK face normal 198 deg (-0.951,-0.309): resist -0.98, draw tau +114
+  (pulls fork to +bank). 12 deg draw tilt from -T.
+- entry IMPULSE face = stone END face, normal (0,-1) (faces inward toward
+  wheel): tooth presses up/out, tau -45 (drives fork -p, the unlock dir).
+- exit LOCK face = stone upper end, normal (-0.1,+0.995): tau -31 (draw to
+  -bank).
+- exit IMPULSE face = upper-left side, normal (-0.5,+0.866): tau +28.5
+  (drives fork +p).
+Beat sequence: +bank entry locked -> unlock -p -> entry impulse drives -p ->
+drop tooth onto exit lock (-bank) -> unlock +p -> exit impulse +p -> drop on
+entry. 2 beats per tooth pitch (24 deg), wheel advances 12 deg per beat,
+15 teeth x 2 = 30 beats per escape revolution = 12 s at 6 beats/s (train-locked
+fourth wheel 1 rpm: escape pinion 12:1 -> 60/12 = 5 s/rev?? CHECK: escape
+wheel 15 teeth, 30 beats/rev; at 6 beats/s -> 5 s per escape rev. Standard is
+6 beats/s, escape rev = 5 s. OK consistent.)
+NEXT: rewrite escapement in watchMath.ts as polygon contacts with these exact
+faces (stones as oriented boxes; tooth tip as small circle/box; SAT + impulse
+solver, fork banking clamps +-forkLimit). Stone bodies: slabs ~14 x 4 (GIF),
+tilt entry slab 59 deg screen -> math -59 deg at corner 120 deg; exit slab
+mirror-ish by cone (exit lock near-horizontal => slab ~85 deg).
+Then diag validation, then mesh/render.
+
+## Dynamic sim status (run 3, ~13:24 IST) - locking HOLDS, unlock stalls
+watchMath.ts rewritten to the measured anchor geometry (fork pivot ABOVE wheel
+at (0,25.2), CW wheel, measured stone faces). Three solver bugs found+fixed:
+1. Baumgarte velocity bias pumped energy into a resting contact (0.25/dt at
+   960 Hz) and spun the wheel backward through the lock -> REMOVED, replaced
+   with a separate positional pseudo-impulse pass (no KE injection).
+2. Positional pass split correction by inverse mass even when the fork is
+   pinned on a banking: the clamp ate the fork's share and the wheel
+   position-walked through the lock -> when the contact presses the fork into
+   its pin, the WHEEL takes the whole correction.
+3. Thin-wall faces accepted unbounded penetration; a tooth starting on the
+   far side of a face was "resolved" violently -> penetration capped at 0.35
+   (deeper = tunneled, release; a dropped lock recoils, next tooth locks).
+4. Velocity contacts now treat a fork pressed into its banking pin as
+   grounded (cf=0 for that contact): the pin is a bilateral constraint at
+   its limit, not the fork's tiny free inertia. This made locking SOLID:
+   we ~ 0, wheel holds against full-wind torque indefinitely.
+5. Start conditions: tooth 3 seeded resting on the engaged exit shelf
+   (e0 = -0.1117), balance starts GENTLE (0.3 x resonance) - the escapement
+   must pump amplitude up by itself; that is the energy validation.
+
+REMAINING FAILURE (next run): unlock stalls. The balance's jewel pushes the
+fork from -bank to p ~ 0 but never across; the system then sits in a static
+double-locked equilibrium (both stones half-dipped at p~0, wheel held, amp
+decays to 0). Next: instrument the unlock attempt (jewel torque vs draw
+torque at the locked tooth), then tune in order: lock depth (0.5 -> less),
+slot clearance (0.6 vs rollerR 3.0 path), banking angle, draw tilt. Watch for
+double-lock: stagger may need the exit shelf shifted ~0.1. Diags: diag2.mjs
+(10s overview), diag3.mjs (substep trace). Committing as WIP.
+
+## Run 4 (~13:30 IST): escapement RUNS and sustains amplitude - beat geometry still wrong
+Torque-scale fix: fork+balance reflected inertia about the pallet arbor is
+~18.8 (J_b x (hornR/rollerR)^2) vs forkJ 0.0045, so the old driveTorque 0.028
+was ~1e5 too weak to lift the fork during a beat. Now driveTorque 3000,
+escapeJ 0.5 (bounds free-flight drop speed so locks don't tunnel),
+balanceDamp 0.35, tunnel cap 0.5. Unlock needs the balance at running
+amplitude (draw torque ~= 2x wheel torque at the fork) - gentle start cannot
+self-start; start restored to amp 4.4. RESULT: wheel turns CW (correct),
+impulse DELIVERS energy (amplitude sustained ~3.5 indefinitely against
+damping), lock holds between beats. Banking hard stop added at integration
+(post-contact wp could jump the pin in one substep).
+REMAINING: (a) wheel advances ~1 pitch/beat instead of half-pitch - the
+alternate-stone arrest lands late or misses (stagger timing); (b) beat rate
+irregular 2-4 per 0.5s and intermittent fork rattle episodes with the wheel
+streaming at the -40 clamp (suspect jewel leaves the slot gate at high
+amplitude, freeing the fork; also drop impacts at clamp speed). NEXT RUN:
+trace one full beat cycle (diag4) at 960 Hz: check which face each tooth
+lands on after each drop; verify exit-entry stagger (2.5-pitch corner
+separation) against actual contact polar angles; check jewel-in-slot
+coverage through the full swing; then tune.
+
+## Run 5 (~13:40 IST): exit-lock topology finding (the real bug)
+diag5.mjs lock-event trace (960 Hz): the entry lock works (arrests every other
+tooth); the EXIT lock never engages - arriving teeth always land on X-imp,
+which pushes the fork +p (unlock direction), so the wheel streams half a
+pitch extra per cycle and the fork rattles. Analysis: at the exit corner
+(polar ~57 deg) the tooth's travel reaction -T is at ~147 deg; a corner seat
+between a draw-correct lock face (~87 deg) and the impulse face (~152 deg)
+puts the reaction almost entirely on the IMPULSE face -> the corner cannot
+hold, it unlocks. A horizontal shelf lock face catches the tooth only within
+a tiny radial window and slides straight into the same corner. CONCLUSION:
+my idealized exit stone topology is wrong, not just its parameters. The real
+exit-stone/tooth contact must use the tooth's club tip shape (contact on the
+tooth's trailing face), which the point-tip model cannot represent.
+NEXT RUN (decisive grounding, no more cone guessing): digitize the exit
+region of reference frame f001 (and f040/f080 for phase) at high
+magnification from /tmp/anker_frames (re-fetch the GIF from Wikimedia if
+wiped: upload.wikimedia.org/wikipedia/commons/7/75/Paletteankerhemmung.gif):
+extract actual exit stone outline + contacting tooth outline + contact
+point; reproduce those true shapes as face lists, incl. a club-tooth polygon
+for the wheel (tooth becomes 2-3 contact points, or SAT polygon-vs-polygon).
+Also still open: jewel slot coverage at high amplitude (rattle episodes).
+
+## Run 6 (~13:48 IST): PIVOT CORRECTION - arbor is ~1.3-1.6R above the wheel, not 2.52R
+Digitized the exit contact from the reference frames (f001/f008, 8x crops):
+- EXIT LOCK = tooth TIP vs the stone's LONG SIDE face (not an end shelf):
+  measured face normal ~139 deg (math frame) at contact polar ~57 deg, r ~ R.
+  That gives near-full normal resistance to tooth travel (no friction creep)
+  - the exit lock topology my model was missing.
+- Zero-motion analysis of the blue fork across 40 frames puts the pallet
+  ARBOR at ~y=110-130 orig px above the wheel center: 1.3-1.6 x R. My run-2
+  "2.52R" measured the slot neck, not the arbor - wrong, correcting.
+  (Original pre-rewrite forkPivot 13.4 was accidentally right.)
+- Draw sign at exit is marginal and pivot-distance-critical; with the short
+  arbor a face near 132 deg gives solid draw to -bank AND 0.96 resist AND
+  0.27 creep ratio (all good). Entry faces must be re-derived for the new
+  arbor as well (corner-cone split changes sign of net draw with old faces).
+NEXT RUN: re-derive all four faces for pivot (0,13.4): extend probe3.mjs into
+a feasibility checker (resist / draw-to-engaged-bank / corner-cone contains
+-T with margin toward the lock edge / creep ratio < 0.35) using measured GIF
+angles as anchors; new fork tail proportions (hornR ~9, rollerR ~2.5,
+balancePivot ~12); retune driveTorque (reflected inertia drops ~(13/18.8)^2);
+validate diag5 (exit arrests on lock face, half-pitch/beat) + diag2.
+
+## Run 7 (~13:56 IST): exit lock HOLDS; entry clearance defect remains
+All four faces re-derived for the corrected arbor (0,13.4) and verified by
+probe4.mjs (ALL PASS: resist/draw-sign/creep/corner-cone margin):
+  E-lock n=197, E-imp n=270, X-lock n=132, X-imp n=200 (deg, math frame);
+  corners (-4.82,-4.72) pol 119 / (5.72,-5.23) pol 55; fork tail hornR 9.5,
+  rollerR 2.5, balancePivot 12, slotHalf 0.5; e0=-0.2904 (tooth 3 on X-lock).
+diag5 steady-state cycle (~1/3 s = 2 beats, pace already ~6 beats/s):
+exit lock ARRESTS and HOLDS the tooth (we ~ 0 while the fork flaps) - the
+digitized geometry works. Remaining defect: after exit release the wheel
+runs ~1.5 pitches and is caught by ENTRY faces TWICE (tooth on E-imp, next
+on E-lock while fork still heading to -bank) instead of one half-pitch
+arrest -> 2 pitches advance per 2 beats (want 1.0). Cause: entry faces too
+long/tilted, so at the DISengaged bank the entry lock plane still passes
+within ~0.15 of the tooth circle (nominal clearance 0.25) and catches teeth.
+NEXT RUN: (a) entry faces shorter (len 1.5 -> 0.9 / imp 1.2 -> 0.8) and/or
+lock depth 0.4 -> 0.3, bankAngle 0.05 -> 0.06 for real clearance; (b) count
+beats on lock-ARREST events (contact begins on a lock face), not fork sign
+crossings; (c) re-validate diag2 (6/s sustained, half-pitch/beat, amp
+sustained, unwind stops). Also note: amplitude decayed slowly (4.0 -> 1.1
+over 10s) - check energy balance after arrest fix (impulse may be short).
+
+## Run 8 (~14:04 IST): alternating arrests + honest beats; impulse timing is the remaining defect
+Changes: corner polars set to entry 118.5 / exit 55.5 (separation 63 deg =
+10.5 half-pitches: alternating arrests now each advance the wheel ~half a
+pitch, measured deltas alternate 0.43/0.57). Impulse faces flipped to extend
+INWARD from the stone corners (real topology: contact migrates from corner
+into the stone; nothing pokes through the tooth circle at engagement, so
+arriving teeth now hit the LOCK face first). Beats now counted on
+lock-ARREST events, not fork sign flips. bankAngle 0.06.
+diag2: 6 beats/s sustained, ~1 pitch per 2 beats, unwind still stops.
+diag5: clean alternating X-lock / E-lock arrests.
+KNOWN DEFECTS (next run):
+1. Fork flip completes in ~2ms but tooth slide on the impulse face needs
+   ~10-20ms; once the fork pins on the far bank the departing tooth DRAGS
+   on the (inward) impulse face for ~300ms at creep speed, and the impulse
+   energy goes into the banking pin (cf=0) instead of the balance. Conseq:
+   amplitude decays 4.2 -> 2.4 over 10s (escapement feeds back too little).
+2. Arrests come in pairs 5ms apart every 333ms (mid-flip catch + final
+   catch) and the fork flips at 1.5 Hz (half the balance frequency) - one
+   unlock per full balance swing succeeds, not one per half-swing. Likely
+   the entry draw (tau 3.08 vs exit 0.69) is too strong to unlock on one
+   side; check E-lock draw angle (n=197) and driveTorque.
+3. Tried shorter imp faces (0.45/0.6) to kill the disengaged-bank drag:
+   REVERTED - machine-gun runaway (36-68 beats/s), the short faces let
+   teeth slip past. The fix is flip timing, not face length.
+Levers: forkJ (slow the flip toward ~10ms), imp face angle = impulse ratio,
+driveTorque, possibly don't ground the fork (cf=0) for IMP-face contacts.
+
+## Run 9 (~14:09 IST): sustained amplitude at forkJ=0.02; known topology caveat
+forkJ 0.0045 -> 0.02: the flip now DRAGS the balance (0.0045 outran the jewel
+- zero impulse delivery; 0.03 stalls). diag6.mjs grid sweeps eImpLen/xImpLen/
+forkJ/driveTorque. Chosen: forkJ=0.02, T=3000, eImp=1.2, xImp=1.2.
+Validated: one arrest per balance half-swing (intervals alternate 165/168ms),
+6 beats/s, ~half pitch per beat (0.43/0.57 alternating), amplitude SUSTAINED
+(3.64 at t=30s vs 4.4 start; diag2 10s: 4.19 stable-ish), unwind stops.
+KNOWN INACCURACY (queued behind the 3D engine): the wheel's hold phase is
+partly carried by the departing tooth's overlap with the DISENGAGED stone's
+impulse face (the inward imp face dips back inside the tooth circle at the
+far bank), not purely by the opposite lock face. Catches also use the 0.06
+contact skin at marginal clearance. Kinematics (rate, advance, sustain,
+stop) are all correct; the internal contact roles differ from a real Swiss
+lever. Proper fix = per-side drop-length tuning so the tooth drop coincides
+with the fork reaching the banking (drop adjustment); sweep harness diag6
+is ready for that. Also open: lock-slide asymmetry 0.43/0.57.
+
+## Run 10 (~14:18 IST): watch3d.ts engine v1 + pixel-tested first render
+watch3d.ts: true 3D mesh engine in shared TS - lathe/ring/extrude/gear/
+spokedWheel/box builders, merge/bake, perspective camera (yaw/pitch/dist/
+fov), per-tri world-space normals, key+fill diffuse, reflected-key Blinn +
+studio-streak specular (metals tint), DOUBLE-SIDED with normals flipped
+toward the camera (kills the winding class of bugs), painter sort far-first.
+Scene: steel case band + closed bezel + tall rehaut + crown at 3 o'clock,
+solid mainplate, 5 brass train wheels (z-tiered), pallet fork with ruby
+stones, balance + Archimedean hairspring, steel dauphine hands + red
+seconds. ~12.3k tris after culling, 400x400 in ~25ms node (native perf TBD
+on device - NO performance claims yet).
+watch3d.test.mjs: real scanline rasterizer; asserts coverage >15%, sd > 10,
+>40 specular pixels, >200 brass pixels; writes /tmp/watch.ppm.
+Bugs found by LOOKING at renders (v1..v11): lathe degenerate fan rule at
+r=0 (caseback disc missing); caseback interior top disc fan-interleaving
+with the plate (starburst); camera always viewed the CASEBACK side
+(z-mirror fixed: dial now faces the camera); winding-dependent culling
+replaced by double-sided rendering; rehaut/bezel/band radial ordering.
+KNOWN ARTIFACTS (queued): bezel silhouette zigzag at grazing arcs
+(double-sided interleave), gear teeth are simple trapezoids (club-tooth
+profile TODO), no crystal/dome yet, hairspring static (animate breathing).
+NEXT: wire sim state -> renderWatch angles (trainAngles), animated orbit,
+then native (createPicture) + web (Canvas2D) renderers.
+
+## Run 11 (2026-11-11): contact-solver timestep causes missed exit locks; local phase consistency restored
+The old production-step failure was not a beat-counter rising-edge artifact.
+A lock identity trace shows zero face/tooth identity changes while the model
+reports a held lock at 480/960/1920/3840 Hz. Raw lock-face events give the
+physical discriminator: at 960 Hz the 10 s run records 38 arrests (29 entry,
+9 exit) over 58.376 wheel half-pitches, with intervals collapsing to ~2.0
+half-pitches after ~2.7 s; at 3840 Hz it records 57 arrests (28 entry,
+29 exit) over 56.382 half-pitches with alternating ~0.8/~1.17 half-pitch
+intervals. At 480 Hz the old solver chatters on one face (252 arrests); at
+1920 Hz it stalls after 2 arrests. A contact-window trace at 960 Hz shows the
+hold carried by entry/exit impulse-face dwell at the banks after the exit
+lock is missed. Summary evidence: diagnostics/run11-contact-trace-summary.json.
+
+Change: keep the public fixed timestep and all physical parameters/start
+conditions unchanged, but integrate each fixed substep through the contact
+solver at the previously converged 1/3840 s micro-step. This is a numerical
+contact-sampling fix, not a beat threshold or rate-target sweep. Validation:
+watchMath.stepconsistency.test.mjs passes 480/960/1920/3840 Hz (57 beats vs
+56.382 wheel half-pitches at each rate, sustained amplitude, not stopped);
+watchMath.diag.mjs now reports 57 beats and 1.924 escape revolutions over 10 s
+(previously 38 beats vs 1.990 revolutions); watch3d.test.mjs still passes.
+Local JS cost after the change is about 3 ms per simulated second at the
+960 Hz production step; native Android cost/crash evidence remains unproven.
+Stopped-state semantics and the preserved repeated-gesture seed proposal are
+still unimplemented and unclaimed.
+
+
+## Run 12 (2026-11-11): unwind regression blocks Run 11 adoption
+
+NOT READY TO MERGE. Run 11's short rate-consistency test does not establish
+unwind/stop behavior or beat-event truth. The microstep repair remains a
+candidate, not a finished physics repair.
+
+Compared baseline b9a76ed with Run 11 d92932e using identical defaults and
+60 calls of stepWatch(state, physics, 1/60) per simulated second. No thresholds,
+seeds, physical parameters or production stop logic were changed for these tests.
+
+| Variant | Initial condition | Duration (s) | Final wind | Final amp (rad) | Stopped | Counter increments | Escape angle (rad) |
+|---|---|---:|---:|---:|---|---:|---:|
+| baseline | natural-unwind | 300 | 0.0000 | 1.97108e-15 | True | 562 | -118.582121 |
+| baseline | empty-running | 60 | 0.0000 | 3.23001e-05 | True | 76 | -1.714874 |
+| baseline | empty-rest | 60 | 0.0000 | 0.0196297 | True | 3614 | -0.296430 |
+| baseline | powered-rest | 60 | 0.6000 | 0.0460124 | True | 5550 | -0.296774 |
+| baseline | one-restart | 60 | 0.0000 | 1.17128e-05 | True | 2 | -0.458237 |
+| current | natural-unwind | 300 | 0.0000 | 1.18139 | False | 1742 | -364.912021 |
+| current | empty-running | 60 | 0.0000 | 1.18556 | False | 326 | -68.345715 |
+| current | empty-rest | 60 | 0.0000 | 0.0232054 | True | 7768 | -0.295919 |
+| current | powered-rest | 60 | 0.6000 | 0.0589949 | True | 7285 | -0.296057 |
+| current | one-restart | 60 | 0.0000 | 1.05808e-05 | True | 2 | -0.444446 |
+
+Initial conditions: natural-unwind uses createWatch unchanged; empty-running
+sets wind=0 only; empty-rest sets wind=0, b=wb=amp=0, stopped=true, seeded=false;
+powered-rest is the same rest state with wind=1; one-restart starts from
+empty-rest then calls windCrown(state, physics, 1) once before the 60s run.
+
+Observed defects:
+- The torque expression retains 28% of driveTorque at wind=0. With the finer
+  solver this sustains motion after the reserve is exhausted: during seconds
+  285-300 the wheel advances -18.011813rad while wind remains zero. Baseline
+  happened to stall despite that nonzero torque. This is an unwind regression.
+- The rest-state beat counter chatters without meaningful wheel progression.
+  Current empty-rest reports 7768 increments in 60s despite total escape
+  displacement of only -0.016319rad. Baseline has the same class of defect
+  (3614 increments). Beat count must not be used as a motion or physical-event
+  oracle for stop/restart acceptance.
+- Stored wind and motion are distinct: powered-rest retains wind=0.6 but its
+  balance amplitude is only 0.058995rad. The stopped flag is not sufficient
+  evidence of the physical state, nor does positive wind prove running.
+- The existing single restart seed does not sustain oscillation in this case.
+  No repeated-gesture seed or new behavior has been implemented.
+
+Isolated diagnostic control only: setting drive torque to zero exactly when
+wind=0 removes empty-rest chatter and lets the balance decay, but natural unwind
+then shows positive escape-wheel drift (20.869092rad in seconds 285-300) even
+with a near-zero balance. Therefore simply removing the torque floor is not a
+validated repair. This control was not adopted in production.
+
+Next physical route: inspect signed contact work and projected position changes
+through the reserve-exhaustion transition, with separate balance energy, wheel
+progression and contact identity measurements. Require long unwind, powered
+stall and one-restart cases in addition to the short rate test before adoption.
+Native rendering/cost/crash and visual acceptance gates remain open.
+
+
+## Run 13 (2026-11-11): isolated slot-normal investigation, unadopted
+
+For the jewel/slot pair, `side = dx*ay - dy*ax` is the displacement along
+`n = (ay, -ax)`. With positive side penetration, this normal points out of
+the permitted slot: outward relative velocity has vn>0 and needs a -n
+impulse. The present solver instead applies +n for vn<0. The negative-side
+case is symmetric. This is a unilateral contact-direction concern, not a
+beat-threshold problem.
+
+One isolated control reversed the relative-velocity test and both impulse
+signs for this slot contact only. No parameter or threshold was swept.
+Empty-rest and powered-rest counter increments fell to 1 each over 60s
+(from 7768 and 7285), but the factory natural-unwind case stalled after
+5 counter increments. Reversing the factory balance velocity as a separate
+phase control still stalled (22 increments). Neither is a viable repair.
+No production slot-contact, phase, torque, stop or seed behavior changed.
+
+The contact direction, actual engagement geometry and energy transfer must
+be checked together. Do not fix the stop flag or add a repeated seed to
+conceal this running failure. The existing short rate test is insufficient.
+
+
+## Run 14 (2026-11-11): actual finer-step check rejects convergence claim
+
+The Run 11 test checks public-step partition consistency, not convergence:
+480/960/1920/3840Hz all use the same internal 1/3840s microstep. A physically
+meaningful refinement check must also run finer than that internal limit.
+At fixed defaults/start, 600 frames of 1/60s, with no threshold or geometry
+changes, the finer samples give:
+
+| Actual solver Hz | Final amp rad | Escape displacement rad | Escape displacement in final second rad | Counter increments |
+|---:|---:|---:|---:|---:|
+| 3840 | 2.401088 | -11.808593 | -1.256897183 | 57 |
+| 7680 | 1.886821 | -10.260830 | -1.256703014 | 50 |
+| 15360 | 0.913657 | -0.207685 | -0.000021398 | 2 |
+
+At 15360Hz the balance sits near 0.88rad and the wheel barely advances,
+despite wind=0.9333 and stopped=false. This independently reinforces the
+difference between stored wind, the flag and actual movement. No rate has
+been chosen as a fix; selecting a lucky sample would hide the failure.
+Do not call Run 11 physics converged or ready from its partition test.
+
+An additional isolated control combined the inward slot impulse with
+actual tooth-point fork moment arms and refreshed per-contact velocities.
+It still stalled (natural-unwind case: only -0.583936rad wheel displacement
+over 300s) and is also unadopted. The contact model needs repair, not a
+threshold, seed or internal-rate change chosen for apparent running.
