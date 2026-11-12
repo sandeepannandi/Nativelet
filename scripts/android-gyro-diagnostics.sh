@@ -53,6 +53,102 @@ for n in 1 2 3 4 5 6; do
   sample "$n"
   [ "$n" -lt 6 ] && sleep 15
 done
+# --- Interaction capture stage (diagnostic only; NOT an assertion path) ---
+# Purpose: collect real before/after pixels of the control row (including the
+# selected '¼ speed' state) plus gestures, so test design can be grounded on
+# actual rendered pixels. No capture outcome is a pass/fail signal. Seeded
+# bounds come from run-279's one valid hierarchy on pixel_6 1080x2400 AVD
+# (canvas [120,469][960,1467]; Flick [203,1533][352,1577]; Drag [441,1533]
+# [605,1577]; Slow [695,1533][877,1577]; Reset [497,1670][582,1714]) and are
+# only used after fail-closed guards confirm screen size, focused app and
+# visible four-label content.
+CAP="$OUT/interaction"; mkdir -p "$CAP"
+GUARD="$CAP/guards.txt"; : > "$GUARD"
+guard_fail=""
+WM_SIZE=$(adb shell wm size < /dev/null 2>/dev/null | tr -d '\r')
+echo "wm_size=$WM_SIZE" >> "$GUARD"
+echo "$WM_SIZE" | grep -q 'Physical size: 1080x2400' || guard_fail="${guard_fail}wm_size "
+FG=$(adb shell dumpsys activity activities < /dev/null 2>/dev/null | grep -E 'mResumedActivity|topResumedActivity' | head -2 | tr -d '\r')
+echo "foreground=$FG" >> "$GUARD"
+echo "$FG" | grep -q "$PKG" || guard_fail="${guard_fail}foreground "
+if ! command -v tesseract > /dev/null 2>&1; then
+  guard_fail="${guard_fail}tesseract_absent "
+  echo "tesseract=absent" >> "$GUARD"
+else
+  tesseract --version 2>/dev/null | head -1 | sed 's/^/tesseract=/' >> "$GUARD"
+  adb exec-out screencap -p < /dev/null > "$CAP/guard-screen.png" 2> "$CAP/guard-screen.err" || true
+  tesseract "$CAP/guard-screen.png" stdout --psm 11 -l eng tsv 2>/dev/null > "$CAP/guard-screen.tsv" || true
+  python3 - "$CAP/guard-screen.tsv" >> "$GUARD" 2>&1 <<'PY' || guard_fail="${guard_fail}labels "
+import sys, csv
+# Seeded label anchor rects (x0,y0,x1,y1) from run-279 hierarchy; tolerance 60px.
+anchors = {'Flick rotor': (203,1533), 'Drag frame': (441,1533),
+           'Slow motion': (695,1533), 'Reset': (497,1670)}
+words = []
+try:
+    for r in csv.DictReader(open(sys.argv[1], encoding='utf-8'), delimiter='\t'):
+        t = (r.get('text') or '').strip()
+        if t:
+            words.append((t, int(r['left']), int(r['top']), int(r['width'])))
+except Exception as e:
+    print('label_guard=parse_error %s' % e); raise SystemExit(1)
+TOL = 60
+missing = []
+for label, (ax, ay) in anchors.items():
+    parts = label.split(' ')
+    hit = None
+    for i, (t, x, y, w) in enumerate(words):
+        if t != parts[0] or abs(x-ax) > TOL or abs(y-ay) > TOL+15:
+            continue
+        if len(parts) == 1:
+            hit = (t, x, y); break
+        for t2, x2, y2, w2 in words:
+            if t2 == parts[1] and abs(y2-y) <= 10 and 0 <= x2-(x+w) <= 30:
+                hit = (t+' '+t2, x, y); break
+        if hit: break
+    if hit: print('label_found exact="%s" at=%s,%s' % (label, hit[1], hit[2]))
+    else: missing.append(label)
+if missing:
+    print('label_guard=missing %s' % ','.join(missing)); raise SystemExit(1)
+print('label_guard=all_four_exact')
+PY
+fi
+if [ -n "$guard_fail" ]; then
+  echo "interaction_capture=skipped guard_fail=$guard_fail" | tee -a "$OUT/dump-timeline.txt"
+else
+  echo "interaction_capture=starting" | tee -a "$OUT/dump-timeline.txt"
+  adb shell dumpsys gfxinfo "$PKG" reset < /dev/null > /dev/null 2>&1 || true
+  capshot(){ adb exec-out screencap -p < /dev/null > "$CAP/$1.png" 2> "$CAP/$1.err" || true; }
+  # Slow-motion toggle: the selected-state ('¼ speed') pixel evidence.
+  capshot slow_before
+  adb shell input tap 786 1555 < /dev/null
+  sleep 10; capshot slow_after  # allow several 2.7s software frames to composite the toggle
+  # One bounded hierarchy attempt right after the toggle: retain exact-text
+  # evidence if UiAutomation happens to answer (rm-first, content-classified).
+  adb shell rm -f /sdcard/diag-slow.xml < /dev/null > /dev/null 2>&1 || true
+  timeout 30 adb shell uiautomator dump /sdcard/diag-slow.xml < /dev/null > "$CAP/slow_after.dump.txt" 2>&1 || true
+  if grep -q 'UI hierchary dumped to:' "$CAP/slow_after.dump.txt"; then
+    adb pull /sdcard/diag-slow.xml "$CAP/slow_after.root.xml" < /dev/null > /dev/null 2>&1 || true
+  fi
+  tesseract "$CAP/slow_after.png" stdout --psm 11 -l eng tsv 2>/dev/null > "$CAP/slow_after.tsv" || true
+  # Flick gesture on canvas center (mirrors validation script geometry).
+  capshot flick_before
+  adb shell input swipe 610 968 470 968 160 < /dev/null
+  sleep 6; capshot flick_after
+  # Drag-frame mode + drag gesture.
+  adb shell input tap 523 1555 < /dev/null
+  sleep 4; capshot drag_mode
+  adb shell input swipe 475 928 605 1008 2400 < /dev/null
+  sleep 6; capshot drag_after
+  # Reset back to defaults.
+  adb shell input tap 539 1692 < /dev/null
+  sleep 6; capshot reset_after
+  adb shell pidof "$PKG" < /dev/null > "$CAP/pid.txt" 2>&1 || true
+  for f in slow_before slow_after flick_before flick_after drag_mode drag_after reset_after; do
+    [ -s "$CAP/$f.png" ] && echo "capture_file=$f.png bytes=$(stat -c%s "$CAP/$f.png")"
+  done | tee -a "$OUT/dump-timeline.txt"
+  echo "interaction_capture=captured (diagnostic evidence only; no assertion evaluated)" | tee -a "$OUT/dump-timeline.txt"
+fi
+
 # Frame production and contention evidence after the sample window.
 adb shell dumpsys gfxinfo "$PKG" framestats < /dev/null > "$OUT/gfxinfo-framestats.txt" 2>&1 || true
 adb shell dumpsys gfxinfo "$PKG" < /dev/null > "$OUT/gfxinfo-summary.txt" 2>&1 || true
@@ -68,5 +164,6 @@ adb logcat -d < /dev/null > "$OUT/logcat.txt" 2>&1 || true
   echo "dump_null_root_failures=$(grep -c 'dump_result=null_root' "$OUT/dump-timeline.txt" 2>/dev/null || echo 0)"
   echo "dump_timeouts=$(grep -c 'dump_result=timeout' "$OUT/dump-timeline.txt" 2>/dev/null || echo 0)"
   echo "dump_attempts=6"
+  echo "interaction_capture=$(grep -m1 -o 'interaction_capture=captured\|interaction_capture=skipped' "$OUT/dump-timeline.txt" 2>/dev/null || echo not_run)"
 } | tee "$OUT/summary.txt"
 exit 0
