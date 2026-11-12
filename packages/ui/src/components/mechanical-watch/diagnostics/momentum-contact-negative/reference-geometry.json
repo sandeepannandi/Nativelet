@@ -1,0 +1,88 @@
+{
+ "source": "upload.wikimedia.org/wikipedia/commons/7/75/Paletteankerhemmung.gif frame f001 (re-fetched 2026-11-12)",
+ "image": {
+  "w": 260,
+  "h": 368
+ },
+ "calibration": {
+  "wheel_center_px": [
+   122.0,
+   262.1
+  ],
+  "r_tips_px": 88.8,
+  "units_per_px": 0.11261261261261261,
+  "r_tips_units": 10
+ },
+ "stones_f001": {
+  "entry": {
+   "centroid_world": [
+    -4.199,
+    10.325
+   ],
+   "theta_deg_pxy": 70.48,
+   "len_units": 3.612,
+   "wid_units": 1.16
+  },
+  "exit": {
+   "centroid_world": [
+    7.417,
+    10.145
+   ],
+   "theta_deg_pxy": -53.45,
+   "len_units": 3.586,
+   "wid_units": 1.206
+  }
+ },
+ "fork_line_deg_f001": -0.883,
+ "arbor_px_estimate": [
+  122,
+  143
+ ],
+ "tooth_club_profile_da_r": [
+  [
+   -2.0,
+   8.1
+  ],
+  [
+   -1.0,
+   8.1
+  ],
+  [
+   -0.95,
+   9.7
+  ],
+  [
+   -0.4,
+   9.9
+  ],
+  [
+   0.0,
+   10.0
+  ],
+  [
+   0.4,
+   9.6
+  ],
+  [
+   1.5,
+   9.3
+  ],
+  [
+   3.2,
+   8.95
+  ],
+  [
+   5.5,
+   8.55
+  ],
+  [
+   7.2,
+   8.35
+  ],
+  [
+   7.6,
+   8.1
+  ]
+ ],
+ "tooth_notes": "tip at da=0 r=10; leading face (motion side, da<0) near-radial steep; trailing club overhang slopes from r9.6 at da0.4 to r8.35 at da7.2; wheel turns CW (math angle decreases). Points below r6 were spoke artifacts, filtered."
+}
