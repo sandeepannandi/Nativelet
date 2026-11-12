@@ -46,9 +46,9 @@ export function Gyroscope({reducedMotion,style,onFeedback}:GyroscopeProps){
   onPanResponderRelease:(e,g)=>{const old=input.value;if(drag.current.mode==='spin'){
    // Hand flick scales to a finite generalized angular impulse, not an assigned
    // rotor speed. Velocity comes from our own recent-sample tracker fed by raw
-   // native timestamps: gestureState.vx reads exactly 0 when a saturated UI
-   // thread coalesces delivery to down+up (device runs 282/283), and no
-   // impulse is applied when no samples survive inside the horizon.
+   // native timestamps; gestureState.vx only updates inside move callbacks, so
+   // a zero vx at release is ambiguous (coalesced delivery or stationary tail),
+   // and no impulse is applied when no samples survive inside the horizon.
    pushPoint(drag.current.points,{x:e.nativeEvent.pageX,t:e.nativeEvent.timestamp});
    const vx=recentVelocity(drag.current.points,e.nativeEvent.timestamp);
    const j=vx==null?0:Math.max(-.009,Math.min(.009,vx*.003));input.value={...old,active:false,spinImpulse:j,impulseId:old.impulseId+1};gyroTestHook?.({kind:'spin',wallT:Date.now(),j,impulseId:old.impulseId+1});latest.current.onFeedback?.('spin');
