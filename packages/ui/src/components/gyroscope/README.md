@@ -229,3 +229,18 @@ done
 echo 'FAIL no focused launcher with accessible root before 90s deadline; no app install' > "$OUT/summary.txt"
 exit 1
 ```
+
+### Settled-home readiness integration (2026-11-12)
+
+The unvalidated proposal above was extracted unchanged into
+scripts/android-home-readiness.sh (body byte-identical; header updated to
+reflect integration) and wired into scripts/android-runtime-preflight.sh
+before the three-sample loop. Re-validated offline before dispatch: bash
+syntax passed; the python gate passed real run271 window/root/PNG captures
+and rejected run272's mCurrentFocus=null capture; mocked control-flow cases
+passed (immediate pass attempt1, null-focus then recovery attempt2 with
+attempt1 AssertionError retained, immediate ANR failure, and a test-only 1s
+deadline copy timing out with exit124 while the production script remains
+90s). Still not Android-validated; next step is one bounded runtime-only
+qualification with artifact and pixel inspection. No component run is
+dispatched automatically.
