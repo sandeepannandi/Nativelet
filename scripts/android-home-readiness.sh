@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Wait for observed usable launcher rather than treating boot_completed as UI-ready.
 # Preserves every failed attempt; bounded 90s deadline; fails closed on ANR/fatal.
+# Every adb call takes stdin from /dev/null: adb forwards stdin, and the inner script
+# itself arrives on stdin (bash -s), so an unguarded adb eats the remaining commands
+# and false-passes after boot.txt (run273 artifact evidence).
 OUT=${1:-runtime-qualification/home-readiness}
 mkdir -p "$OUT"
 deadline=$((SECONDS+90))
@@ -14,16 +17,16 @@ while (( SECONDS < deadline )); do
   if timeout "$remaining" bash -s -- "$dir" > "$dir/check.stdout" 2> "$dir/check.stderr" <<'SH'
 set -eu
 d=$1
-adb shell getprop sys.boot_completed > "$d/boot.txt"
-adb shell dumpsys window > "$d/window.txt"
-adb exec-out screencap -p > "$d/screen.png"
-adb logcat -d > "$d/logcat.txt"
+adb shell getprop sys.boot_completed < /dev/null > "$d/boot.txt"
+adb shell dumpsys window < /dev/null > "$d/window.txt"
+adb exec-out screencap -p < /dev/null > "$d/screen.png"
+adb logcat -d < /dev/null > "$d/logcat.txt"
 if grep -E 'ANR in |FATAL EXCEPTION:' "$d/logcat.txt" > "$d/runtime-errors.txt"; then
   exit 2
 fi
-adb shell rm -f /sdcard/readiness-root.xml
-adb shell uiautomator dump /sdcard/readiness-root.xml > "$d/dump.txt" 2>&1
-adb pull /sdcard/readiness-root.xml "$d/root.xml" > "$d/pull.txt" 2>&1
+adb shell rm -f /sdcard/readiness-root.xml < /dev/null
+adb shell uiautomator dump /sdcard/readiness-root.xml < /dev/null > "$d/dump.txt" 2>&1
+adb pull /sdcard/readiness-root.xml "$d/root.xml" < /dev/null > "$d/pull.txt" 2>&1
 python3 - "$d" <<'PY'
 from pathlib import Path
 import re,struct,sys,xml.etree.ElementTree as ET
