@@ -49,7 +49,7 @@ jobs:
           name: apk
           path: apps/showcase/android/app/build/outputs/apk/release/*.apk
   emulator:
-    if: ${{ inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true }}
+    if: ${{ inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true && inputs.gyro_diagnostics_only != true }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
