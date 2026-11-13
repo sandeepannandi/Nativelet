@@ -41,6 +41,11 @@ jobs:
           if ! grep -q testInstrumentationRunner app/build.gradle; then
             sed -i 's/\(applicationId .*\)/\1\n        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"/' app/build.gradle
           fi
+          # Point the androidTest component at the release variant so AGP
+          # registers assembleReleaseAndroidTest (default is debug only).
+          if ! grep -q 'testBuildType' app/build.gradle; then
+            sed -i '0,/^android {/s//android {\n    testBuildType "release"/' app/build.gradle
+          fi
           cat >> app/build.gradle <<'EOF'
 
           dependencies {
