@@ -37,7 +37,7 @@ jobs:
         working-directory: apps/showcase/android
         run: |
           mkdir -p app/src/androidTest/java/com/anonymous/nativeletshowcase
-          cp ../../scripts/ftl/FtlGyroFlickTest.java app/src/androidTest/java/com/anonymous/nativeletshowcase/
+          cp "$GITHUB_WORKSPACE/scripts/ftl/FtlGyroFlickTest.java" app/src/androidTest/java/com/anonymous/nativeletshowcase/
           if ! grep -q testInstrumentationRunner app/build.gradle; then
             sed -i 's/\(applicationId .*\)/\1\n        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"/' app/build.gradle
           fi
