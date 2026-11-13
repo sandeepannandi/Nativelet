@@ -7,6 +7,9 @@ name: FTL physical-test APK build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - gyro-repair-validation
 
 permissions:
   contents: read
