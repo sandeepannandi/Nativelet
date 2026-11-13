@@ -1,12 +1,34 @@
 name: Android emulator smoke
 on:
   workflow_dispatch:
+    inputs:
+      runtime_qualification_only:
+        description: 'Run only the AOSP runtime preflight. No app install or component tests.'
+        type: boolean
+        required: false
+        default: false
+      gyro_diagnostics_only:
+        description: 'Measurement-only Gyroscope runtime diagnostics. No component assertions or clearance.'
+        type: boolean
+        required: false
+        default: false
+      gyro_validation_only:
+        description: 'Run only exact-source Gyroscope validation on the preflighted AOSP runtime.'
+        type: boolean
+        required: false
+        default: false
+      macos_gpu_probe_only:
+        description: 'Measurement-only Intel-macOS GPU environment probe. No component assertions or clearance.'
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [ci/android-emulator-smoke, "parity/**"]
 permissions:
   contents: read
 jobs:
   build:
+    if: ${{ inputs.runtime_qualification_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -32,6 +54,7 @@ jobs:
           name: apk
           path: apps/showcase/android/app/build/outputs/apk/release/*.apk
   emulator:
+    if: ${{ inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true && inputs.gyro_diagnostics_only != true && inputs.macos_gpu_probe_only != true }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -90,3 +113,108 @@ jobs:
         with:
           name: android-smoke-results
           path: smoke-out
+  runtime-qualification:
+    if: ${{ inputs.runtime_qualification_only == true && inputs.macos_gpu_probe_only != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Qualify full AOSP runtime before any app testing
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          cores: 2
+          ram-size: 2048M
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: false
+          script: bash scripts/android-runtime-preflight.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-qualification
+          path: runtime-qualification
+  gyro-validation:
+    if: ${{ (inputs.gyro_validation_only == true || inputs.gyro_diagnostics_only == true) && inputs.runtime_qualification_only != true && inputs.macos_gpu_probe_only != true }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact source
+        run: git rev-parse HEAD
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Install tesseract OCR (gyro diagnostics content guard only)
+        if: ${{ inputs.gyro_diagnostics_only == true }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends tesseract-ocr
+          tesseract --version | head -2
+      - name: Validate Gyroscope on full AOSP runtime
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          cores: 2
+          ram-size: 2048M
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: false
+          script: |
+            bash scripts/android-runtime-preflight.sh
+            mkdir -p smoke-out
+            adb install -r apk/*.apk > smoke-out/install.txt 2>&1
+            bash scripts/android-gyro${{ inputs.gyro_diagnostics_only == true && '-diagnostics' || 'scope' }}.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ inputs.gyro_diagnostics_only == true && 'gyro-diagnostics-results' || 'gyro-aosp-results' }}
+          path: |
+            runtime-qualification
+            smoke-out
+  macos-gpu-probe:
+    if: ${{ inputs.macos_gpu_probe_only == true && inputs.runtime_qualification_only != true }}
+    needs: build
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact source
+        run: git rev-parse HEAD
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: apk
+      - name: Install API 34 x86_64 system image
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-34;default;x86_64'
+      - name: Probe with host GPU requested
+        run: APK=$(ls apk/*.apk | head -1) GPU_MODE=host OUT=probe-out bash scripts/android-macos-gpu-probe.sh
+      - name: Probe with swiftshader control
+        run: APK=$(ls apk/*.apk | head -1) GPU_MODE=swiftshader OUT=probe-out bash scripts/android-macos-gpu-probe.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-gpu-probe-results
+          path: probe-out
