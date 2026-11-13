@@ -50,11 +50,23 @@ jobs:
           EOF
       - name: Build app APK + test APK (arm64)
         working-directory: apps/showcase/android
-        run: ./gradlew assembleRelease assembleReleaseAndroidTest -PreactNativeArchitectures=arm64-v8a --no-daemon
+        run: |
+          echo '=== androidTest wiring in app/build.gradle ==='
+          grep -n 'testInstrumentationRunner\|androidTestImplementation' app/build.gradle || true
+          echo '=== gradle assemble tasks mentioning Test ==='
+          ./gradlew tasks --all --console=plain 2>/dev/null | grep -iE '^assemble.*test' || echo 'NO androidTest assemble tasks registered'
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+          TASKS=$(./gradlew tasks --all --console=plain 2>/dev/null | grep -oE 'assemble[A-Za-z]*AndroidTest' | sort -u)
+          echo "androidTest assemble tasks: [$TASKS]"
+          if echo "$TASKS" | grep -qx 'assembleReleaseAndroidTest'; then
+            ./gradlew assembleReleaseAndroidTest -PreactNativeArchitectures=arm64-v8a --no-daemon
+          else
+            echo 'assembleReleaseAndroidTest missing; not building a mismatched debug test variant'; exit 3
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: ftl-apks
           path: |
             apps/showcase/android/app/build/outputs/apk/release/app-release.apk
-            apps/showcase/android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
+            apps/showcase/android/app/build/outputs/apk/androidTest/*/*.apk
           if-no-files-found: error
