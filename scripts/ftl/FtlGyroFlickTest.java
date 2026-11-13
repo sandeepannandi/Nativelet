@@ -53,6 +53,10 @@ public class FtlGyroFlickTest {
     public void gyroFlicks() throws Exception {
         Instrumentation inst = InstrumentationRegistry.getInstrumentation();
         String pkg = inst.getTargetContext().getPackageName();
+        // Method-order independence: assertions below only count this test's
+        // own events (wallT >= t0), so a sibling test's grabs/spins/snaps can
+        // never satisfy them.
+        long t0 = System.currentTimeMillis() - 2000;
 
         Intent i = new Intent(Intent.ACTION_VIEW,
                 Uri.parse("nativelet-showcase:///gyroscope?telemetry=1&reducedMotion=0"));
@@ -82,10 +86,10 @@ public class FtlGyroFlickTest {
         SystemClock.sleep(6000);
         Log.i(TAG, "harness window complete");
 
-        assertTelemetry(inst);
+        assertTelemetry(inst, t0);
     }
 
-    private static void assertTelemetry(Instrumentation inst) throws Exception {
+    private static void assertTelemetry(Instrumentation inst, long t0) throws Exception {
         ParcelFileDescriptor pfd =
                 inst.getUiAutomation().executeShellCommand("logcat -d");
         BufferedReader r = new BufferedReader(
@@ -108,7 +112,9 @@ public class FtlGyroFlickTest {
                 JSONObject o = new JSONObject(line.substring(s, e + 1));
                 String kind = o.optString("kind");
                 if (kind.equals("bridge")) {
-                    bridge = true;
+                    bridge = true; // process-global: proves the hook is installed
+                } else if (o.optLong("wallT", 0) < t0) {
+                    // before this method's window: belongs to another test
                 } else if (kind.equals("grab")) {
                     grabs++;
                 } else if (kind.equals("spin")) {
@@ -531,4 +537,4 @@ public class FtlGyroFlickTest {
         return "(no '" + prefix.trim() + "' line)";
     }
 
-}
+    }
