@@ -242,12 +242,14 @@ public class FtlGyroFlickTest {
         Rect rDrag = findText(inst, "Drag frame", 1500);
         Rect rSlow = findText(inst, "Slow motion", 1500);
         Rect rReset = findText(inst, "Reset", 1500);
-        String loc = (rFlick != null && rDrag != null && rSlow != null && rReset != null)
-                ? "hierarchy" : "geometry-fallback";
-        if (rFlick == null) rFlick = frac(w, h, 0.217, 0.667);
-        if (rDrag == null) rDrag = frac(w, h, 0.457, 0.667);
-        if (rSlow == null) rSlow = frac(w, h, 0.687, 0.667);
-        if (rReset == null) rReset = frac(w, h, 0.520, 0.726);
+        // v3.2: absent/ambiguous targeting fails closed - no silent fallback to
+        // likely coordinates (v3.1's canvas-center miss came from substring
+        // matching; a fixed-fraction tap would be the same class of guess).
+        String loc = "hierarchy";
+        if (rDrag == null) throw new AssertionError("Drag frame control not located exactly; refusing geometry guess. nodes: " + dumpNodes(inst));
+        if (rSlow == null) throw new AssertionError("Slow motion control not located exactly; refusing geometry guess. nodes: " + dumpNodes(inst));
+        if (rReset == null) throw new AssertionError("Reset control not located exactly; refusing geometry guess. nodes: " + dumpNodes(inst));
+        if (rFlick == null) throw new AssertionError("Flick rotor control not located exactly; refusing geometry guess. nodes: " + dumpNodes(inst));
         Log.i(TAG, "controls: locSource=" + loc);
 
         tap(inst, rSlow);
@@ -319,19 +321,34 @@ public class FtlGyroFlickTest {
         StringBuilder f = new StringBuilder();
         if (!bridge) f.append("no bridge event; ");
 
-        // SLOW: sim-rate ratio vs baseline (dropped/clamped time is inside the
-        // measured rates, so the band is wide by design: clearly quartered,
-        // clearly not stalled).
-        List<Ev> base = between(snaps, 0, slowOn - 300);
-        List<Ev> slow = between(snaps, slowOn - 300, slowOff + 300);
+        // SLOW: direct simulation-time scaling, simT advance per wall second in
+        // the slow window vs the baseline window of the SAME sim session. v3.1
+        // scoped the baseline from t0, which straddled the previous activity's
+        // snap tail (simT restart made rBase negative). Windows now start after
+        // the last simT restart before slowOn. The [0.08,0.55] band proves a
+        // broad slowdown only; it is not quarter-speed accuracy.
+        int baseStart = 0;
+        for (int i = 1; i < snaps.size(); i++) {
+            double prev = snaps.get(i - 1).o.optDouble("simT"), cur = snaps.get(i).o.optDouble("simT");
+            if (cur < prev - 0.5 && snaps.get(i).wallT < slowOn) baseStart = i;
+        }
+        List<Ev> base = new ArrayList<>();
+        for (int i = baseStart; i < snaps.size(); i++) {
+            Ev s = snaps.get(i);
+            if (s.wallT <= slowOn - 300) base.add(s); else break;
+        }
+        List<Ev> slow = between(snaps, slowOn + 300, slowOff - 300);
         double rBase = rate(base), rSlow = rate(slow);
         long slowFlagged = countSlow(slow);
-        if (base.size() < 3) f.append("baseline snaps=").append(base.size()).append(" <3; ");
-        if (slow.size() < 3) f.append("slow snaps=").append(slow.size()).append(" <3; ");
+        if (base.size() < 3) f.append("baseline snaps=").append(base.size()).append(" <3 (window not comparable); ");
+        if (slow.size() < 3) f.append("slow snaps=").append(slow.size()).append(" <3 (window not comparable); ");
+        if (hasRestart(base)) f.append("sim restart inside baseline window; ");
+        if (hasRestart(slow)) f.append("sim restart inside slow window; ");
         if (slowFlagged < 3) f.append("slow=true snaps=").append(slowFlagged).append(" <3 (toggle missed); ");
+        if (!(rBase > 0.2)) f.append("baseline sim-rate not positive/healthy: ").append(rBase).append("; ");
         if (!(rSlow > 0.08 * rBase && rSlow < 0.55 * rBase))
-            f.append("slow ratio ").append(rSlow).append(" vs base ").append(rBase)
-                    .append(" not ~0.25x; ");
+            f.append("slow sim-time factor ").append(rSlow).append("/").append(rBase)
+                    .append(" outside [0.08,0.55]; ");
 
         // DRAG FRAME: frame-mode grab, active snaps, target moved, convergence.
         Ev frameGrab = null;
@@ -413,7 +430,8 @@ public class FtlGyroFlickTest {
                 + " | " + janky + " | " + pss;
         Log.i(TAG, summary);
         if (f.length() > 0)
-            throw new AssertionError("gyro controls telemetry FAILED: " + f + "| " + summary);
+            throw new AssertionError("gyro controls telemetry FAILED: " + f + "| " + summary
+                    + " | nodes: " + dumpNodes(inst));
         Log.i(TAG, "ASSERTIONS PASSED (controls): " + summary);
     }
 
@@ -428,6 +446,12 @@ public class FtlGyroFlickTest {
         Ev f = snaps.get(0), l = snaps.get(snaps.size() - 1);
         double dt = (l.wallT - f.wallT) / 1000.0;
         return dt > 0.5 ? (l.o.optDouble("simT") - f.o.optDouble("simT")) / dt : Double.NaN;
+    }
+
+    private static boolean hasRestart(List<Ev> snaps) {
+        for (int i = 1; i < snaps.size(); i++)
+            if (snaps.get(i).o.optDouble("simT") < snaps.get(i - 1).o.optDouble("simT") - 0.5) return true;
+        return false;
     }
 
     private static long countSlow(List<Ev> snaps) {
@@ -468,6 +492,11 @@ public class FtlGyroFlickTest {
         return new Rect(x - 30, y - 30, x + 30, y + 30);
     }
 
+    // v3.2: exact-text match + clickable ancestor. findAccessibilityNodeInfosByText
+    // matches substrings in text AND content-description, so "Drag frame" also
+    // matched the canvas label "...choose flick rotor or drag frame below." and
+    // nodes.get(0) returned the canvas bounds - the v3.1 tap landed on the canvas.
+    // Fail closed when several distinct clickable targets match.
     private static Rect findText(Instrumentation inst, String text, long timeoutMs) {
         long end = SystemClock.uptimeMillis() + timeoutMs;
         while (SystemClock.uptimeMillis() < end) {
@@ -475,16 +504,49 @@ public class FtlGyroFlickTest {
                 AccessibilityNodeInfo root = inst.getUiAutomation().getRootInActiveWindow();
                 if (root != null) {
                     List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
-                    if (nodes != null && !nodes.isEmpty()) {
-                        Rect r = new Rect();
-                        nodes.get(0).getBoundsInScreen(r);
-                        return r;
+                    List<Rect> exact = new ArrayList<>();
+                    if (nodes != null) for (AccessibilityNodeInfo n : nodes) {
+                        CharSequence t = n.getText();
+                        if (t != null && t.toString().equals(text)) {
+                            AccessibilityNodeInfo c = n;
+                            while (c != null && !c.isClickable()) c = c.getParent();
+                            if (c != null) { Rect r = new Rect(); c.getBoundsInScreen(r); exact.add(r); }
+                        }
+                    }
+                    if (exact.size() == 1) return exact.get(0);
+                    if (exact.size() > 1) {
+                        boolean same = true;
+                        for (int i = 1; i < exact.size(); i++) if (!exact.get(i).equals(exact.get(0))) same = false;
+                        if (same) return exact.get(0);
+                        throw new AssertionError("ambiguous control '" + text + "': "
+                                + exact.size() + " distinct clickable targets");
                     }
                 }
-            } catch (Exception ignore) { }
+            } catch (AssertionError ae) { throw ae; }
+              catch (Exception ignore) { }
             SystemClock.sleep(300);
         }
         return null;
+    }
+
+    private static String dumpNodes(Instrumentation inst) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            AccessibilityNodeInfo root = inst.getUiAutomation().getRootInActiveWindow();
+            if (root != null) {
+                for (String q : new String[]{"Flick", "frame", "speed", "Slow", "Reset", "Gyroscope"}) {
+                    List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(q);
+                    if (nodes == null) continue;
+                    for (AccessibilityNodeInfo n : nodes) {
+                        Rect b = new Rect(); n.getBoundsInScreen(b);
+                        sb.append('[').append(n.getText()).append('|').append(n.getContentDescription())
+                          .append('|').append(b.toShortString()).append(']');
+                        if (sb.length() > 700) return sb.substring(0, 700);
+                    }
+                }
+            }
+        } catch (Exception e) { sb.append("dump-err"); }
+        return sb.toString();
     }
 
     private static void tap(Instrumentation inst, Rect r) {
@@ -537,4 +599,4 @@ public class FtlGyroFlickTest {
         return "(no '" + prefix.trim() + "' line)";
     }
 
-    }
+            }
