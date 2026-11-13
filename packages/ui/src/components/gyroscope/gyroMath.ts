@@ -21,7 +21,8 @@ export function gyroRates(v:number[],p:GyroParams){'worklet';
  const c=Math.cos(v[1]),s=Math.sin(v[1]),B=p.innerTransverseJ+p.rotorTransverseJ,D=p.outerJ+B*s*s+p.innerAxialJ*c*c;
  const a=(v[3]-c*v[5])/D,b=v[4]/B,g=v[5]/p.rotorAxialJ-c*a;return {yaw:a,tilt:b,spin:g};
 }
-export function createGyro(p:GyroParams=GYRO_DEFAULTS,spin=45):GyroState{'worklet';
+export function createGyro(params?:GyroParams,spin=45):GyroState{'worklet';
+ const p=params??GYRO_DEFAULTS;
  return {v:[.25,.95,0,p.rotorAxialJ*spin*Math.cos(.95),0,p.rotorAxialJ*spin],scratch:Array(30).fill(0),acc:0,t:0,droppedTime:0};
 }
 export function gyroEnergy(v:number[],p:GyroParams){'worklet';
@@ -40,6 +41,13 @@ function derivative(v:number[],p:GyroParams,t:GyroTorque,out:number[],o:number){
  out[o+4]=a*a*(B-p.innerAxialJ)*s*c-a*v[5]*s+p.gravityMoment*s+t.tilt+gripTorque(v[1],b,t.targetTilt)-p.tiltDrag*b;
  out[o+5]=t.spin-p.spinDrag*g;
 }
+function rkDerivative(v:number[],i:number,p:GyroParams,t:GyroTorque,out:number[],o:number){'worklet';
+ const c=Math.cos(v[i+1]),s=Math.sin(v[i+1]),B=p.innerTransverseJ+p.rotorTransverseJ,D=p.outerJ+B*s*s+p.innerAxialJ*c*c;
+ const a=(v[i+3]-c*v[i+5])/D,b=v[i+4]/B,g=v[i+5]/p.rotorAxialJ-c*a;
+ out[o]=a;out[o+1]=b;out[o+2]=g;out[o+3]=t.yaw+gripTorque(v[i],a,t.targetYaw)-p.yawDrag*a;
+ out[o+4]=a*a*(B-p.innerAxialJ)*s*c-a*v[i+5]*s+p.gravityMoment*s+t.tilt+gripTorque(v[i+1],b,t.targetTilt)-p.tiltDrag*b;
+ out[o+5]=t.spin-p.spinDrag*g;
+}
 export function gyroSubstep(st:GyroState,p:GyroParams,torque:GyroTorque,dt:number){'worklet';
  const v=st.v,k=st.scratch;derivative(v,p,torque,k,0);
  // Temporary six-vector is reused; no per-substep arrays.
@@ -49,13 +57,6 @@ export function gyroSubstep(st:GyroState,p:GyroParams,torque:GyroTorque,dt:numbe
  for(let i=0;i<6;i++)k[24+i]=v[i]+dt*.5*k[6+i];rkDerivative(k,24,p,torque,k,12);
  for(let i=0;i<6;i++)k[24+i]=v[i]+dt*k[12+i];rkDerivative(k,24,p,torque,k,18);
  for(let i=0;i<6;i++)v[i]+=dt/6*(k[i]+2*k[6+i]+2*k[12+i]+k[18+i]);st.t+=dt;
-}
-function rkDerivative(v:number[],i:number,p:GyroParams,t:GyroTorque,out:number[],o:number){'worklet';
- const c=Math.cos(v[i+1]),s=Math.sin(v[i+1]),B=p.innerTransverseJ+p.rotorTransverseJ,D=p.outerJ+B*s*s+p.innerAxialJ*c*c;
- const a=(v[i+3]-c*v[i+5])/D,b=v[i+4]/B,g=v[i+5]/p.rotorAxialJ-c*a;
- out[o]=a;out[o+1]=b;out[o+2]=g;out[o+3]=t.yaw+gripTorque(v[i],a,t.targetYaw)-p.yawDrag*a;
- out[o+4]=a*a*(B-p.innerAxialJ)*s*c-a*v[i+5]*s+p.gravityMoment*s+t.tilt+gripTorque(v[i+1],b,t.targetTilt)-p.tiltDrag*b;
- out[o+5]=t.spin-p.spinDrag*g;
 }
 export function stepGyro(st:GyroState,p:GyroParams,seconds:number,torque:GyroTorque){'worklet';
  const accepted=Math.min(Math.max(0,seconds),.1);st.droppedTime+=Math.max(0,seconds-accepted);st.acc+=accepted;
