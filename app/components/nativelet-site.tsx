@@ -583,7 +583,7 @@ export default function NativeletSite({
                 <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 47</span><strong>Newton&apos;s Cradle</strong><small>Pull back and release · momentum clicks through, same count swings out</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Gyroscope", "Flick the rotor, torque the gimbals · angular momentum in three dimensions")} onClick={(event) => openComponent(event, "gyro")} aria-haspopup="dialog" aria-label="Open Gyroscope web preview">
-                <div className={gallery.study} aria-hidden="true"><img src="/gyroscope-cover.svg" alt="" style={{height:"100%",width:"100%",objectFit:"contain",background:"#171c21"}} /></div>
+                <div className={gallery.study} aria-hidden="true"><img src="/gyroscope-cover.svg" alt="" style={{height:"132px",width:"auto",maxWidth:"72%",objectFit:"contain",borderRadius:"14px",boxShadow:"0 6px 14px rgba(4,8,16,0.35)"}} /></div>
                 <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 49</span><strong>Gyroscope</strong><small>Flick the rotor, torque the gimbals · angular momentum in three dimensions</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Galton Board", "Tap or pour wooden beads · the bell curve emerges from real collisions")} onClick={(event) => openComponent(event, "galton")} aria-haspopup="dialog" aria-label="Open Galton Board web preview">
