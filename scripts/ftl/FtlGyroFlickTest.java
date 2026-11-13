@@ -18,6 +18,10 @@ import org.junit.runner.RunWith;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import android.graphics.Rect;
+import android.view.accessibility.AccessibilityNodeInfo;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Firebase Test Lab physical-device harness for the Gyroscope route.
@@ -198,4 +202,333 @@ public class FtlGyroFlickTest {
         up.recycle();
         Log.i(TAG, "flick injected durMs=" + durMs + " dx=" + (x1 - x0));
     }
+    // ---------------- v3: controls / drag / slow / reset / physics ----------
+    // Covers the remaining physical interaction gates: Slow motion (sim-rate
+    // ratio + label), Drag frame (spring-target tracking), Reset (sim restart,
+    // slow preserved - actual component semantics verified in source), and a
+    // free-evolution invariant window (energy dissipation, spin-momentum decay,
+    // steady precession; expectations derived from gyroMath, not from emitted
+    // verdicts). gfxinfo framestats + meminfo are collected as MEASUREMENT ONLY
+    // (frame evidence, never a render-smoothness/GPU-time clearance).
+
+    @Test
+    public void gyroControls() throws Exception {
+        Instrumentation inst = InstrumentationRegistry.getInstrumentation();
+        String pkg = inst.getTargetContext().getPackageName();
+        long t0 = System.currentTimeMillis() - 2000;
+
+        Intent i = new Intent(Intent.ACTION_VIEW,
+                Uri.parse("nativelet-showcase:///gyroscope?telemetry=1&reducedMotion=0"));
+        i.setPackage(pkg);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        inst.startActivitySync(i);
+        Log.i(TAG, "controls: route launched ?telemetry=1&reducedMotion=0");
+        SystemClock.sleep(12000);
+
+        android.util.DisplayMetrics dm = inst.getTargetContext().getResources().getDisplayMetrics();
+        int w = dm.widthPixels, h = dm.heightPixels;
+        float cx = w / 2f, cy = h / 2f;
+        float span = Math.min(w, h) * 0.28f;
+
+        exec(inst, "dumpsys gfxinfo " + pkg + " reset");
+
+        Rect rFlick = findText(inst, "Flick rotor", 3000);
+        Rect rDrag = findText(inst, "Drag frame", 1500);
+        Rect rSlow = findText(inst, "Slow motion", 1500);
+        Rect rReset = findText(inst, "Reset", 1500);
+        String loc = (rFlick != null && rDrag != null && rSlow != null && rReset != null)
+                ? "hierarchy" : "geometry-fallback";
+        if (rFlick == null) rFlick = frac(w, h, 0.217, 0.667);
+        if (rDrag == null) rDrag = frac(w, h, 0.457, 0.667);
+        if (rSlow == null) rSlow = frac(w, h, 0.687, 0.667);
+        if (rReset == null) rReset = frac(w, h, 0.520, 0.726);
+        Log.i(TAG, "controls: locSource=" + loc);
+
+        tap(inst, rSlow);
+        long slowOn = System.currentTimeMillis();
+        SystemClock.sleep(6000);
+        long slowOff = System.currentTimeMillis();
+        tap(inst, rSlow);
+        SystemClock.sleep(800);
+
+        tap(inst, rDrag);
+        SystemClock.sleep(400);
+        long dragStart = System.currentTimeMillis();
+        drag(inst, cx - span * 0.45f, cy - span * 0.3f, cx + span * 0.45f, cy + span * 0.3f, 2400);
+        long dragEnd = System.currentTimeMillis();
+        SystemClock.sleep(1200);
+
+        flick(inst, cx - span, cy, cx + span, cy, 220);
+        SystemClock.sleep(2500);
+
+        tap(inst, rSlow);
+        SystemClock.sleep(500);
+        tap(inst, rReset);
+        long resetAt = System.currentTimeMillis();
+        SystemClock.sleep(2500);
+        tap(inst, rSlow); // off again for a full-rate invariant window
+        SystemClock.sleep(800);
+
+        long invStart = System.currentTimeMillis();
+        SystemClock.sleep(7000);
+        long invEnd = System.currentTimeMillis();
+
+        String gfx = exec(inst, "dumpsys gfxinfo " + pkg);
+        String mem = exec(inst, "dumpsys meminfo " + pkg);
+        assertControls(inst, t0, slowOn, slowOff, dragStart, dragEnd, resetAt,
+                invStart, invEnd, loc, gfx, mem);
+    }
+
+    private static class Ev { String kind; JSONObject o; long wallT; }
+
+    private static void assertControls(Instrumentation inst, long t0, long slowOn, long slowOff,
+            long dragStart, long dragEnd, long resetAt, long invStart, long invEnd,
+            String loc, String gfx, String mem) throws Exception {
+        ParcelFileDescriptor pfd = inst.getUiAutomation().executeShellCommand("logcat -d");
+        BufferedReader r = new BufferedReader(
+                new InputStreamReader(new ParcelFileDescriptor.AutoCloseInputStream(pfd)));
+        boolean bridge = false;
+        List<Ev> snaps = new ArrayList<>(), grabs = new ArrayList<>(),
+                spins = new ArrayList<>(), resets = new ArrayList<>();
+        String line;
+        while ((line = r.readLine()) != null) {
+            int m = line.indexOf("[gyro-test]");
+            if (m < 0) continue;
+            int s = line.indexOf('{', m), e = line.lastIndexOf('}');
+            if (s < 0 || e <= s) continue;
+            try {
+                JSONObject o = new JSONObject(line.substring(s, e + 1));
+                String kind = o.optString("kind");
+                if (kind.equals("bridge")) { bridge = true; continue; }
+                Ev ev = new Ev(); ev.kind = kind; ev.o = o; ev.wallT = o.optLong("wallT", 0);
+                if (ev.wallT < t0) continue;
+                if (kind.equals("snap")) snaps.add(ev);
+                else if (kind.equals("grab")) grabs.add(ev);
+                else if (kind.equals("spin")) spins.add(ev);
+                else if (kind.equals("reset")) resets.add(ev);
+            } catch (Exception ignore) { }
+        }
+        r.close();
+
+        StringBuilder f = new StringBuilder();
+        if (!bridge) f.append("no bridge event; ");
+
+        // SLOW: sim-rate ratio vs baseline (dropped/clamped time is inside the
+        // measured rates, so the band is wide by design: clearly quartered,
+        // clearly not stalled).
+        List<Ev> base = between(snaps, 0, slowOn - 300);
+        List<Ev> slow = between(snaps, slowOn - 300, slowOff + 300);
+        double rBase = rate(base), rSlow = rate(slow);
+        long slowFlagged = countSlow(slow);
+        if (base.size() < 3) f.append("baseline snaps=").append(base.size()).append(" <3; ");
+        if (slow.size() < 3) f.append("slow snaps=").append(slow.size()).append(" <3; ");
+        if (slowFlagged < 3) f.append("slow=true snaps=").append(slowFlagged).append(" <3 (toggle missed); ");
+        if (!(rSlow > 0.08 * rBase && rSlow < 0.55 * rBase))
+            f.append("slow ratio ").append(rSlow).append(" vs base ").append(rBase)
+                    .append(" not ~0.25x; ");
+
+        // DRAG FRAME: frame-mode grab, active snaps, target moved, convergence.
+        Ev frameGrab = null;
+        for (Ev g : grabs) if ("frame".equals(g.o.optString("mode")) && g.wallT >= dragStart - 1500) frameGrab = g;
+        if (frameGrab == null) f.append("no frame-mode grab (Drag frame tap or drag missed); ");
+        List<Ev> active = new ArrayList<>();
+        for (Ev s : snaps) if (s.wallT >= dragStart - 300 && s.wallT <= dragEnd + 800
+                && s.o.optJSONObject("input") != null && s.o.optJSONObject("input").optBoolean("active")) active.add(s);
+        if (active.size() < 2) f.append("active drag snaps=").append(active.size()).append(" <2; ");
+        double targetMove = 0, d0 = -1, d1 = -1;
+        if (!active.isEmpty()) {
+            double a0 = frameGrab != null ? frameGrab.o.optDouble("a") : Double.NaN;
+            double b0 = frameGrab != null ? frameGrab.o.optDouble("b") : Double.NaN;
+            for (Ev s : active) {
+                JSONObject in = s.o.optJSONObject("input");
+                targetMove = Math.max(targetMove, Math.abs(in.optDouble("targetYaw") - a0)
+                        + Math.abs(in.optDouble("targetTilt") - b0));
+            }
+            JSONObject first = active.get(0).o, last = active.get(active.size() - 1).o;
+            d0 = dist(first) ; d1 = dist(last);
+        }
+        if (!(targetMove > 0.05)) f.append("drag targets moved only ").append(targetMove).append("; ");
+        if (d0 >= 0 && !(d1 < d0 || d1 < 0.12))
+            f.append("pose did not converge toward drag targets ").append(d0).append("->").append(d1).append("; ");
+
+        // FLICK regression inside the controls flow.
+        boolean flickOk = false;
+        for (Ev s : spins) if (s.wallT >= dragEnd && Math.abs(s.o.optDouble("j")) > 0.0005) flickOk = true;
+        if (!flickOk) f.append("no post-controls flick impulse; ");
+
+        // RESET: event, sim restart (simT back near 0), slow preserved.
+        Ev reset = resets.isEmpty() ? null : resets.get(resets.size() - 1);
+        if (reset == null) f.append("no reset event (Reset tap missed); ");
+        boolean restarted = false, slowKept = false;
+        for (Ev s : snaps) {
+            if (s.wallT > resetAt - 100 && s.wallT < resetAt + 3000
+                    && s.o.optDouble("simT", 99) < 1.5 && s.o.optLong("seenReset", 0) >= 1) {
+                restarted = true;
+                if (s.o.optBoolean("slow")) slowKept = true;
+                break;
+            }
+        }
+        if (!restarted) f.append("sim did not restart after reset; ");
+        if (restarted && !slowKept) f.append("reset cleared slow mode (semantics changed); ");
+
+        // INVARIANTS (free evolution, no input): energy strictly dissipates,
+        // spin momentum decays, precession steady. Constants from gyroMath.
+        List<Ev> inv = between(snaps, invStart - 300, invEnd + 300);
+        if (inv.size() < 4) f.append("invariant snaps=").append(inv.size()).append(" <4; ");
+        int eDown = 0, pDown = 0, dirPos = 0, dirNeg = 0;
+        double yawNet = 0;
+        for (int k = 1; k < inv.size(); k++) {
+            double[] p = vec(inv.get(k - 1).o), q = vec(inv.get(k).o);
+            if (energy(q) <= energy(p) * 1.001) eDown++;
+            if (q[5] <= p[5] * 1.001) pDown++;
+            double dy = q[0] - p[0];
+            if (dy > 0) dirPos++; else if (dy < 0) dirNeg++;
+            yawNet += dy;
+        }
+        int n = Math.max(1, inv.size() - 1);
+        if (eDown < n) f.append("energy rose in ").append(n - eDown).append("/").append(n).append(" intervals; ");
+        if (pDown < n) f.append("spin momentum rose in ").append(n - pDown).append("/").append(n).append(" intervals; ");
+        if (Math.abs(yawNet) < 0.12 || Math.max(dirPos, dirNeg) * 5 < n * 4)
+            f.append("precession not steady: yawNet=").append(yawNet)
+                    .append(" dir+/dir-=").append(dirPos).append("/").append(dirNeg).append("; ");
+
+        // Perf/memory: measurement only, reported, never gated.
+        String janky = grep(gfx, "Janky frames:");
+        String pss = grep(mem, "TOTAL PSS:");
+        if (pss.isEmpty()) pss = grep(mem, "TOTAL:");
+
+        String summary = "controls loc=" + loc
+                + " snaps=" + snaps.size() + " grabs=" + grabs.size() + " spins=" + spins.size()
+                + " resets=" + resets.size()
+                + " slowRate=" + rSlow + " baseRate=" + rBase
+                + " dragTargetMove=" + targetMove + " dragDist=" + d0 + "->" + d1
+                + " invSnaps=" + inv.size() + " eDown=" + eDown + "/" + n
+                + " pDown=" + pDown + "/" + n + " yawNet=" + yawNet
+                + " | " + janky + " | " + pss;
+        Log.i(TAG, summary);
+        if (f.length() > 0)
+            throw new AssertionError("gyro controls telemetry FAILED: " + f + "| " + summary);
+        Log.i(TAG, "ASSERTIONS PASSED (controls): " + summary);
+    }
+
+    private static List<Ev> between(List<Ev> snaps, long a, long b) {
+        List<Ev> out = new ArrayList<>();
+        for (Ev s : snaps) if (s.wallT >= a && (b <= 0 || s.wallT <= b)) out.add(s);
+        return out;
+    }
+
+    private static double rate(List<Ev> snaps) {
+        if (snaps.size() < 2) return Double.NaN;
+        Ev f = snaps.get(0), l = snaps.get(snaps.size() - 1);
+        double dt = (l.wallT - f.wallT) / 1000.0;
+        return dt > 0.5 ? (l.o.optDouble("simT") - f.o.optDouble("simT")) / dt : Double.NaN;
+    }
+
+    private static long countSlow(List<Ev> snaps) {
+        long c = 0;
+        for (Ev s : snaps) if (s.o.optBoolean("slow")) c++;
+        return c;
+    }
+
+    private static double dist(JSONObject snap) {
+        JSONObject in = snap.optJSONObject("input");
+        if (in == null) return -1;
+        org.json.JSONArray v = snap.optJSONArray("v");
+        return Math.abs(v.optDouble(0) - in.optDouble("targetYaw"))
+                + Math.abs(v.optDouble(1) - in.optDouble("targetTilt"));
+    }
+
+    private static double[] vec(JSONObject snap) {
+        org.json.JSONArray v = snap.optJSONArray("v");
+        double[] out = new double[6];
+        for (int k = 0; k < 6; k++) out[k] = v.optDouble(k);
+        return out;
+    }
+
+    // Total mechanical energy; constants copied from gyroMath.ts GYRO_DEFAULTS.
+    private static double energy(double[] v) {
+        double mass = .15, rr = .045, hh = .008;
+        double rtJ = mass * (rr * rr / 4 + hh * hh / 12 + .0015 * .0015);
+        double raJ = mass * rr * rr / 2;
+        double B = 1.8e-5 + rtJ, G = mass * 9.81 * .0015;
+        double c = Math.cos(v[1]), s = Math.sin(v[1]);
+        double D = 3.2e-5 + B * s * s + 3.6e-5 * c * c;
+        return .5 * Math.pow(v[3] - c * v[5], 2) / D + .5 * v[4] * v[4] / B
+                + .5 * v[5] * v[5] / raJ + G * c;
+    }
+
+    private static Rect frac(int w, int h, double fx, double fy) {
+        int x = (int) (w * fx), y = (int) (h * fy);
+        return new Rect(x - 30, y - 30, x + 30, y + 30);
+    }
+
+    private static Rect findText(Instrumentation inst, String text, long timeoutMs) {
+        long end = SystemClock.uptimeMillis() + timeoutMs;
+        while (SystemClock.uptimeMillis() < end) {
+            try {
+                AccessibilityNodeInfo root = inst.getUiAutomation().getRootInActiveWindow();
+                if (root != null) {
+                    List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByText(text);
+                    if (nodes != null && !nodes.isEmpty()) {
+                        Rect r = new Rect();
+                        nodes.get(0).getBoundsInScreen(r);
+                        return r;
+                    }
+                }
+            } catch (Exception ignore) { }
+            SystemClock.sleep(300);
+        }
+        return null;
+    }
+
+    private static void tap(Instrumentation inst, Rect r) {
+        long t0 = SystemClock.uptimeMillis();
+        float x = r.centerX(), y = r.centerY();
+        MotionEvent d = MotionEvent.obtain(t0, t0, MotionEvent.ACTION_DOWN, x, y, 0);
+        inst.sendPointerSync(d); d.recycle();
+        MotionEvent u = MotionEvent.obtain(t0, t0 + 60, MotionEvent.ACTION_UP, x, y, 0);
+        inst.sendPointerSync(u); u.recycle();
+        Log.i(TAG, "tap " + x + "," + y);
+        SystemClock.sleep(150);
+    }
+
+    private static void drag(Instrumentation inst, float x0, float y0, float x1, float y1, long durMs) {
+        final int steps = 48;
+        long t0 = SystemClock.uptimeMillis();
+        MotionEvent d = MotionEvent.obtain(t0, t0, MotionEvent.ACTION_DOWN, x0, y0, 0);
+        inst.sendPointerSync(d); d.recycle();
+        for (int s = 1; s <= steps; s++) {
+            long t = t0 + (durMs * s / steps);
+            float f = (float) s / steps;
+            MotionEvent mv = MotionEvent.obtain(t0, t, MotionEvent.ACTION_MOVE,
+                    x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, 0);
+            inst.sendPointerSync(mv); mv.recycle();
+            SystemClock.sleep(Math.max(1, durMs / steps - 2));
+        }
+        MotionEvent u = MotionEvent.obtain(t0, t0 + durMs + 8, MotionEvent.ACTION_UP, x1, y1, 0);
+        inst.sendPointerSync(u); u.recycle();
+        Log.i(TAG, "drag injected durMs=" + durMs);
+    }
+
+    private static String exec(Instrumentation inst, String cmd) {
+        try {
+            ParcelFileDescriptor pfd = inst.getUiAutomation().executeShellCommand(cmd);
+            BufferedReader r = new BufferedReader(
+                    new InputStreamReader(new ParcelFileDescriptor.AutoCloseInputStream(pfd)));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line).append('\n');
+            r.close();
+            return sb.toString();
+        } catch (Exception e) {
+            return "exec failed: " + e;
+        }
+    }
+
+    private static String grep(String text, String prefix) {
+        for (String line : text.split("\n"))
+            if (line.trim().startsWith(prefix)) return line.trim();
+        return "(no '" + prefix.trim() + "' line)";
+    }
+
 }
