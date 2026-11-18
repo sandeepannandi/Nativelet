@@ -153,6 +153,7 @@ const capsuleDescriptions: Record<CapsuleState, string> = {
 };
 
 const COMPONENT_NAMES: [string, string][] = [
+  ["Zipper Reveal", "Pull to unzip, reveal and close · fabric with a little give"],
   ["Newton's Cradle", "Pull back and release · momentum clicks through, same count swings out"],
   ["Venom Button", "Tendrils reach out, grab your finger and snap back"],
   ["Glass Shatter", "Break a pane of glass · 360 shards fall, spin and collide"],
