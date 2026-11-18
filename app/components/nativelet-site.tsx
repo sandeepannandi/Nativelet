@@ -227,6 +227,7 @@ export default function NativeletSite({
       .every((word) => `${name} ${description}`.toLowerCase().includes(word));
   const visibleCount = COMPONENT_NAMES.filter(([name, description]) => matches(name, description)).length;
   const [orientation, setOrientation] = useState<"vertical" | "horizontal">("vertical");
+  const [dialogOpen,setDialogOpen]=useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
   const savedOverflow = useRef("");
@@ -246,6 +247,7 @@ export default function NativeletSite({
     const modal = dialog.current;
     if (!modal) return;
     modal.showModal();
+    setDialogOpen(true);
     const from = originTransform();
     if (from && modal.animate) {
       modal.animate(
@@ -296,6 +298,7 @@ export default function NativeletSite({
     };
   }
   function afterClose() {
+    setDialogOpen(false);
     document.body.style.overflow = savedOverflow.current;
     opener.current?.focus();
   }
@@ -727,7 +730,7 @@ export default function NativeletSite({
               </div>
               {panel === "preview" ? (
                 <>
-                {which === "zipper" ? <ZipperRevealPreview /> : which === "gyro" ? <GyroscopePreview /> : which === "galton" ? <GaltonBoardPreview /> : which === "cradle" ? <NewtonsCradlePreview /> : which === "pins" ? <PinArtBoardPreview /> : which === "plasma" ? <PlasmaGlobePreview /> : which === "cymatics" ? <CymaticsPreview /> : which === "venom" ? <VenomButtonPreview /> : which === "recorder" ? <VoiceRecorderPreview /> : which === "shatter" ? <GlassShatterPreview /> : which === "crumple" ? <PaperCrumplePreview /> : which === "flow" ? <FlowFieldPreview /> : which === "player" ? <MiniPlayerPreview /> : which === "path" ? <MotionPathPreview /> : which === "timeline" ? <TimelineTrimPreview /> : which === "wheel" ? <WheelTimePickerPreview /> : which === "range" ? <RangeStackPreview /> : which === "strings" ? <PluckedStringsPreview /> : which === "hourglass" ? <SandHourglassPreview /> : which === "prism" ? <PrismPreview /> : which === "reveal" ? <CodeRevealPreview /> : which === "coin" ? <CoinPreview /> : which === "blackhole" ? <BlackHoleLensPreview /> : which === "pendulum" ? <ChaosPendulumPreview /> : which === "fog" ? <FoggedGlassPreview /> : which === "banner" ? <ClothBannerPreview /> : which === "flap" ? <SplitFlapBoardPreview /> : which === "mosaic" ? <MosaicGalleryPreview /> : which === "bubbles" ? <BubblePickerPreview /> : which === "transitions" ? <GLTransitionsPreview /> : which === "fold" ? <FoldedPassPreview /> : which === "genie" ? <GenieDismissPreview /> : which === "morph" ? <TextMorphPreview /> : which === "light" ? <LightPaintingPreview /> : which === "blossom" ? <BlossomQRPreview /> : which === "orbit" ? <OrbitQRPreview /> : which === "curl" ? <PageCurlPreview /> : which === "pinch" ? <PinchGalleryPreview /> : which === "chart" ? <ScrubChartPreview /> : which === "lens" ? <GlassLensPreview /> : which === "ripple" ? <RippleRevealPreview /> : which === "gooey" ? <GooeyMenuPreview /> : which === "carousel" ? <StackedCarouselPreview /> : which === "sort" ? <DragToSortPreview /> : which === "expand" ? <ExpandingCardPreview /> : which === "swipe" ? <SwipeRowPreview /> : which === "glass" ? <LiquidTabsPreview /> : which === "toast" ? <ToastStackPreview /> : which === "capsule" ? (
+                {which === "zipper" ? (dialogOpen ? <ZipperRevealPreview /> : null) : which === "gyro" ? <GyroscopePreview /> : which === "galton" ? <GaltonBoardPreview /> : which === "cradle" ? <NewtonsCradlePreview /> : which === "pins" ? <PinArtBoardPreview /> : which === "plasma" ? <PlasmaGlobePreview /> : which === "cymatics" ? <CymaticsPreview /> : which === "venom" ? <VenomButtonPreview /> : which === "recorder" ? <VoiceRecorderPreview /> : which === "shatter" ? <GlassShatterPreview /> : which === "crumple" ? <PaperCrumplePreview /> : which === "flow" ? <FlowFieldPreview /> : which === "player" ? <MiniPlayerPreview /> : which === "path" ? <MotionPathPreview /> : which === "timeline" ? <TimelineTrimPreview /> : which === "wheel" ? <WheelTimePickerPreview /> : which === "range" ? <RangeStackPreview /> : which === "strings" ? <PluckedStringsPreview /> : which === "hourglass" ? <SandHourglassPreview /> : which === "prism" ? <PrismPreview /> : which === "reveal" ? <CodeRevealPreview /> : which === "coin" ? <CoinPreview /> : which === "blackhole" ? <BlackHoleLensPreview /> : which === "pendulum" ? <ChaosPendulumPreview /> : which === "fog" ? <FoggedGlassPreview /> : which === "banner" ? <ClothBannerPreview /> : which === "flap" ? <SplitFlapBoardPreview /> : which === "mosaic" ? <MosaicGalleryPreview /> : which === "bubbles" ? <BubblePickerPreview /> : which === "transitions" ? <GLTransitionsPreview /> : which === "fold" ? <FoldedPassPreview /> : which === "genie" ? <GenieDismissPreview /> : which === "morph" ? <TextMorphPreview /> : which === "light" ? <LightPaintingPreview /> : which === "blossom" ? <BlossomQRPreview /> : which === "orbit" ? <OrbitQRPreview /> : which === "curl" ? <PageCurlPreview /> : which === "pinch" ? <PinchGalleryPreview /> : which === "chart" ? <ScrubChartPreview /> : which === "lens" ? <GlassLensPreview /> : which === "ripple" ? <RippleRevealPreview /> : which === "gooey" ? <GooeyMenuPreview /> : which === "carousel" ? <StackedCarouselPreview /> : which === "sort" ? <DragToSortPreview /> : which === "expand" ? <ExpandingCardPreview /> : which === "swipe" ? <SwipeRowPreview /> : which === "glass" ? <LiquidTabsPreview /> : which === "toast" ? <ToastStackPreview /> : which === "capsule" ? (
                   <>
                     <div className={gallery.orientation} role="group" aria-label="Capsule state">
                       {CAPSULE_STATES.map((name) => (

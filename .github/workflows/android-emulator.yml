@@ -32,8 +32,19 @@ on:
 permissions:
   contents: read
 jobs:
+  validate-zipper-input:
+    if: ${{ inputs.zipper_validation_only == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject conflicting Zipper-only inputs
+        env:
+          CONFLICT: ${{ inputs.runtime_qualification_only || inputs.gyro_diagnostics_only || inputs.gyro_validation_only || inputs.macos_gpu_probe_only }}
+        run: test "$CONFLICT" != "true"
   build:
-    if: ${{ inputs.runtime_qualification_only != true }}
+    needs: validate-zipper-input
+    if: ${{ always() && (needs.validate-zipper-input.result == 'success' || needs.validate-zipper-input.result == 'skipped') && inputs.runtime_qualification_only != true }}
+    # original build condition retained below for traceability
+    # if: ${{ inputs.runtime_qualification_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -231,6 +242,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

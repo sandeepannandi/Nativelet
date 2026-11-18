@@ -98,7 +98,7 @@ export function zipScene(s: ZipState): Mark[] {
   add([171,y-13,180,y-13,180,y+10,175,y+10,169,y-2], '#e0e3da');
   add([183,y-12,190,y-12,191,y-1,186,y+9,183,y+9], '#6f7d80');
   add([177,y-8,183,y-8,184,y+9,176,y+9], '#566365');
-  marks.push({path:`M176 ${n(y+4)} Q173 ${n(y+14)} ${n(174+sway)} ${n(y+43)} Q${n(180+sway)} ${n(y+49)} ${n(186+sway)} ${n(y+43)} L184 ${n(y+5)} Z M178 ${n(y+15)} L${n(178+sway)} ${n(y+35)} L${n(182+sway)} ${n(y+35)} L182 ${n(y+15)} Z`,color:'#c9cfca'});
+  marks.push({path:`M176 ${n(y+4)} Q173 ${n(y+14)} ${n(174+sway)} ${n(y+43)} Q${n(180+sway)} ${n(y+49)} ${n(186+sway)} ${n(y+43)} L184 ${n(y+5)} Z M178 ${n(y+15)} L182 ${n(y+15)} L${n(182+sway)} ${n(y+35)} L${n(178+sway)} ${n(y+35)} Z`,color:'#c9cfca'});
   marks.push({path:`M176 ${n(y+7)} L${n(176+sway)} ${n(y+39)}`,color:'#f6f5e8',stroke:1});
   return marks;
 }

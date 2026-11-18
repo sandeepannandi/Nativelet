@@ -7,7 +7,10 @@ import { createZip, stepZip, zipScene, zipTo, ZIP_BOTTOM, ZIP_H, ZIP_TOP, ZIP_W 
 export type ZipperRevealProps = { initialOpening?: number; reducedMotion?: boolean; slowMotion?: boolean; onOpeningChange?: (opening: number) => void; style?: ViewStyle };
 
 export function ZipperReveal({ initialOpening=0.18, reducedMotion, slowMotion=false, onOpeningChange, style }: ZipperRevealProps) {
-  const scale=Math.min(1,(useWindowDimensions().width-32)/ZIP_W);
+  const windowWidth=useWindowDimensions().width;
+  const [available,setAvailable]=useState(windowWidth-32);
+  const scale=Math.max(.1,Math.min(1,available/ZIP_W));
+  const [opening,setOpening]=useState(Math.round(Math.max(0,Math.min(1,initialOpening))*100));
   const sim=useRef(createZip(initialOpening));
   const [picture,setPicture]=useState<SkPicture|null>(null);
   const [systemReduce,setSystemReduce]=useState(false);
@@ -36,20 +39,21 @@ export function ZipperReveal({ initialOpening=0.18, reducedMotion, slowMotion=fa
     };
     raf=requestAnimationFrame(draw);return()=>{alive=false;cancelAnimationFrame(raf);};
   },[]);
-  const change=(y:number)=>{zipTo(sim.current,y);latest.current.onOpeningChange?.((sim.current.target-ZIP_TOP)/(ZIP_BOTTOM-ZIP_TOP));};
+  const publish=()=>setOpening(Math.round((sim.current.target-ZIP_TOP)/(ZIP_BOTTOM-ZIP_TOP)*100));
+  const change=(y:number)=>{zipTo(sim.current,y);publish();latest.current.onOpeningChange?.((sim.current.target-ZIP_TOP)/(ZIP_BOTTOM-ZIP_TOP));};
   const pan=Gesture.Pan().runOnJS(true).minDistance(0).onBegin(e=>{
     const s=sim.current;grab.current={y:e.y/scale,start:s.y,active:Math.abs(e.x/scale-180)<58&&Math.abs(e.y/scale-s.y-12)<65};
-    if(grab.current.active)s.drag=true;
-  }).onUpdate(e=>{if(grab.current.active)zipTo(sim.current,grab.current.start+e.y/scale-grab.current.y,e.velocityX*.002,true);}).onFinalize(()=>{
-    sim.current.drag=false;grab.current.active=false;
-    latest.current.onOpeningChange?.((sim.current.target-ZIP_TOP)/(ZIP_BOTTOM-ZIP_TOP));
+    if(grab.current.active){s.drag=true;s.target=s.y;s.vy=0;}
+  }).onUpdate(e=>{if(grab.current.active){zipTo(sim.current,grab.current.start+e.translationY/scale,e.velocityX*.002,true);publish();}}).onFinalize(()=>{
+    const owned=grab.current.active;sim.current.drag=false;grab.current.active=false;
+    if(owned)latest.current.onOpeningChange?.((sim.current.target-ZIP_TOP)/(ZIP_BOTTOM-ZIP_TOP));
   });
-  return <GestureHandlerRootView style={[styles.root,style]}><GestureDetector gesture={pan}><View accessible accessibilityRole="adjustable" accessibilityLabel="Zipper reveal" accessibilityHint="Drag the metal pull down to open or up to close. Open and Close buttons are also available." accessibilityActions={[{name:'increment',label:'Open further'},{name:'decrement',label:'Close further'}]} onAccessibilityAction={e=>change(sim.current.target+(e.nativeEvent.actionName==='increment'?45:-45))} style={[styles.panel,{width:ZIP_W*scale,height:ZIP_H*scale}]}>
+  return <GestureHandlerRootView onLayout={e=>setAvailable(e.nativeEvent.layout.width)} style={[styles.root,style]}><GestureDetector gesture={pan}><View accessible accessibilityValue={{min:0,max:100,now:opening,text:`${opening}% open`}} accessibilityRole="adjustable" accessibilityLabel="Zipper reveal" accessibilityHint="Drag the metal pull down to open or up to close. Open and Close buttons are also available." accessibilityActions={[{name:'increment',label:'Open further'},{name:'decrement',label:'Close further'}]} onAccessibilityAction={e=>change(sim.current.target+(e.nativeEvent.actionName==='increment'?45:-45))} style={[styles.panel,{width:ZIP_W*scale,height:ZIP_H*scale}]}>
     <Canvas style={{width:ZIP_W*scale,height:ZIP_H*scale}}><Group transform={[{scale}]}>{picture?<Picture picture={picture}/>:null}</Group></Canvas>
   </View></GestureDetector><View style={styles.controls}>
     <Pressable accessibilityRole="button" onPress={()=>change(ZIP_TOP)} style={styles.button}><Text style={styles.label}>Close</Text></Pressable>
     <Pressable accessibilityRole="button" onPress={()=>change(ZIP_BOTTOM)} style={styles.button}><Text style={styles.label}>Open</Text></Pressable>
-    <Pressable accessibilityRole="button" accessibilityState={{selected:slow}} onPress={()=>setSlow(v=>!v)} style={styles.button}><Text style={styles.label}>{slow?'Slow motion on':'Slow motion'}</Text></Pressable>
+    <Pressable accessibilityRole="button" disabled={slowMotion} accessibilityState={{selected:slowMotion||slow,disabled:slowMotion}} onPress={()=>setSlow(v=>!v)} style={styles.button}><Text style={styles.label}>{slowMotion||slow?'Slow motion on':'Slow motion'}</Text></Pressable>
   </View></GestureHandlerRootView>;
 }
 const styles=StyleSheet.create({root:{alignItems:'center',width:'100%'},panel:{width:ZIP_W,height:ZIP_H,borderRadius:14,overflow:'hidden',backgroundColor:'#e9dac1'},controls:{flexDirection:'row',gap:8,marginTop:16,justifyContent:'center'},button:{minHeight:44,paddingHorizontal:14,justifyContent:'center',borderRadius:8,borderWidth:1,borderColor:'#cad1c9'},label:{fontFamily:'Geist',fontSize:12,color:'#31513b'}});

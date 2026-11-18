@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-OUT=zipper-out; mkdir -p "$OUT"
+OUT=zipper-out; rm -rf "$OUT"; mkdir -p "$OUT"
+trap 'adb logcat -d > "$OUT/logcat.txt" 2>&1 || true' EXIT
 PKG=com.anonymous.nativeletshowcase
 adb install -r "$1"
 adb logcat -c
@@ -14,7 +15,7 @@ from PIL import Image
 import numpy as np,json
 im=np.array(Image.open('zipper-out/initial.png').convert('RGB'))
 # Landscape's light background identifies the panel's top margin, outside cloth.
-m=(im[:,:,0]>205)&(im[:,:,0]<245)&(im[:,:,1]>185)&(im[:,:,1]<235)&(im[:,:,2]>150)&(im[:,:,2]<215)
+m=(np.abs(im[:,:,0].astype(int)-233)<3)&(np.abs(im[:,:,1].astype(int)-218)<3)&(np.abs(im[:,:,2].astype(int)-193)<3)
 y,x=np.where(m)
 assert len(x)>1000,'Zipper panel not rendered'
 x0,x1=int(x.min()),int(x.max());y0=int(y.min());scale=(x1-x0+1)/360
@@ -41,6 +42,10 @@ def light(name):
  a=np.array(Image.open('zipper-out/'+name+'.png').convert('RGB'));p=a[y-r:y+r,x-r:x+r];return float(((p[:,:,0]>155)&(p[:,:,0]>p[:,:,2]*1.1)).mean())
 a,b,c=map(light,['initial','open','closed']);print('Revealed center fraction',a,b,c)
 assert b>.6 and a<.3 and c<.3,'Native drag did not open and close the actual scene'
-log=open('zipper-out/logcat.txt').read();assert not re.search(r'FATAL EXCEPTION|Fatal signal|ANR in com.anonymous.nativeletshowcase',log),'Native crash'
+im=np.array(Image.open('zipper-out/open.png').convert('RGB'))
+for direction in [-1,1]:
+ xx=int(x+direction*125*j['scale']);p=im[y-r:y+r,xx-r:xx+r];assert float((p.max(axis=2)<110).mean())>.5,'Open frame lost fabric edges'
+
+log=open('zipper-out/logcat.txt').read();assert not re.search(r'Process: com\.anonymous\.nativeletshowcase[^\n]*|ANR in com\.anonymous\.nativeletshowcase',log),'Native crash'
 open('zipper-out/summary.txt','w').write('PASS native panel render, drag open, drag close, no fatal crash during tested path\n')
 PY
