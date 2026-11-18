@@ -26,6 +26,9 @@
       ],
       "qrcode-generator": [
         "./node_modules/qrcode-generator"
+      ],
+      "react-native-gesture-handler": [
+        "./node_modules/react-native-gesture-handler"
       ]
     },
     "typeRoots": [

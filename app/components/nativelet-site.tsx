@@ -53,6 +53,7 @@ import { GlassShatterPreview } from "./glass-shatter";
 import { VoiceRecorderPreview } from "./voice-recorder";
 import { CymaticsPreview } from "./cymatics";
 import { NewtonsCradlePreview } from "./newtons-cradle";
+import { ZipperRevealPreview } from "./zipper-reveal";
 import { GyroscopePreview } from "./gyroscope";
 import { GaltonBoardPreview } from "./galton-board";
 import { PinArtBoardPreview } from "./pin-art-board";
@@ -152,6 +153,7 @@ const capsuleDescriptions: Record<CapsuleState, string> = {
 };
 
 const COMPONENT_NAMES: [string, string][] = [
+  ["Zipper Reveal", "Pull to unzip, reveal and close · fabric with a little give"],
   ["Newton's Cradle", "Pull back and release · momentum clicks through, same count swings out"],
   ["Venom Button", "Tendrils reach out, grab your finger and snap back"],
   ["Glass Shatter", "Break a pane of glass · 360 shards fall, spin and collide"],
@@ -225,6 +227,7 @@ export default function NativeletSite({
       .every((word) => `${name} ${description}`.toLowerCase().includes(word));
   const visibleCount = COMPONENT_NAMES.filter(([name, description]) => matches(name, description)).length;
   const [orientation, setOrientation] = useState<"vertical" | "horizontal">("vertical");
+  const [dialogOpen,setDialogOpen]=useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
   const savedOverflow = useRef("");
@@ -244,6 +247,7 @@ export default function NativeletSite({
     const modal = dialog.current;
     if (!modal) return;
     modal.showModal();
+    setDialogOpen(true);
     const from = originTransform();
     if (from && modal.animate) {
       modal.animate(
@@ -294,6 +298,7 @@ export default function NativeletSite({
     };
   }
   function afterClose() {
+    setDialogOpen(false);
     document.body.style.overflow = savedOverflow.current;
     opener.current?.focus();
   }
@@ -582,6 +587,10 @@ export default function NativeletSite({
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniCradle}><i /><i /><i /><i /><i /></div></div>
                 <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 47</span><strong>Newton&apos;s Cradle</strong><small>Pull back and release · momentum clicks through, same count swings out</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
+              <button className={gallery.tile} hidden={!matches("Zipper Reveal", "Pull to unzip, reveal and close · fabric with a little give")} onClick={(event) => openComponent(event, "zipper")} aria-haspopup="dialog" aria-label="Open Zipper Reveal web preview">
+                <div className={gallery.study} aria-hidden="true"><img src="/zipper-cover.svg" alt="" style={{height:"140px",width:"auto",maxWidth:"74%",borderRadius:"10px",boxShadow:"0 6px 14px #17252422"}} /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 50</span><strong>Zipper Reveal</strong><small>Pull to unzip, reveal and close · fabric with a little give</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+              </button>
               <button className={gallery.tile} hidden={!matches("Gyroscope", "Flick the rotor, torque the gimbals · angular momentum in three dimensions")} onClick={(event) => openComponent(event, "gyro")} aria-haspopup="dialog" aria-label="Open Gyroscope web preview">
                 <div className={gallery.study} aria-hidden="true"><img src="/gyroscope-cover.svg" alt="" style={{height:"132px",width:"auto",maxWidth:"72%",objectFit:"contain",borderRadius:"14px",boxShadow:"0 6px 14px rgba(4,8,16,0.35)"}} /></div>
                 <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 49</span><strong>Gyroscope</strong><small>Flick the rotor, torque the gimbals · angular momentum in three dimensions</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
@@ -721,7 +730,7 @@ export default function NativeletSite({
               </div>
               {panel === "preview" ? (
                 <>
-                {which === "gyro" ? <GyroscopePreview /> : which === "galton" ? <GaltonBoardPreview /> : which === "cradle" ? <NewtonsCradlePreview /> : which === "pins" ? <PinArtBoardPreview /> : which === "plasma" ? <PlasmaGlobePreview /> : which === "cymatics" ? <CymaticsPreview /> : which === "venom" ? <VenomButtonPreview /> : which === "recorder" ? <VoiceRecorderPreview /> : which === "shatter" ? <GlassShatterPreview /> : which === "crumple" ? <PaperCrumplePreview /> : which === "flow" ? <FlowFieldPreview /> : which === "player" ? <MiniPlayerPreview /> : which === "path" ? <MotionPathPreview /> : which === "timeline" ? <TimelineTrimPreview /> : which === "wheel" ? <WheelTimePickerPreview /> : which === "range" ? <RangeStackPreview /> : which === "strings" ? <PluckedStringsPreview /> : which === "hourglass" ? <SandHourglassPreview /> : which === "prism" ? <PrismPreview /> : which === "reveal" ? <CodeRevealPreview /> : which === "coin" ? <CoinPreview /> : which === "blackhole" ? <BlackHoleLensPreview /> : which === "pendulum" ? <ChaosPendulumPreview /> : which === "fog" ? <FoggedGlassPreview /> : which === "banner" ? <ClothBannerPreview /> : which === "flap" ? <SplitFlapBoardPreview /> : which === "mosaic" ? <MosaicGalleryPreview /> : which === "bubbles" ? <BubblePickerPreview /> : which === "transitions" ? <GLTransitionsPreview /> : which === "fold" ? <FoldedPassPreview /> : which === "genie" ? <GenieDismissPreview /> : which === "morph" ? <TextMorphPreview /> : which === "light" ? <LightPaintingPreview /> : which === "blossom" ? <BlossomQRPreview /> : which === "orbit" ? <OrbitQRPreview /> : which === "curl" ? <PageCurlPreview /> : which === "pinch" ? <PinchGalleryPreview /> : which === "chart" ? <ScrubChartPreview /> : which === "lens" ? <GlassLensPreview /> : which === "ripple" ? <RippleRevealPreview /> : which === "gooey" ? <GooeyMenuPreview /> : which === "carousel" ? <StackedCarouselPreview /> : which === "sort" ? <DragToSortPreview /> : which === "expand" ? <ExpandingCardPreview /> : which === "swipe" ? <SwipeRowPreview /> : which === "glass" ? <LiquidTabsPreview /> : which === "toast" ? <ToastStackPreview /> : which === "capsule" ? (
+                {which === "zipper" ? (dialogOpen ? <ZipperRevealPreview /> : null) : which === "gyro" ? <GyroscopePreview /> : which === "galton" ? <GaltonBoardPreview /> : which === "cradle" ? <NewtonsCradlePreview /> : which === "pins" ? <PinArtBoardPreview /> : which === "plasma" ? <PlasmaGlobePreview /> : which === "cymatics" ? <CymaticsPreview /> : which === "venom" ? <VenomButtonPreview /> : which === "recorder" ? <VoiceRecorderPreview /> : which === "shatter" ? <GlassShatterPreview /> : which === "crumple" ? <PaperCrumplePreview /> : which === "flow" ? <FlowFieldPreview /> : which === "player" ? <MiniPlayerPreview /> : which === "path" ? <MotionPathPreview /> : which === "timeline" ? <TimelineTrimPreview /> : which === "wheel" ? <WheelTimePickerPreview /> : which === "range" ? <RangeStackPreview /> : which === "strings" ? <PluckedStringsPreview /> : which === "hourglass" ? <SandHourglassPreview /> : which === "prism" ? <PrismPreview /> : which === "reveal" ? <CodeRevealPreview /> : which === "coin" ? <CoinPreview /> : which === "blackhole" ? <BlackHoleLensPreview /> : which === "pendulum" ? <ChaosPendulumPreview /> : which === "fog" ? <FoggedGlassPreview /> : which === "banner" ? <ClothBannerPreview /> : which === "flap" ? <SplitFlapBoardPreview /> : which === "mosaic" ? <MosaicGalleryPreview /> : which === "bubbles" ? <BubblePickerPreview /> : which === "transitions" ? <GLTransitionsPreview /> : which === "fold" ? <FoldedPassPreview /> : which === "genie" ? <GenieDismissPreview /> : which === "morph" ? <TextMorphPreview /> : which === "light" ? <LightPaintingPreview /> : which === "blossom" ? <BlossomQRPreview /> : which === "orbit" ? <OrbitQRPreview /> : which === "curl" ? <PageCurlPreview /> : which === "pinch" ? <PinchGalleryPreview /> : which === "chart" ? <ScrubChartPreview /> : which === "lens" ? <GlassLensPreview /> : which === "ripple" ? <RippleRevealPreview /> : which === "gooey" ? <GooeyMenuPreview /> : which === "carousel" ? <StackedCarouselPreview /> : which === "sort" ? <DragToSortPreview /> : which === "expand" ? <ExpandingCardPreview /> : which === "swipe" ? <SwipeRowPreview /> : which === "glass" ? <LiquidTabsPreview /> : which === "toast" ? <ToastStackPreview /> : which === "capsule" ? (
                   <>
                     <div className={gallery.orientation} role="group" aria-label="Capsule state">
                       {CAPSULE_STATES.map((name) => (
