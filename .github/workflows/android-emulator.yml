@@ -2,6 +2,11 @@ name: Android emulator smoke
 on:
   workflow_dispatch:
     inputs:
+      water_validation_only:
+        description: 'Run only Water Tank native rendering and gesture checks.'
+        type: boolean
+        required: false
+        default: false
       zipper_validation_only:
         description: 'Run only Zipper Reveal native gesture and visual checks.'
         type: boolean
@@ -32,17 +37,25 @@ on:
 permissions:
   contents: read
 jobs:
+  validate-water-input:
+    if: ${{ inputs.water_validation_only == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject conflicting Water-only inputs
+        env:
+          CONFLICT: ${{ inputs.zipper_validation_only || inputs.runtime_qualification_only || inputs.gyro_diagnostics_only || inputs.gyro_validation_only || inputs.macos_gpu_probe_only }}
+        run: test "$CONFLICT" != "true"
   validate-zipper-input:
     if: ${{ inputs.zipper_validation_only == true }}
     runs-on: ubuntu-latest
     steps:
       - name: Reject conflicting Zipper-only inputs
         env:
-          CONFLICT: ${{ inputs.runtime_qualification_only || inputs.gyro_diagnostics_only || inputs.gyro_validation_only || inputs.macos_gpu_probe_only }}
+          CONFLICT: ${{ inputs.water_validation_only || inputs.runtime_qualification_only || inputs.gyro_diagnostics_only || inputs.gyro_validation_only || inputs.macos_gpu_probe_only }}
         run: test "$CONFLICT" != "true"
   build:
-    needs: validate-zipper-input
-    if: ${{ always() && (needs.validate-zipper-input.result == 'success' || needs.validate-zipper-input.result == 'skipped') && inputs.runtime_qualification_only != true }}
+    needs: [validate-zipper-input, validate-water-input]
+    if: ${{ always() && (needs.validate-zipper-input.result == 'success' || needs.validate-zipper-input.result == 'skipped') && (needs.validate-water-input.result == 'success' || needs.validate-water-input.result == 'skipped') && inputs.runtime_qualification_only != true }}
     # original build condition retained below for traceability
     # if: ${{ inputs.runtime_qualification_only != true }}
     runs-on: ubuntu-latest
@@ -70,7 +83,7 @@ jobs:
           name: apk
           path: apps/showcase/android/app/build/outputs/apk/release/*.apk
   emulator:
-    if: ${{ inputs.zipper_validation_only != true && ( inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true && inputs.gyro_diagnostics_only != true && inputs.macos_gpu_probe_only != true ) }}
+    if: ${{ inputs.water_validation_only != true && inputs.zipper_validation_only != true && ( inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true && inputs.gyro_diagnostics_only != true && inputs.macos_gpu_probe_only != true ) }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -274,3 +287,43 @@ jobs:
         with:
           name: zipper-native-results
           path: zipper-out
+
+  water-validation:
+    if: ${{ inputs.water_validation_only == true }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Water Tank rendering and gesture evidence
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim
+          disable-animations: false
+          script: bash scripts/android-water.sh apk/*.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: water-native-results
+          path: water-out

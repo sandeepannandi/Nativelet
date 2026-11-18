@@ -1,0 +1,19 @@
+{
+  "slug": "water-tank",
+  "title": "Water Tank",
+  "category": "interaction",
+  "files": [
+    "WaterTank.tsx",
+    "waterMath.ts",
+    "waterShader.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-gesture-handler"
+  ]
+}
