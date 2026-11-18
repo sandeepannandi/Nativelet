@@ -11,38 +11,63 @@ float heightAt(float2 p){
  float2 uv=clamp((p+float2(1.25,.95))/float2(2.5,1.9),float2(0.0),float2(1.0));
  // Bilinear interpolation commutes with this linear two-byte decode.
  float2 encoded=heightmap.eval(uv*float2(127.0,95.0)+float2(.5)).rg;
- return (dot(encoded,float2(65280.0,255.0))/65535.0-.5)*.24;
+ float h=(dot(encoded,float2(65280.0,255.0))/65535.0-.5)*.24;
+ // Low-amplitude travelling capillary detail. The heightfield still owns large
+ // interactive waves; these optical ripples keep an idle surface from looking solid.
+ float edge=smoothstep(0.0,.12,min(1.25-abs(p.x),.95-abs(p.y)));
+ h+=edge*(.00125*sin(dot(p,float2(19.0,26.0))-clock*2.7)
+          +.0009*sin(dot(p,float2(-31.0,17.0))+clock*3.1)
+          +.0006*sin(dot(p,float2(43.0,9.0))-clock*3.8));
+ return h;
 }
 float3 normalAt(float2 p){float e=0.008;return normalize(float3(heightAt(p-float2(e,0.0))-heightAt(p+float2(e,0.0)),2.0*e,heightAt(p-float2(0.0,e))-heightAt(p+float2(0.0,e))));}
 float3 sky(float3 d){
- float3 c=mix(float3(0.64,0.77,0.84),float3(0.24,0.44,0.57),clamp(d.y,0.0,1.0));
- float3 sun=normalize(float3(-0.45,1.0,0.4));
- c+=float3(1.0,0.91,0.71)*pow(max(0.0,dot(d,sun)),420.0)*2.5;
- // Broad skylight reflections, rather than a moving painted highlight.
- c+=float3(0.5,0.57,0.58)*pow(max(0.0,dot(d,normalize(float3(-1.0,0.65,-0.6)))),18.0);
+ float3 c=mix(float3(.84,.90,.91),float3(.22,.45,.66),smoothstep(-.03,.8,d.y));
+ // A soft bright window and dark foliage give moving normals something to reflect.
+ float2 cloudUV=float2((d.x+.40)*3.0,(d.z+.4)*2.3);
+ float cloud=exp(-dot(cloudUV,cloudUV));
+ c=mix(c,float3(.97,.97,.92),cloud*.8);
+ float foliage=(1.0-smoothstep(.02,.22,d.y))*(.5+.5*sin(d.x*18.0+d.z*14.0));
+ c=mix(c,float3(.12,.22,.19),foliage*.55);
+ c+=float3(1.0,.91,.71)*pow(max(0.0,dot(d,normalize(float3(-.45,1.0,.4)))),420.0)*3.0;
  return c;
 }
 float sphereHit(float3 o,float3 d){float3 oc=o-ball;float b=dot(oc,d);float c=dot(oc,oc)-0.255*0.255;float disc=b*b-c;if(disc<0.0)return 1000.0;float t=-b-sqrt(disc);return t>0.001?t:1000.0;}
-float focusLight(float2 p){
- float3 n=normalAt(p-float2(-0.45,0.4)*0.32);
- float3 nx=normalAt(p+float2(0.018,0.0)-float2(-0.45,0.4)*0.32);
- float3 nz=normalAt(p+float2(0.0,0.018)-float2(-0.45,0.4)*0.32);
- float a=1.0+(nx.x-n.x)*15.0,b=(nz.x-n.x)*15.0;
- float c=(nx.z-n.z)*15.0,d=1.0+(nz.z-n.z)*15.0;
- return clamp(0.62/max(0.13,abs(a*d-b*c)),0.25,3.7);
+float2 lightLanding(float2 p,float depth){
+ float3 d=refract(normalize(float3(.45,-1.0,-.4)),normalAt(p),1.0/1.333);
+ return p+d.xz*(depth/max(.2,-d.y));
+}
+float focusLight(float3 hit){
+ // Invert the sun-ray landing map, then estimate its area Jacobian. Folds in
+ // this map concentrate sunlight into narrow caustic ridges, not painted blobs.
+ float depth=max(.03,-hit.y);
+ float2 p=hit.xz-float2(.28,-.25)*depth;
+ p+=clamp(hit.xz-lightLanding(p,depth),float2(-.08),float2(.08));
+ float e=.009;
+ float2 a=(lightLanding(p+float2(e,0.0),depth)-lightLanding(p-float2(e,0.0),depth))/(2.0*e);
+ float2 b=(lightLanding(p+float2(0.0,e),depth)-lightLanding(p-float2(0.0,e),depth))/(2.0*e);
+ float det=abs(a.x*b.y-a.y*b.x);
+ return clamp(.65/max(.12,det),.30,3.2);
 }
 float3 tile(float3 p,float3 n){
  float2 uv=abs(n.y)>0.5?p.xz:(abs(n.x)>0.5?p.zy:p.xy);
  float2 g=abs(fract(uv*8.0)-0.5);
  float line=smoothstep(0.452,0.482,max(g.x,g.y));
  float hash=fract(sin(dot(floor(uv*8.0),float2(127.1,311.7)))*43758.5453);
- float3 c=mix(float3(0.55,0.72,0.70),float3(0.43,0.65,0.64),hash*.6);
- c=mix(c,float3(0.37,0.52,0.50),line*.7);
+ float3 c=mix(float3(.38,.69,.70),float3(.27,.58,.61),hash*.45);
+ // Glazed ceramic faces, with recessed pale grout and a fine bevel.
+ float bevel=smoothstep(.40,.455,max(g.x,g.y));
+ c*=1.0-bevel*.12;
+ c=mix(c,float3(.30,.44,.43),line*.85);
  float light=0.45+0.55*max(0.0,dot(n,normalize(float3(-0.45,1.0,0.4))));
- float caustic=focusLight(p.xz)*(0.55+max(0.0,n.y)*.45);
- float shadow=1.0-0.65*exp(-dot((p.xz-ball.xz-float2(.12,-.1))*3.8,(p.xz-ball.xz-float2(.12,-.1))*3.8));
+ float caustic=focusLight(p)*(0.38+max(0.0,n.y)*.62);
+ float3 sun=normalize(float3(-.45,1.0,.4));
+ float3 toBall=ball-p;float along=max(0.0,dot(toBall,sun));
+ float radial=length(toBall-sun*along);
+ float shadow=mix(.25,1.0,smoothstep(.18,.30+along*.035,radial));
+ float contact=1.0-.18*exp(-dot(p.xz-ball.xz,p.xz-ball.xz)*20.0);
  float ao=clamp(min(1.25-abs(p.x),.95-abs(p.z))*4.0,.48,1.0);
- return c*(light*.65+caustic*.52)*shadow*ao;
+ return c*(light*.78+caustic*.36)*shadow*ao*contact;
 }
 float3 underWater(float3 o,float3 d){
  float t=(-.8-o.y)/d.y;float3 n=float3(0.0,1.0,0.0);
@@ -53,10 +78,10 @@ float3 underWater(float3 o,float3 d){
  float ts=sphereHit(o,d);float3 c;
  if(ts<t){t=ts;float3 p=o+d*t;float3 sn=normalize(p-ball);
  float diffuse=max(0.0,dot(sn,normalize(float3(-.45,1.0,.4))));
- c=float3(.77,.89,.84)*(.25+.65*diffuse+focusLight(p.xz)*.28);
+ c=float3(.77,.89,.84)*(.25+.65*diffuse+focusLight(p)*.24);
  c+=float3(.8,.9,.9)*pow(max(0.0,dot(reflect(-normalize(float3(-.45,1.0,.4)),sn),-d)),65.0)*.6;
  }else{c=tile(o+d*t,n);}
- float3 transmission=exp(-float3(.48,.10,.045)*max(t,0.0));
+ float3 transmission=exp(-float3(.36,.075,.035)*max(t,0.0));
  return c*transmission+float3(.035,.30,.37)*(1.0-transmission);
 }
 half4 main(float2 frag){
@@ -74,6 +99,10 @@ half4 main(float2 frag){
   float3 rd=refract(ray,n,1.0/1.333);
   float fresnel=.02037+.97963*pow(1.0-max(0.0,dot(-ray,n)),5.0);
   c=mix(underWater(p+rd*.002,rd),sky(reflect(ray,n)),fresnel);
+  // Wet meniscus darkens the perimeter and catches a thin reflected rim.
+  float edge=min(1.25-abs(p.x),.95-abs(p.z));
+  c*=mix(.62,1.0,smoothstep(0.0,.025,edge));
+  c+=float3(.18,.24,.23)*exp(-edge*260.0);
   c+=float3(1.0,.95,.78)*pow(max(0.0,dot(reflect(ray,n),normalize(float3(-.45,1.0,.4)))),230.0)*1.4;
  }else{
   float tr=(.045-eye.y)/ray.y;float3 pr=eye+ray*tr;
