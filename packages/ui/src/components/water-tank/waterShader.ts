@@ -1,5 +1,5 @@
 /** Original single-pass optics renderer shared by Skia SkSL and WebGL.
- * Linear surface waves, Snell refraction and Schlick Fresnel. Caustic intensity is a
+ * Shallow-water surface waves, Snell refraction and Schlick Fresnel. Caustic intensity is a
  * local focusing estimate; this is not path-traced light transport or splashing fluid.
  */
 export const WATER_SHADER=`
@@ -9,17 +9,9 @@ uniform float3 ball;
 uniform shader heightmap;
 float heightAt(float2 p){
  float2 uv=clamp((p+float2(1.25,.95))/float2(2.5,1.9),float2(0.0),float2(1.0));
- // Decode before interpolation: interpolating separately encoded bytes creates discontinuities.
- float2 q=uv*float2(63.0,47.0),lo=floor(q),f=fract(q);
- float2 a=heightmap.eval(lo+float2(.5,.5)).rg;
- float2 b=heightmap.eval(lo+float2(1.5,.5)).rg;
- float2 c=heightmap.eval(lo+float2(.5,1.5)).rg;
- float2 d=heightmap.eval(lo+float2(1.5,1.5)).rg;
- float ha=dot(a,float2(65280.0,255.0))/65535.0;
- float hb=dot(b,float2(65280.0,255.0))/65535.0;
- float hc=dot(c,float2(65280.0,255.0))/65535.0;
- float hd=dot(d,float2(65280.0,255.0))/65535.0;
- return (mix(mix(ha,hb,f.x),mix(hc,hd,f.x),f.y)-.5)*.24;
+ // Bilinear interpolation commutes with this linear two-byte decode.
+ float2 encoded=heightmap.eval(uv*float2(127.0,95.0)+float2(.5)).rg;
+ return (dot(encoded,float2(65280.0,255.0))/65535.0-.5)*.24;
 }
 float3 normalAt(float2 p){float e=0.008;return normalize(float3(heightAt(p-float2(e,0.0))-heightAt(p+float2(e,0.0)),2.0*e,heightAt(p-float2(0.0,e))-heightAt(p+float2(0.0,e))));}
 float3 sky(float3 d){
@@ -45,7 +37,7 @@ float3 tile(float3 p,float3 n){
  float line=smoothstep(0.452,0.482,max(g.x,g.y));
  float hash=fract(sin(dot(floor(uv*8.0),float2(127.1,311.7)))*43758.5453);
  float3 c=mix(float3(0.55,0.72,0.70),float3(0.43,0.65,0.64),hash*.6);
- c=mix(c,float3(0.25,0.39,0.38),line*.8);
+ c=mix(c,float3(0.37,0.52,0.50),line*.7);
  float light=0.45+0.55*max(0.0,dot(n,normalize(float3(-0.45,1.0,0.4))));
  float caustic=focusLight(p.xz)*(0.55+max(0.0,n.y)*.45);
  float shadow=1.0-0.65*exp(-dot((p.xz-ball.xz-float2(.12,-.1))*3.8,(p.xz-ball.xz-float2(.12,-.1))*3.8));
@@ -64,8 +56,8 @@ float3 underWater(float3 o,float3 d){
  c=float3(.77,.89,.84)*(.25+.65*diffuse+focusLight(p.xz)*.28);
  c+=float3(.8,.9,.9)*pow(max(0.0,dot(reflect(-normalize(float3(-.45,1.0,.4)),sn),-d)),65.0)*.6;
  }else{c=tile(o+d*t,n);}
- float3 transmission=exp(-float3(.30,.075,.045)*max(t,0.0));
- return c*transmission+float3(.035,.28,.31)*(1.0-transmission);
+ float3 transmission=exp(-float3(.48,.10,.045)*max(t,0.0));
+ return c*transmission+float3(.035,.30,.37)*(1.0-transmission);
 }
 half4 main(float2 frag){
  float2 uv=(frag/resolution*2.0-1.0);uv.y=-uv.y;uv.x*=resolution.x/resolution.y;
@@ -99,4 +91,4 @@ half4 main(float2 frag){
  return half4(half3(c),1.0);
 }
 `;
-export function webFragment(){return 'precision highp float;\n'+WATER_SHADER.replace('uniform shader heightmap;','uniform sampler2D heightmap;').replace(/heightmap\.eval\((lo\+float2\([^)]*\))\)/g,'texture2D(heightmap,clamp($1,float2(.5),float2(63.5,47.5))/float2(64.0,48.0))').replace(/half4 main\(float2 frag\)/,'vec4 render(vec2 frag)').replace(/\bfloat2\b/g,'vec2').replace(/\bfloat3\b/g,'vec3').replace(/\bfloat4\b/g,'vec4').replace(/\bhalf3\b/g,'vec3').replace(/\bhalf4\b/g,'vec4')+'\nvoid main(){gl_FragColor=render(vec2(gl_FragCoord.x,resolution.y-gl_FragCoord.y));}';}
+export function webFragment(){return 'precision highp float;\n'+WATER_SHADER.replace('uniform shader heightmap;','uniform sampler2D heightmap;').replace('heightmap.eval(uv*float2(127.0,95.0)+float2(.5))','texture2D(heightmap,(uv*float2(127.0,95.0)+float2(.5))/float2(128.0,96.0))').replace(/half4 main\(float2 frag\)/,'vec4 render(vec2 frag)').replace(/\bfloat2\b/g,'vec2').replace(/\bfloat3\b/g,'vec3').replace(/\bfloat4\b/g,'vec4').replace(/\bhalf3\b/g,'vec3').replace(/\bhalf4\b/g,'vec4')+'\nvoid main(){gl_FragColor=render(vec2(gl_FragCoord.x,resolution.y-gl_FragCoord.y));}';}

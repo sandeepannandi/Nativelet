@@ -28,6 +28,8 @@ PY
 adb shell input swipe "$X" "$Y" "$TX" "$TY" 1400
 sleep 1
 adb exec-out screencap -p > "$OUT/moved.png"
+sleep 1
+adb exec-out screencap -p > "$OUT/waves-later.png"
 adb shell input swipe "$TX" "$TY" "$X" "$Y" 1400
 sleep 1
 adb exec-out screencap -p > "$OUT/returned.png"
@@ -63,6 +65,7 @@ pa,pc,pd=map(sphere,[a,c,d]);travel=np.linalg.norm(pc-pa);print('Sphere centroid
 assert travel>w*.035,'Native gesture did not move rendered sphere'
 assert np.linalg.norm(pd-pc)>w*.025,'Return gesture did not move sphere'
 assert np.abs(a-c).mean()>.8,'No rendered scene change'
+e=load('waves-later');region=np.abs(c-e)[int(h*.35):int(h*.70),int(w*.15):int(w*.86)];print('Moving water difference',region.mean());assert region.mean()>.12,'Native waves are frozen after release'
 log=open('water-out/logcat.txt').read();assert not re.search(r'Process: com\.anonymous\.nativeletshowcase[^\n]*|ANR in com\.anonymous\.nativeletshowcase|Shader compilation failed|Water renderer unavailable',log),'Native crash or shader failure'
-open('water-out/summary.txt','w').write('PASS native water render, sphere drag and return, scene response, no detected crash on tested path\n')
+open('water-out/summary.txt','w').write('PASS native water render, sphere drag and return, continuing wave animation, no detected crash on tested path\n')
 PY
