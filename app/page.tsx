@@ -3,6 +3,7 @@ import { join } from "node:path";
 import NativeletSite from "./components/nativelet-site";
 
 const components = {
+  zipper: { dir: "packages/ui/src/components/zipper-reveal", files: ["ZipperReveal.tsx", "zipperMath.ts", "Example.tsx", "README.md", "LICENSE"] },
   gyro: { dir: "packages/ui/src/components/gyroscope", files: ["Gyroscope.tsx", "gyroMath.ts", "gyroControl.ts", "gyroShader.ts", "Example.tsx", "README.md", "LICENSE"] },
   cradle: { dir: "packages/ui/src/components/newtons-cradle", files: ["NewtonsCradle.tsx", "cradleMath.ts", "cradleDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   galton: { dir: "packages/ui/src/components/galton-board", files: ["GaltonBoard.tsx", "galtonMath.ts", "galtonDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
@@ -69,6 +70,7 @@ function read(dir: string, files: readonly string[]) {
 
 export default function Home() {
   const sources = {
+    zipper: read(components.zipper.dir, components.zipper.files),
     cradle: read(components.cradle.dir, components.cradle.files),
     galton: read(components.galton.dir, components.galton.files),
     gyro: read(components.gyro.dir, components.gyro.files),
