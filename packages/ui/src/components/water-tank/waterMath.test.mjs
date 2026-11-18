@@ -10,3 +10,5 @@ const pixels=m.heightPixels(s);assert.equal(pixels.length,m.GRID_X*m.GRID_Z*4);f
 s=m.createWater();const oldX=s.x,oldZ=s.z;const g=m.beginWaterDrag(s,380*.54,410*.53,380,410);assert(g.owned,'Projection picks rendered sphere');assert.equal(s.x,oldX,'Grab does not teleport');assert.equal(s.z,oldZ);m.updateWaterDrag(s,g,380*.72,410*.58,380,410);assert(Math.hypot(s.x-oldX,s.z-oldZ)>.2,'Drag moves sphere');
 const missed=m.beginWaterDrag(s,5,5,380,410);assert(!missed.owned);const position=[s.x,s.z];m.updateWaterDrag(s,missed,200,200,380,410);assert.deepEqual([s.x,s.z],position,'Missed grab never takes ownership');
 console.log('PASS: volume-neutral impulse, fixed-step partition invariance, finite stress, boundaries, damping, height codec, perspective/refraction picking and grab ownership; peak height',peak);
+
+s=m.createWater();const still=Array.from(s.h);for(let i=0;i<10;i++)m.moveBall(s,s.x+.002,s.z);assert(s.h.some((v,i)=>v!==still[i]),'Tiny moves accumulate a wake');assert.deepEqual(m.waterPoint(190,-999,380,410),m.waterPoint(190,0,380,410),'Captured pointer clamps to canvas');console.log('PASS tiny movement accumulation and off-canvas projection bounds');
