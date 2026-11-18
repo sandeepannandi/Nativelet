@@ -143,7 +143,7 @@ jobs:
           name: android-smoke-results
           path: smoke-out
   runtime-qualification:
-    if: ${{ inputs.runtime_qualification_only == true && inputs.macos_gpu_probe_only != true }}
+    if: ${{ inputs.runtime_qualification_only == true && inputs.macos_gpu_probe_only != true && inputs.water_validation_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
