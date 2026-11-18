@@ -289,7 +289,7 @@ jobs:
           path: zipper-out
 
   water-validation:
-    if: ${{ inputs.water_validation_only == true }}
+    if: ${{ always() && inputs.water_validation_only == true && needs.build.result == 'success' }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 25
