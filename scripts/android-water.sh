@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 OUT=water-out; rm -rf "$OUT"; mkdir -p "$OUT"
-trap 'adb logcat -d > "$OUT/logcat.txt" 2>&1 || true' EXIT
+trap 'adb logcat -d > "$OUT/exit-logcat.txt" 2>&1 || true' EXIT
 PKG=com.anonymous.nativeletshowcase
 adb install -r "$1"
 adb logcat -c
 adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///water-tank' "$PKG"
 sleep 15
+adb shell rm -f /sdcard/water.xml
 adb shell uiautomator dump /sdcard/water.xml
 adb pull /sdcard/water.xml "$OUT/ui.xml"
 adb exec-out screencap -p > "$OUT/initial.png"
@@ -63,9 +64,12 @@ def sphere(im):
  return np.mean(p,axis=0)
 pa,pc,pd=map(sphere,[a,c,d]);travel=np.linalg.norm(pc-pa);print('Sphere centroids',pa,pc,pd,'travel',travel)
 assert travel>w*.035,'Native gesture did not move rendered sphere'
-assert np.linalg.norm(pd-pc)>w*.025,'Return gesture did not move sphere'
+assert np.linalg.norm(pd-pa)<np.linalg.norm(pc-pa)*.65,'Return gesture did not move sphere toward its starting position'
 assert np.abs(a-c).mean()>.8,'No rendered scene change'
 e=load('waves-later');region=np.abs(c-e)[int(h*.35):int(h*.70),int(w*.15):int(w*.86)];print('Moving water difference',region.mean());assert region.mean()>.12,'Native waves are frozen after release'
-log=open('water-out/logcat.txt').read();assert not re.search(r'Process: com\.anonymous\.nativeletshowcase[^\n]*|ANR in com\.anonymous\.nativeletshowcase|Shader compilation failed|Water renderer unavailable',log),'Native crash or shader failure'
+import subprocess
+subprocess.run(['adb','logcat','-d','-b','all'],stdout=open('water-out/logcat.txt','w'),check=True)
+log=open('water-out/logcat.txt').read();assert log.strip(),'Missing native logs'
+assert not re.search(r'Process: com\.anonymous\.nativeletshowcase[^\n]*|ANR in com\.anonymous\.nativeletshowcase|Cmdline: com\.anonymous\.nativeletshowcase|>>> com\.anonymous\.nativeletshowcase <<<|Shader compilation failed|Water renderer unavailable',log),'Native crash or shader failure'
 open('water-out/summary.txt','w').write('PASS native water render, sphere drag and return, continuing wave animation, no detected crash on tested path\n')
 PY

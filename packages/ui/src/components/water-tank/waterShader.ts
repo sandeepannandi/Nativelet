@@ -66,10 +66,10 @@ half4 main(float2 frag){
  float3 ray=normalize(f*2.8+r*uv.x+u*uv.y);
  float t=-eye.y/ray.y;float3 p=eye+ray*t;
  float3 c=float3(.91,.925,.90);
+ if(abs(p.x)<1.25&&abs(p.z)<.95){t=(heightAt(p.xz)-eye.y)/ray.y;p=eye+ray*t;t+=(heightAt(p.xz)-p.y)/ray.y;p=eye+ray*t;}
  if(abs(p.x)<1.25&&abs(p.z)<.95){
   // Refine water intersection without high-step raymarching.
-  t=(heightAt(p.xz)-eye.y)/ray.y;p=eye+ray*t;
-  t+=(heightAt(p.xz)-p.y)/ray.y;p=eye+ray*t;
+
   float3 n=normalAt(p.xz);
   float3 rd=refract(ray,n,1.0/1.333);
   float fresnel=.02037+.97963*pow(1.0-max(0.0,dot(-ray,n)),5.0);
