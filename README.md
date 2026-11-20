@@ -20,7 +20,6 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 
 ## Components
 
-- **Water Tank**: move a submerged ball through a tiled pool with reflecting waves, refraction and moving caustic light.
 
 - Newton's Cradle: pull back one chrome ball or a pair and release - momentum clicks through the line and the same count swings out, with real pendulum dynamics and gradual energy loss.
 - Voice Recorder: hold the mic to record a voice note - live waveform, slide left to cancel, drag up to lock, release to send a playable pill.
