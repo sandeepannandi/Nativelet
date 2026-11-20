@@ -1,0 +1,18 @@
+{
+  "slug": "pottery-wheel",
+  "files": [
+    "PotteryWheel.tsx",
+    "potteryMath.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "title": "Pottery Wheel",
+  "category": "interaction",
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-gesture-handler"
+  ]
+}

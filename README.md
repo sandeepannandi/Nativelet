@@ -21,6 +21,7 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 ## Components
 
 
+- Pottery Wheel: drag across a spinning lump of wet clay to press it in or pull it out - every slice keeps its volume, the rim wobbles and settles.
 - Newton's Cradle: pull back one chrome ball or a pair and release - momentum clicks through the line and the same count swings out, with real pendulum dynamics and gradual energy loss.
 - Voice Recorder: hold the mic to record a voice note - live waveform, slide left to cancel, drag up to lock, release to send a playable pill.
 - Glass Shatter: tap a glass pane and it breaks into about 360 shards that fall, spin and collide with real polygon contact.
