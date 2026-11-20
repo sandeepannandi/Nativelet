@@ -2,7 +2,7 @@ name: Android Pottery Wheel verification
 on:
   workflow_dispatch:
   push:
-    branches: [ci/android-pottery]
+    branches: [ci/android-pottery, ci/android-pottery-controls]
 permissions:
   contents: read
 jobs:
@@ -59,6 +59,7 @@ jobs:
           script: |
             adb install -r apk/*.apk
             bash scripts/android-pottery.sh
+            bash scripts/android-pottery-controls.sh
       - name: Fail closed on crash or missing evidence
         if: always()
         run: python3 scripts/check-android-results.py smoke-out --require-summary pottery
