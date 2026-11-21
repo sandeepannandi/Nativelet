@@ -9,16 +9,6 @@ const SITE = "https://nativelet.netlify.app";
 
 const COVERS: Partial<Record<ComponentId, string>> = {
   domino: "/domino-cover.svg",
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { META, type ComponentId } from "../component-registry";
-import styles from "./component-page.module.css";
-
-const REPO = "https://github.com/sandeepannandi/Nativelet";
-const SITE = "https://nativelet.netlify.app";
-
-const COVERS: Partial<Record<ComponentId, string>> = {
-  domino: "/domino-cover.svg",
   pottery: "/pottery-cover.svg",
   gyro: "/gyroscope-cover.svg",
   zipper: "/zipper-cover.svg",
