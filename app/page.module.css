@@ -975,6 +975,32 @@
   height: 29px;
   font-size: 22px;
 }
+.footerComponents {
+  margin-top: 36px;
+}
+.footerComponents h3 {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #668c45;
+  margin: 0 0 12px;
+}
+.footerComponents ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.footerComponents a {
+  font-size: 13px;
+  color: #26301f;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: #b9c4ac;
+}
 .footerCol {
   display: flex;
   flex-direction: column;
