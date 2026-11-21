@@ -949,6 +949,16 @@ export default function NativeletSite({
               <a href="/privacy">Privacy Policy</a>
             </motion.nav>
           </div>
+          <nav className={styles.footerComponents} aria-label="All components">
+            <h3>All components</h3>
+            <ul>
+              {(Object.keys(META) as ComponentId[]).map((id) => (
+                <li key={id}>
+                  <a href={`/components/${id}`}>{META[id].title}</a>
+                </li>
+              ))}
+            </ul>
+          </nav>
           <div className={styles.footerWord} aria-hidden="true">
             {"nativelet".split("").map((letter, index) => (
               <span key={index} className={styles.footerMask}>
