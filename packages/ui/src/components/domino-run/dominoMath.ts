@@ -14,8 +14,14 @@
 export const DOM_W = 360;
 export const DOM_H = 440;
 export const FLOOR_Y = 400;
-export const SQ = 0.8;
-export const SHEAR = 0.2;
+// Perspective camera: FOCAL is the viewer's distance in front of the table
+// edge, HORIZON the screen y the floor converges to, SQ the floor's drop per
+// unit of depth before perspective scaling. Anything at fv = 0 projects
+// exactly as before (k = 1), so the front edge is unchanged.
+export const FOCAL = 340;
+export const HORIZON = 244;
+export const SQ = 1.0;
+const CAM_CX = DOM_W / 2;
 export const DH = 64;
 export const DT = 12;
 export const DW = 30;
@@ -31,7 +37,7 @@ const BALANCE = Math.atan2(DT, DH);
 const FU0 = 30, FU1 = 290, FV0 = 16, FV1 = 270;
 
 export type DomPoint = { x: number; y: number };
-export type Domino = { s: number; th: number; om: number; top: number; bot: number; held: boolean; zz?: number };
+export type Domino = { s: number; th: number; om: number; top: number; bot: number; held: boolean; zz?: number; pose?: { x: number; y: number; tx: number; ty: number } };
 export type Dust = { fu: number; fv: number; h: number; vx: number; vy: number; vh: number; life: number };
 export type DominoSim = {
   path: DomPoint[];
@@ -60,13 +66,14 @@ export type DomMark = {
 
 /** Floor point (fu along the table, fv away from the viewer, h up) to screen. */
 export function project(fu: number, fv: number, h: number): DomPoint {
-  return { x: fu + fv * SHEAR, y: FLOOR_Y - fv * SQ - h };
+  const k = FOCAL / (FOCAL + fv);
+  return { x: CAM_CX + (fu - CAM_CX) * k, y: HORIZON + (FLOOR_Y - HORIZON - fv * SQ - h) * k };
 }
 
 /** Screen point back to the floor at height 0. */
 export function unproject(x: number, y: number): DomPoint {
-  const fv = (FLOOR_Y - y) / SQ;
-  return { x: x - fv * SHEAR, y: fv };
+  const fv = FOCAL * (FLOOR_Y - y) / (y - HORIZON + FOCAL * SQ);
+  return { x: CAM_CX + (x - CAM_CX) * (FOCAL + fv) / FOCAL, y: fv };
 }
 
 const clampFloor = (p: DomPoint): DomPoint => ({
@@ -160,10 +167,17 @@ export function createDominoRun(): DominoSim {
   return s;
 }
 
+// A domino dragged off the path keeps a free pose; everything else follows
+// the path. Physics, contacts and rendering all read the pose through here,
+// so a repositioned piece still collides with the rest of the run.
+function poseOf(s: DominoSim, d: Domino): { x: number; y: number; tx: number; ty: number } {
+  return d.pose ?? pathAt(s, d.s);
+}
+
 // ---- input ---------------------------------------------------------------
 
 function bodyEnds(s: DominoSim, d: Domino): { base: DomPoint; tip: DomPoint } {
-  const p = pathAt(s, d.s);
+  const p = poseOf(s, d);
   const c = Math.cos(d.th), sn = Math.sin(d.th);
   // Body centre sits half a thickness behind the leading edge.
   const fwd = (a: number, h: number) => a * c + h * sn;
@@ -215,17 +229,14 @@ export function domMove(s: DominoSim, x: number, y: number) {
     return;
   }
   if (s.grab < 0) return;
+  // Free placement: the piece follows the pointer anywhere on the table and
+  // keeps its heading, so it can be set somewhere new instead of only
+  // sliding along the path. Contacts stay live while it moves.
   const p = clampFloor(unproject(x, y));
   const d = s.doms[s.grab];
-  const a = nearestArc(s, p);
-  const prev = s.doms[s.grab - 1], next = s.doms[s.grab + 1];
-  const lo = prev ? prev.s + DT + 2 : 0;
-  const hi = next ? next.s - DT - 2 : s.len;
-  const ns = Math.max(lo, Math.min(hi, a));
-  s.moved += Math.abs(ns - d.s);
-  d.s = ns;
-  while (s.grab > 0 && s.doms[s.grab - 1].s > d.s) { const t = s.doms[s.grab - 1]; s.doms[s.grab - 1] = d; s.doms[s.grab] = t; s.grab--; }
-  while (s.grab < s.doms.length - 1 && s.doms[s.grab + 1].s < d.s) { const t = s.doms[s.grab + 1]; s.doms[s.grab + 1] = d; s.doms[s.grab] = t; s.grab++; }
+  const cur = poseOf(s, d);
+  s.moved += Math.hypot(p.x - cur.x, p.y - cur.y);
+  d.pose = { x: p.x, y: p.y, tx: cur.tx, ty: cur.ty };
 }
 
 export function domRelease(s: DominoSim) {
@@ -243,6 +254,13 @@ export function domRelease(s: DominoSim) {
   if (s.grab >= 0) {
     const d = s.doms[s.grab];
     d.held = false;
+    // Dropped near the path: adopt the local tangent so the piece rejoins the
+    // run. Dropped away from it: keep the dragged pose; the wave still reaches
+    // it only through real collisions.
+    if (d.pose) {
+      const pp = pathAt(s, nearestArc(s, d.pose));
+      if (Math.hypot(pp.x - d.pose.x, pp.y - d.pose.y) < 16) { d.pose.tx = pp.tx; d.pose.ty = pp.ty; }
+    }
     // A tap is a flick: little movement and a quick release tips the domino over.
     if (s.moved < 12 && s.time - s.downAt < 0.5) d.om = FLICK;
     s.grab = -1;
@@ -372,6 +390,71 @@ function supported(s: DominoSim, d: Domino): boolean {
  * impulse at the witness point, so a leaning pile keeps transmitting force
  * instead of every domino sinking flat through the one it rests on.
  */
+// Full 3D oriented boxes for pairs too skewed for the fall-plane contact: a
+// domino can be dragged to any heading, and the wave must rest on it (or
+// topple it) instead of passing through.
+type ObBox = { c: [number, number, number]; u: [number, number, number][]; e: number[] };
+function obbOf(x: number, y: number, tx: number, ty: number, th: number): ObBox {
+  const c = Math.cos(th), sn = Math.sin(th);
+  const u1: [number, number, number] = [tx * sn, ty * sn, c];   // along the slab
+  const u2: [number, number, number] = [tx * c, ty * c, -sn];  // thickness
+  const u3: [number, number, number] = [-ty, tx, 0];           // across the width
+  return { c: [x + u1[0] * DH / 2 - u2[0] * DT / 2, y + u1[1] * DH / 2 - u2[1] * DT / 2, u1[2] * DH / 2 - u2[2] * DT / 2], u: [u1, u2, u3], e: [DH / 2, DT / 2, DW / 2] };
+}
+function obbOverlap(A: ObBox, B: ObBox): boolean {
+  // 15-axis separating axis test in (fu, fv, h) space.
+  const R: number[][] = [], AbsR: number[][] = [];
+  for (let i = 0; i < 3; i++) {
+    R.push([]); AbsR.push([]);
+    for (let j = 0; j < 3; j++) {
+      const r = A.u[i][0] * B.u[j][0] + A.u[i][1] * B.u[j][1] + A.u[i][2] * B.u[j][2];
+      R[i][j] = r; AbsR[i][j] = Math.abs(r) + 1e-5;
+    }
+  }
+  const t = [B.c[0] - A.c[0], B.c[1] - A.c[1], B.c[2] - A.c[2]];
+  const tA = [0, 1, 2].map(i => t[0] * A.u[i][0] + t[1] * A.u[i][1] + t[2] * A.u[i][2]);
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(tA[i]) > A.e[i] + B.e[0] * AbsR[i][0] + B.e[1] * AbsR[i][1] + B.e[2] * AbsR[i][2]) return false;
+  }
+  for (let j = 0; j < 3; j++) {
+    const tB = t[0] * B.u[j][0] + t[1] * B.u[j][1] + t[2] * B.u[j][2];
+    if (Math.abs(tB) > B.e[j] + A.e[0] * AbsR[0][j] + A.e[1] * AbsR[1][j] + A.e[2] * AbsR[2][j]) return false;
+  }
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    const ra = A.e[(i + 1) % 3] * AbsR[(i + 2) % 3][j] + A.e[(i + 2) % 3] * AbsR[(i + 1) % 3][j];
+    const rb = B.e[(j + 1) % 3] * AbsR[i][(j + 2) % 3] + B.e[(j + 2) % 3] * AbsR[i][(j + 1) % 3];
+    if (Math.abs(tA[(i + 2) % 3] * R[(i + 1) % 3][j] - tA[(i + 1) % 3] * R[(i + 2) % 3][j]) > ra + rb) return false;
+  }
+  return true;
+}
+
+// Skewed-heading contact: the faller clamps onto the obstacle's 3D box at the
+// angle where they first touch and rests there; a hard side hit on a standing
+// piece topples it along the strike direction.
+function clampOnBox(s: DominoSim, i: number, j: number) {
+  const a = s.doms[i], b = s.doms[j];
+  if (a.held) return;
+  const sign = a.th >= 0 ? 1 : -1;
+  if (Math.abs(a.th) <= 0.001) return;
+  const B = obbOf(PX[j], PY[j], TX[j], TY[j], b.th);
+  const hit = (m: number) => obbOverlap(obbOf(PX[i], PY[i], TX[i], TY[i], sign * m), B);
+  if (!hit(Math.abs(a.th))) return;
+  if (hit(0)) { a.om = 0; return; } // overlapping even upright: hold, never tunnel
+  let lo = 0, hi = Math.abs(a.th);
+  for (let k = 0; k < 9; k++) { const mid = (lo + hi) / 2; if (hit(mid)) hi = mid; else lo = mid; }
+  const speed = Math.abs(a.om);
+  a.th = sign * hi;
+  a.om *= -0.12;
+  if (Math.abs(a.om) < 0.35) a.om = 0;
+  if (speed > 1.2 && !b.held && Math.abs(b.th) < BALANCE) {
+    // Side-struck while standing: it topples away along the strike.
+    const bp = poseOf(s, b);
+    b.pose = { x: bp.x, y: bp.y, tx: TX[i], ty: TY[i] };
+    b.th = 0; b.om = Math.min(3.5, speed * 0.55);
+    b.zz = 0;
+  }
+}
+
 function contact(s: DominoSim, i: number, j: number) {
   const a = s.doms[i], b = s.doms[j];
   const sign = a.th >= 0 ? 1 : -1;
@@ -379,11 +462,11 @@ function contact(s: DominoSim, i: number, j: number) {
   if (fa <= 0.001) return;
   // j in i's fall plane.
   const tx = sign * TX[i], ty = sign * TY[i];
+  let cosphi = TX[i] * TX[j] + TY[i] * TY[j];
+  if (cosphi < 0.5) { clampOnBox(s, i, j); return; } // skewed headings: 3D box contact
   const relx = (PX[j] - PX[i]) * tx + (PY[j] - PY[i]) * ty;
   const lat = Math.abs((PX[j] - PX[i]) * -ty + (PY[j] - PY[i]) * tx);
   if (relx < DT * 0.4 || relx > DH + DT + 4 || lat > DW - 2) return;
-  let cosphi = TX[i] * TX[j] + TY[i] * TY[j];
-  if (cosphi < 0.5) return; // headings too skewed for a face contact
   const fb = sign * b.th * cosphi;
   const c = boxContact(fa, relx, fb);
   if (!c) return;
@@ -418,7 +501,7 @@ function contact(s: DominoSim, i: number, j: number) {
 function substep(s: DominoSim, h: number, reduce: boolean) {
   const n = s.doms.length;
   for (let i = 0; i < n; i++) {
-    const p = pathAt(s, s.doms[i].s);
+    const p = poseOf(s, s.doms[i]);
     PX[i] = p.x; PY[i] = p.y; TX[i] = p.tx; TY[i] = p.ty;
   }
   for (const d of s.doms) {
@@ -447,7 +530,7 @@ function substep(s: DominoSim, h: number, reduce: boolean) {
       d.th = TH_MAX;
       if (d.om > 0) {
         if (d.om > 1.6 && !reduce) {
-          const p = pathAt(s, d.s);
+          const p = poseOf(s, d);
           spawnDust(s, p.x + p.tx * DH * 0.8, p.y + p.ty * DH * 0.8, 2, 5);
         }
         d.om *= -0.12;
@@ -544,7 +627,7 @@ export function domScene(s: DominoSim): DomMark[] {
   const marks: DomMark[] = [];
   // Backdrop wall and the table it sits on.
   marks.push({ path: `M0 0L${DOM_W} 0L${DOM_W} ${FLOOR_Y}L0 ${FLOOR_Y}Z`, grad: { x0: 0, y0: 0, x1: 0, y1: FLOOR_Y, stops: [[0, '#f4efe4'], [0.62, '#ece4d1'], [1, '#e2d6bc']] } });
-  const backY = FLOOR_Y - (FV1 + 22) * SQ;
+  const backY = project(0, FV1 + 22, 0).y;
   marks.push({ path: `M0 ${f2(backY)}L${DOM_W} ${f2(backY)}L${DOM_W} ${FLOOR_Y}L0 ${FLOOR_Y}Z`, grad: { x0: 0, y0: backY, x1: 0, y1: FLOOR_Y, stops: [[0, '#b3804e'], [0.55, '#9a6a3c'], [1, '#7e5229']] } });
   let planks = '';
   for (let i = 0; i < 6; i++) {
@@ -581,11 +664,17 @@ export function domScene(s: DominoSim): DomMark[] {
   // Shadows, then every visible face sorted back to front.
   const faces: Face[] = [];
   for (const d of s.doms) {
-    const p = pathAt(s, d.s);
+    const p = poseOf(s, d);
     const c = Math.cos(d.th), sn = Math.sin(d.th);
-    const pt = (a: number, w: number, h: number): DomPoint => {
+    // Corners keep their world (fu, fv, h) so faces can be depth-sorted along
+    // the actual view ray; screen-y sorting inverts leaning piles.
+    const pt3 = (a: number, w: number, h: number): { fu: number; fv: number; h: number } => {
       const fwd = a * c + h * sn, up = h * c - a * sn;
-      return project(p.x + p.tx * (fwd + DT / 2) + -p.ty * w, p.y + p.ty * (fwd + DT / 2) + p.tx * w, up);
+      return { fu: p.x + p.tx * (fwd + DT / 2) + -p.ty * w, fv: p.y + p.ty * (fwd + DT / 2) + p.tx * w, h: up };
+    };
+    const pt = (a: number, w: number, h: number): DomPoint => {
+      const q = pt3(a, w, h);
+      return project(q.fu, q.fv, q.h);
     };
     // Cast shadow: base edge plus the top edge dropped to the floor and slid
     // away from the light, fading as the domino stands taller.
@@ -599,16 +688,23 @@ export function domScene(s: DominoSim): DomMark[] {
       grad: { x0: (shA.x + shB.x) / 2, y0: (shA.y + shB.y) / 2, x1: (shC.x + shD.x) / 2, y1: (shC.y + shD.y) / 2, stops: [[0, `rgba(46,30,16,${(0.08 + 0.08 * c).toFixed(3)})`], [1, 'rgba(46,30,16,0)']] },
     });
     const H_ = DW / 2;
-    const corners = {
-      fbl: pt(-DT, -H_, 0), fbr: pt(-DT, H_, 0), ftl: pt(-DT, -H_, DH), ftr: pt(-DT, H_, DH),
-      bbl: pt(0, -H_, 0), bbr: pt(0, H_, 0), btl: pt(0, -H_, DH), btr: pt(0, H_, DH),
+    const c3 = {
+      fbl: pt3(-DT, -H_, 0), fbr: pt3(-DT, H_, 0), ftl: pt3(-DT, -H_, DH), ftr: pt3(-DT, H_, DH),
+      bbl: pt3(0, -H_, 0), bbr: pt3(0, H_, 0), btl: pt3(0, -H_, DH), btr: pt3(0, H_, DH),
     };
-    const depthOf = (pts: DomPoint[]) => pts.reduce((a, q) => a + q.y, 0) / pts.length;
-    faces.push({ pts: [corners.fbl, corners.fbr, corners.ftr, corners.ftl], depth: depthOf([corners.fbl, corners.fbr, corners.ftr, corners.ftl]), kind: 'wide', domino: d, a: -DT });
-    faces.push({ pts: [corners.bbr, corners.bbl, corners.btl, corners.btr], depth: depthOf([corners.bbr, corners.bbl, corners.btl, corners.btr]), kind: 'wide', domino: d, a: 0 });
-    faces.push({ pts: [corners.fbr, corners.bbr, corners.btr, corners.ftr], depth: depthOf([corners.fbr, corners.bbr, corners.btr, corners.ftr]), kind: 'end', domino: d, a: -1 });
-    faces.push({ pts: [corners.bbl, corners.fbl, corners.ftl, corners.btl], depth: depthOf([corners.bbl, corners.fbl, corners.ftl, corners.btl]), kind: 'end', domino: d, a: -2 });
-    faces.push({ pts: [corners.ftl, corners.ftr, corners.btr, corners.btl], depth: depthOf([corners.ftl, corners.ftr, corners.btr, corners.btl]) - 0.4, kind: 'top', domino: d, a: -3 });
+    // View-ray depth of the raised camera: farther away and lower sorts
+    // farther back. A fallen domino occludes the one it rests on whichever
+    // way it fell.
+    const depthOf3 = (cs: { fu: number; fv: number; h: number }[]) =>
+      cs.reduce((acc, q) => acc + (q.fv - SQ * q.h), 0) / cs.length;
+    const scr = (q: { fu: number; fv: number; h: number }) => project(q.fu, q.fv, q.h);
+    const face4 = (cs: { fu: number; fv: number; h: number }[], kind: 'wide' | 'end' | 'top', a: number, bias = 0) =>
+      faces.push({ pts: cs.map(scr), depth: depthOf3(cs) + bias, kind, domino: d, a });
+    face4([c3.fbl, c3.fbr, c3.ftr, c3.ftl], 'wide', -DT);
+    face4([c3.bbr, c3.bbl, c3.btl, c3.btr], 'wide', 0);
+    face4([c3.fbr, c3.bbr, c3.btr, c3.ftr], 'end', -1);
+    face4([c3.bbl, c3.fbl, c3.ftl, c3.btl], 'end', -2);
+    face4([c3.ftl, c3.ftr, c3.btr, c3.btl], 'top', -3, -0.4);
   }
   const area2 = (q: DomPoint[]) => (q[1].x - q[0].x) * (q[3].y - q[0].y) - (q[3].x - q[0].x) * (q[1].y - q[0].y);
   const visible = faces.filter(f => area2(f.pts) < 0);
@@ -623,7 +719,7 @@ export function domScene(s: DominoSim): DomMark[] {
     if (f.kind === 'wide') {
       // Face local frame: u across the width, h up; pips and the mid line ride
       // the same transform, so they stay glued while the domino falls.
-      const d = f.domino, p = pathAt(s, d.s);
+      const d = f.domino, p = poseOf(s, d);
       const c = Math.cos(d.th), sn = Math.sin(d.th);
       const face = (u: number, h: number): DomPoint => {
         const fwd = (f.a) * c + h * sn, up = h * c - (f.a) * sn;
