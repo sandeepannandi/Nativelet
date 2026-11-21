@@ -260,6 +260,33 @@ export function domRelease(s: DominoSim) {
     if (d.pose) {
       const pp = pathAt(s, nearestArc(s, d.pose));
       if (Math.hypot(pp.x - d.pose.x, pp.y - d.pose.y) < 16) { d.pose.tx = pp.tx; d.pose.ty = pp.ty; }
+      // A free drop can land inside a standing piece, and solids cannot rest
+      // interpenetrating: slide the piece straight out of any rest overlap
+      // (up to 30 units) so it lands beside the piece it was dropped on.
+      if (Math.abs(d.th) < 0.02) {
+        const overlaps = (x: number, y: number) => {
+          const A = obbOf(x, y, d.pose!.tx, d.pose!.ty, 0);
+          for (const e of s.doms) {
+            if (e === d) continue;
+            const ep = poseOf(s, e);
+            if (Math.abs(ep.x - x) > 90 || Math.abs(ep.y - y) > 90) continue;
+            if (obbOverlap(A, obbOf(ep.x, ep.y, ep.tx, ep.ty, e.th))) return ep;
+          }
+          return null;
+        };
+        const into = overlaps(d.pose.x, d.pose.y);
+        if (into) {
+          let nx = d.pose.x - into.x, ny = d.pose.y - into.y;
+          const nl = Math.hypot(nx, ny) || 1;
+          nx /= nl; ny /= nl;
+          for (let k = 1; k <= 15; k++) {
+            if (!overlaps(d.pose.x + nx * 2 * k, d.pose.y + ny * 2 * k)) {
+              d.pose.x += nx * 2 * k; d.pose.y += ny * 2 * k;
+              break;
+            }
+          }
+        }
+      }
     }
     // A tap is a flick: little movement and a quick release tips the domino over.
     if (s.moved < 12 && s.time - s.downAt < 0.5) d.om = FLICK;
@@ -362,6 +389,18 @@ function spawnDust(s: DominoSim, fu: number, fv: number, h: number, n: number) {
 }
 
 /** True when some neighbour still props up domino d (probe past the lean). */
+function inContact(s: DominoSim, d: Domino): boolean {
+  const p = poseOf(s, d);
+  const A = obbOf(p.x, p.y, p.tx, p.ty, d.th);
+  for (const e of s.doms) {
+    if (e === d) continue;
+    const ep = poseOf(s, e);
+    if (Math.abs(ep.x - p.x) > 90 || Math.abs(ep.y - p.y) > 90) continue;
+    if (obbOverlap(A, obbOf(ep.x, ep.y, ep.tx, ep.ty, e.th))) return true;
+  }
+  return false;
+}
+
 function supported(s: DominoSim, d: Domino): boolean {
   const i = s.doms.indexOf(d);
   if (i < 0) return false;
@@ -439,19 +478,42 @@ function clampOnBox(s: DominoSim, i: number, j: number) {
   const B = obbOf(PX[j], PY[j], TX[j], TY[j], b.th);
   const hit = (m: number) => obbOverlap(obbOf(PX[i], PY[i], TX[i], TY[i], sign * m), B);
   if (!hit(Math.abs(a.th))) return;
-  if (hit(0)) { a.om = 0; return; } // overlapping even upright: hold, never tunnel
+  // Already rotating out of the box: separating, not a collision. Without
+  // this, a piece struck into a topple gets clamped back by the striker's box
+  // (and the upright-overlap hold below would zero it every step).
+  if (!hit(Math.abs(a.th) + 0.02)) return;
+  if (hit(0)) {
+    // A moving piece that already overlaps at rest is sliding past (a
+    // broadside strike rolls the victim along the striker's face): snapping
+    // it back to upright is worse than the brief touch, so let it slide.
+    if (Math.abs(a.om) > 0.4) return;
+    a.om = 0; return; // dropped into overlap: hold, never tunnel
+  }
   let lo = 0, hi = Math.abs(a.th);
   for (let k = 0; k < 9; k++) { const mid = (lo + hi) / 2; if (hit(mid)) hi = mid; else lo = mid; }
   const speed = Math.abs(a.om);
   a.th = sign * hi;
-  a.om *= -0.12;
-  if (Math.abs(a.om) < 0.35) a.om = 0;
-  if (speed > 1.2 && !b.held && Math.abs(b.th) < BALANCE) {
-    // Side-struck while standing: it topples away along the strike.
+  const struck = speed > 1.2 && !b.held && Math.abs(b.th) < BALANCE;
+  if (struck) {
+    // Hard hit on a standing piece: it yields, so the striker follows through
+    // with part of its momentum instead of bouncing off a wall (a dead stop
+    // below the balance angle let it rock back upright).
+    a.om = sign * Math.max(Math.abs(a.om) * 0.4, 0.6);
+  } else if (!b.held && Math.abs(b.om) > 0.3) {
+    // The other piece is already toppling out of the way: follow it without
+    // bouncing; the positional clamp above keeps the face out of the box.
+  } else {
+    a.om *= -0.12;
+    if (Math.abs(a.om) < 0.35) a.om = 0;
+  }
+  if (struck) {
+    // Side-struck while standing: it topples along its own length, away from
+    // the striker. No forced reorientation: turning the slab to the strike
+    // direction can jam it into its neighbour's space.
     const bp = poseOf(s, b);
-    b.pose = { x: bp.x, y: bp.y, tx: TX[i], ty: TY[i] };
-    b.th = 0; b.om = Math.min(3.5, speed * 0.55);
-    b.zz = 0;
+    const away = (bp.x - PX[i]) * bp.tx + (bp.y - PY[i]) * bp.ty >= 0 ? 1 : -1;
+    b.th = away * 0.03; b.om = away * Math.min(3.5, speed * 0.75); // seed past the rock detector
+    b.zz = -150; // no dozing while it climbs past its balance angle
   }
 }
 
@@ -513,6 +575,10 @@ function substep(s: DominoSim, h: number, reduce: boolean) {
     if ((d.zz ?? 0) >= 30) {
       d.om = 0;
       if (Math.abs(d.th) > BALANCE && Math.abs(d.th) < TH_MAX - 0.02 && !supported(s, d)) d.zz = 0;
+      // Leaning into a neighbour below the balance angle is not a rest state:
+      // stay awake so the restoring torque and contact clamp walk it back out
+      // instead of freezing mid-lean with the boxes interpenetrating.
+      else if (Math.abs(d.th) > 0.02 && inContact(s, d)) d.zz = 0;
       else continue;
     }
     const prevSign = d.th >= 0 ? 1 : -1;

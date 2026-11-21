@@ -49,11 +49,48 @@ const target = drag.doms[3];
 const q = m.pathAt(drag, target.s);
 const sp = m.project(q.x, q.y, 10);
 assert(m.domTouch(drag, sp.x, sp.y) === 'grab', 'grab the domino');
-m.domMove(drag, sp.x + 60, sp.y + 10);
+m.domMove(drag, sp.x + 160, sp.y + 100);
 m.domRelease(drag);
 assert(target.pose, 'free pose kept after release');
-const fp = m.unproject(sp.x + 60, sp.y + 10);
+const fp = m.unproject(sp.x + 160, sp.y + 100);
 assert(Math.hypot(target.pose.x - fp.x, target.pose.y - fp.y) < 4, 'dropped at the pointer: ' + target.pose.x + ',' + target.pose.y);
+
+// A drop that would land inside a standing piece slides out to the nearest
+// clear spot instead of resting interpenetrated.
+{
+  const dp = m.createDominoRun();
+  const dd = dp.doms[3];
+  const dq = m.pathAt(dp, dd.s);
+  const dsp = m.project(dq.x, dq.y, 10);
+  m.domTouch(dp, dsp.x, dsp.y);
+  m.domMove(dp, dsp.x + 60, dsp.y + 10);
+  m.domRelease(dp);
+  const dfp = m.unproject(dsp.x + 60, dsp.y + 10);
+  assert(dd.pose && Math.hypot(dd.pose.x - dfp.x, dd.pose.y - dfp.y) >= 4,
+    'overlapping drop is moved out of the standing piece: ' + (dd.pose && dd.pose.x + ',' + dd.pose.y));
+}
+
+// Occupied-lane drop through the real drag path: near the path the piece
+// adopts the lane tangent and lands legally; the wave may stall in the tight
+// sandwich it creates, but everything must settle - upright or flat, never
+// frozen mid-lean against a neighbour.
+{
+  const lane = m.createDominoRun();
+  const jb = lane.doms[14];
+  const jp = m.pathAt(lane, jb.s);
+  const grabAt = m.project(jp.x, jp.y, 10);
+  assert(m.domTouch(lane, grabAt.x, grabAt.y) === 'grab', 'grab the lane piece');
+  const dropAt = m.project(115, 255, 0);
+  m.domMove(lane, dropAt.x, dropAt.y);
+  m.domRelease(lane);
+  m.pushFirst(lane);
+  for (let i = 0; i < 60 * 12; i++) m.stepDom(lane, 1 / 60);
+  for (const d of lane.doms) {
+    assert(Number.isFinite(d.th) && Number.isFinite(d.om), 'lane drop stays finite');
+    const a = Math.abs(d.th);
+    assert(a < 0.02 || a > m.TH_MAX - 0.05, 'lane drop settles: no frozen lean: th=' + d.th);
+  }
+}
 
 // A domino dropped in the fall lane is hit through contact, not arc order.
 let lane = m.createDominoRun();
@@ -75,9 +112,13 @@ const block = cross.doms[3];
 block.pose = { x: c0.x + c0.tx * 30, y: c0.y + c0.ty * 30, tx: -c0.ty, ty: c0.tx };
 m.pushFirst(cross);
 for (let i = 0; i < 60 * 3; i++) m.stepDom(cross, 1 / 60);
-assert(cross.doms[0].th < m.TH_MAX - 0.02, 'the wave rests on the cross piece, not through it: th=' + cross.doms[0].th);
-assert(block.th > 0.2, 'the cross piece topples along the strike: th=' + block.th);
-assert(Math.hypot(block.pose.tx - c0.tx, block.pose.ty - c0.ty) < 0.01, 'it topples along the strike direction');
+// d0 follows through the vacated space; with no z-support in the solver it may
+// come to rest flat over the fallen cross piece (physically: lying on top of
+// it, drawn above it by the depth sort) or still leaning against it. Both are
+// plausible; what must not happen is the frozen lean of the old clamp.
+assert(Math.abs(cross.doms[0].th) > 0.5, 'the striker follows through after the hit, not frozen: th=' + cross.doms[0].th);
+assert(Math.abs(block.th) > 0.2, 'the cross piece topples from the hit: th=' + block.th);
+assert(Math.hypot(block.pose.tx - -c0.ty, block.pose.ty - c0.tx) < 0.01, 'it keeps its own heading: no forced reorientation');
 
 // A gently placed perpendicular piece that the wave only grazes still blocks
 // penetration: final boxes never overlap beyond touching.
@@ -90,6 +131,54 @@ gblock.held = true; // held in place like a finger pinching it
 m.pushFirst(graze);
 for (let i = 0; i < 60 * 3; i++) m.stepDom(graze, 1 / 60);
 assert(graze.doms[0].th < m.TH_MAX - 0.02, 'the wave leans on the held cross piece: th=' + graze.doms[0].th);
+
+// Occupied lane, tight sandwich: a piece dragged into the gap ahead of the
+// first domino with the next piece right behind it fits without overlap, but
+// only just. The push rocks the sandwich; contact must stay plausible - every
+// piece either settles back upright or falls, nothing freezes mid-lean, and
+// nothing tunnels. (A full Newton's-cradle shunt through touching stacks is a
+// known limitation of the aligned contact path, not of this fix.)
+{
+  const jam = m.createDominoRun();
+  const jb = jam.doms[14];
+  const j0 = m.pathAt(jam, jam.doms[0].s);
+  const jh = Math.hypot(j0.tx, j0.ty);
+  jb.pose = { x: j0.x + (j0.tx / jh) * 16, y: j0.y + (j0.ty / jh) * 16, tx: j0.tx / jh, ty: j0.ty / jh };
+  m.pushFirst(jam);
+  for (let i = 0; i < 60 * 10; i++) m.stepDom(jam, 1 / 60);
+  for (const d of jam.doms) {
+    assert(Number.isFinite(d.th) && Number.isFinite(d.om), 'simulation stays finite');
+    const a = Math.abs(d.th);
+    assert(a < 0.02 || a > m.TH_MAX - 0.05, 'every piece settles: no frozen lean: th=' + d.th);
+  }
+}
+// Occupied lane, impossible drop: the same insertion but rest-overlapping the
+// next piece. No physical outcome requires this chain to fall; the contact
+// must stay plausible - the overlapped piece is held, nothing tunnels, snaps
+// or explodes.
+{
+  const jam = m.createDominoRun();
+  const jb = jam.doms[14];
+  const jp = m.pathAt(jam, jb.s);
+  jb.pose = { x: 115, y: 255, tx: jp.tx, ty: jp.ty };
+  m.pushFirst(jam);
+  for (let i = 0; i < 60 * 10; i++) m.stepDom(jam, 1 / 60);
+  for (const d of jam.doms) assert(Number.isFinite(d.th) && Number.isFinite(d.om), 'simulation stays finite');
+  assert(Math.abs(jb.th) < m.TH_MAX, 'the overlapped piece never tunnels through its neighbour: th=' + jb.th);
+}
+// In-lane perpendicular block dropped right against the next piece: the worst
+// case. The chain need not fully fall, but the block must topple and the push
+// must not vanish.
+{
+  const occ = m.createDominoRun();
+  const oc0 = m.pathAt(occ, occ.doms[0].s);
+  const ob = occ.doms[3];
+  ob.pose = { x: oc0.x + oc0.tx * 30, y: oc0.y + oc0.ty * 30, tx: -oc0.ty, ty: oc0.tx };
+  m.pushFirst(occ);
+  for (let i = 0; i < 60 * 10; i++) m.stepDom(occ, 1 / 60);
+  assert(Math.abs(ob.th) > 0.2, 'the in-lane block topples: th=' + ob.th);
+  assert(Math.abs(occ.doms[0].th) > 0.5, 'the pushed domino keeps its fall: th=' + occ.doms[0].th);
+}
 
 // Timestep convergence: same cascade moment at 240Hz and 960Hz.
 let a = m.createDominoRun(), b = m.createDominoRun();
@@ -149,4 +238,4 @@ m.domRelease(keep);
 assert(keep.len < 300, 'long stroke replaces the run, len=' + keep.len);
 
 console.log('PASS: leaning pile rests and holds, no pass-through, short strokes keep the run,');
-console.log('PASS: spiral placement and spacing, rock settles, single falls, cascade completes and settles, gap stops wave, free drag drops at the pointer, off-path piece falls by contact, perpendicular piece blocks and topples, timestep convergence, abuse stays finite');
+console.log('PASS: spiral placement and spacing, rock settles, single falls, cascade completes and settles, gap stops wave, free drag drops at the pointer, off-path piece falls by contact, perpendicular piece blocks and topples, occupied-lane jams stay physical, timestep convergence, abuse stays finite');
