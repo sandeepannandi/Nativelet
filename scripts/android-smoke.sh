@@ -16,6 +16,7 @@ bash scripts/android-gyroscope.sh || exit 1
 bash scripts/android-galton.sh || exit 1
 bash scripts/android-pin-art.sh || exit 1
 bash scripts/android-cradle.sh || exit 1
+bash scripts/android-domino.sh || exit 1
 adb shell wm size > "$OUT/wm.txt"
 ROUTES="index fold genie blossom capsule cards carousel chart curl glass gooey light lens morph orbit pinch ripple sort swipe toasts mosaic bubbles flap banner fog pendulum blackhole coin reveal prism hourglass strings range wheel timeline path player flowfield crumple shatter recorder venom cymatics plasma-globe pin-art cradle galton"
 for r in $ROUTES; do
