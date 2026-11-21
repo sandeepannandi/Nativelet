@@ -43,19 +43,53 @@ for (let i = 0; i < 60 * 15; i++) m.stepDom(gapRun, 1 / 60);
 assert(gapRun.doms.slice(0, 4).every(d => d.th > m.TH_MAX / 2), 'before the gap everything falls');
 assert(gapRun.doms.slice(4).every(d => d.th < m.TH_MAX / 2), 'past the gap everything stands');
 
-// Dragging a domino along the path repositions it, clamped by its neighbours.
+// Dragging a domino off the path drops it where the pointer releases.
 let drag = m.createDominoRun();
 const target = drag.doms[3];
-const before = target.s;
-const p0 = m.pathAt(drag, before);
-drag.grab = 3; target.held = true;
-const moved = m.pathAt(drag, before + 16);
-const lo = drag.doms[2].s + m.DT + 2, hi = drag.doms[4].s - m.DT - 2;
-// simulate the same clamp domMove applies
-const ns = Math.max(lo, Math.min(hi, m.nearestArc(drag, { x: moved.x, y: moved.y })));
-assert(Math.abs(ns - (before + 16)) < 3, 'drag moves it along the path: ' + ns);
-assert(ns >= lo && ns <= hi, 'clamped between neighbours');
-void p0;
+const q = m.pathAt(drag, target.s);
+const sp = m.project(q.x, q.y, 10);
+assert(m.domTouch(drag, sp.x, sp.y) === 'grab', 'grab the domino');
+m.domMove(drag, sp.x + 60, sp.y + 10);
+m.domRelease(drag);
+assert(target.pose, 'free pose kept after release');
+const fp = m.unproject(sp.x + 60, sp.y + 10);
+assert(Math.hypot(target.pose.x - fp.x, target.pose.y - fp.y) < 4, 'dropped at the pointer: ' + target.pose.x + ',' + target.pose.y);
+
+// A domino dropped in the fall lane is hit through contact, not arc order.
+let lane = m.createDominoRun();
+const q0 = m.pathAt(lane, lane.doms[0].s);
+lane.doms.splice(1, 1); // clear the lane ahead of the first domino
+const draggee = lane.doms[4];
+draggee.pose = { x: q0.x + q0.tx * 34, y: q0.y + q0.ty * 34, tx: q0.tx, ty: q0.ty };
+m.pushFirst(lane);
+for (let i = 0; i < 60 * 3; i++) m.stepDom(lane, 1 / 60);
+assert(draggee.th > m.TH_MAX / 2, 'off-path domino in the lane is knocked over: th=' + draggee.th);
+
+// A piece dragged perpendicular across the run is a real obstacle: the wave
+// rests on it instead of passing through, and a hard side hit topples it
+// along the strike.
+let cross = m.createDominoRun();
+const c0 = m.pathAt(cross, cross.doms[0].s);
+cross.doms.splice(1, 3); // open the lane ahead of the first domino
+const block = cross.doms[3];
+block.pose = { x: c0.x + c0.tx * 30, y: c0.y + c0.ty * 30, tx: -c0.ty, ty: c0.tx };
+m.pushFirst(cross);
+for (let i = 0; i < 60 * 3; i++) m.stepDom(cross, 1 / 60);
+assert(cross.doms[0].th < m.TH_MAX - 0.02, 'the wave rests on the cross piece, not through it: th=' + cross.doms[0].th);
+assert(block.th > 0.2, 'the cross piece topples along the strike: th=' + block.th);
+assert(Math.hypot(block.pose.tx - c0.tx, block.pose.ty - c0.ty) < 0.01, 'it topples along the strike direction');
+
+// A gently placed perpendicular piece that the wave only grazes still blocks
+// penetration: final boxes never overlap beyond touching.
+let graze = m.createDominoRun();
+const g0 = m.pathAt(graze, graze.doms[0].s);
+graze.doms.splice(1, 2);
+const gblock = graze.doms[2];
+gblock.pose = { x: g0.x + g0.tx * 55, y: g0.y + g0.ty * 55, tx: -g0.ty, ty: g0.tx };
+gblock.held = true; // held in place like a finger pinching it
+m.pushFirst(graze);
+for (let i = 0; i < 60 * 3; i++) m.stepDom(graze, 1 / 60);
+assert(graze.doms[0].th < m.TH_MAX - 0.02, 'the wave leans on the held cross piece: th=' + graze.doms[0].th);
 
 // Timestep convergence: same cascade moment at 240Hz and 960Hz.
 let a = m.createDominoRun(), b = m.createDominoRun();
@@ -115,4 +149,4 @@ m.domRelease(keep);
 assert(keep.len < 300, 'long stroke replaces the run, len=' + keep.len);
 
 console.log('PASS: leaning pile rests and holds, no pass-through, short strokes keep the run,');
-console.log('PASS: spiral placement and spacing, rock settles, single falls, cascade completes and settles, gap stops wave, drag clamp, timestep convergence, abuse stays finite');
+console.log('PASS: spiral placement and spacing, rock settles, single falls, cascade completes and settles, gap stops wave, free drag drops at the pointer, off-path piece falls by contact, perpendicular piece blocks and topples, timestep convergence, abuse stays finite');
