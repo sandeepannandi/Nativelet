@@ -1,0 +1,18 @@
+{
+  "slug": "domino-run",
+  "files": [
+    "DominoRun.tsx",
+    "dominoMath.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "title": "Domino Run",
+  "category": "interaction",
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-gesture-handler"
+  ]
+}
