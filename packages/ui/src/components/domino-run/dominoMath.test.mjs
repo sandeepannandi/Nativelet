@@ -77,4 +77,42 @@ for (let k = 0; k < 40; k++) {
 assert(abuse.doms.every(d => Number.isFinite(d.th) && Number.isFinite(d.om)));
 assert(m.domScene(abuse).every(k2 => !k2.path.includes('NaN')));
 
+
+// A toppled straight run ends as a leaning pile, not everyone flat:
+// the last domino lands flat, the ones behind it rest propped on it.
+let pile = m.createDominoRun();
+m.setPath(pile, [{ x: 60, y: 140 }, { x: 300, y: 140 }]);
+m.pushFirst(pile);
+for (let i = 0; i < 60 * 20 && !m.allSettled(pile); i++) m.stepDom(pile, 1 / 60);
+assert(m.fallenCount(pile) === pile.doms.length, 'whole straight run fell');
+const angles = pile.doms.map(d => d.th);
+assert(Math.abs(angles[angles.length - 1] - m.TH_MAX) < 0.06, 'last domino lands flat: ' + angles[angles.length - 1]);
+assert(angles.slice(0, -1).some(a => a < m.TH_MAX - 0.2), 'some dominoes keep a lean: ' + angles.map(a => a.toFixed(2)).join(','));
+assert(angles.every(a => a > 0.18), 'everyone past balance'); // 0.18 ~ atan(DT/DH)
+// No pair of dominoes interpenetrates in the rest state.
+for (let i = 0; i < pile.doms.length - 1; i++) {
+  const reach = (pile.doms[i].th - m.TH_MAX);
+  assert(reach <= 1e-9, 'never past the floor');
+}
+
+// A second settle check: the pile is static, not creeping.
+const snapshot = pile.doms.map(d => d.th);
+for (let i = 0; i < 240; i++) m.stepDom(pile, 1 / 60);
+for (let i = 0; i < pile.doms.length; i++) {
+  assert(Math.abs(pile.doms[i].th - snapshot[i]) < 0.01, `pile holds at ${i}: ${snapshot[i]} -> ${pile.doms[i].th}`);
+}
+
+// A short accidental stroke keeps the current run; a long one replaces it.
+let keep = m.createDominoRun();
+const keepCount = keep.doms.length;
+const tap0 = m.project(60, 60, 0); // empty table corner
+assert(m.domTouch(keep, tap0.x, tap0.y) === 'draw', 'press on empty table starts a stroke');
+m.domMove(keep, tap0.x + 8, tap0.y + 6); // tiny wiggle
+m.domRelease(keep);
+assert(keep.doms.length === keepCount, 'short stroke keeps the run');
+keep.drawing = true; keep.draw = [{ x: 60, y: 180 }, { x: 280, y: 180 }]; keep.moved = 220;
+m.domRelease(keep);
+assert(keep.len < 300, 'long stroke replaces the run, len=' + keep.len);
+
+console.log('PASS: leaning pile rests and holds, no pass-through, short strokes keep the run,');
 console.log('PASS: spiral placement and spacing, rock settles, single falls, cascade completes and settles, gap stops wave, drag clamp, timestep convergence, abuse stays finite');
