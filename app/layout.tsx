@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import "./globals.css";
-import { COMPONENT_COUNT } from "./components/component-registry";
+import { COMPONENT_COUNT, META } from "./components/component-registry";
 
 const siteUrl = "https://nativelet.netlify.app";
 const title = "Nativelet - Open-source React Native components with live previews";
@@ -57,6 +57,20 @@ const jsonLd = {
       name: "Nativelet",
       description,
       inLanguage: "en",
+    },
+    {
+      "@type": "ItemList",
+      "@id": `${siteUrl}/#components`,
+      name: "Nativelet components",
+      numberOfItems: COMPONENT_COUNT,
+      itemListElement: (Object.keys(META) as (keyof typeof META)[]).map(
+        (id, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: META[id].title,
+          url: `${siteUrl}/components/${id}`,
+        }),
+      ),
     },
     {
       "@type": "SoftwareSourceCode",
