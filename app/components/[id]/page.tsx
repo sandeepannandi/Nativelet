@@ -9,6 +9,16 @@ const SITE = "https://nativelet.netlify.app";
 
 const COVERS: Partial<Record<ComponentId, string>> = {
   domino: "/domino-cover.svg",
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { META, type ComponentId } from "../component-registry";
+import styles from "./component-page.module.css";
+
+const REPO = "https://github.com/sandeepannandi/Nativelet";
+const SITE = "https://nativelet.netlify.app";
+
+const COVERS: Partial<Record<ComponentId, string>> = {
+  domino: "/domino-cover.svg",
   pottery: "/pottery-cover.svg",
   gyro: "/gyroscope-cover.svg",
   zipper: "/zipper-cover.svg",
@@ -24,6 +34,16 @@ export function generateStaticParams() {
 
 function describe(note: string): string {
   if (note.length <= 158) return note;
+  // Prefer whole sentences that fit; file names contain dots, so only split
+  // after sentence punctuation followed by a capital letter.
+  const sentences = note.split(/(?<=[.!?])\s+(?=[A-Z])/);
+  let out = "";
+  for (const s of sentences) {
+    const next = out ? out + " " + s : s;
+    if (next.length > 158) break;
+    out = next;
+  }
+  if (out.length >= 40) return out;
   const cut = note.slice(0, 158);
   return cut.slice(0, cut.lastIndexOf(" ")).replace(/[.,;:\s]+$/, "") + ".";
 }
