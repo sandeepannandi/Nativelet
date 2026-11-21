@@ -26,6 +26,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
+  verification: { google: "f2ZJdaZeVfy-DLw8iUN3DJmt7WGFc4Unkdc4P-b1LV0" },
   openGraph: {
     title,
     description,
