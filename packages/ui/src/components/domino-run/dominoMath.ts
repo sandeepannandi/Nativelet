@@ -2,12 +2,14 @@
 // wooden table. Each domino is a rigid box that can only rotate about the
 // bottom edge it is tipping over: gravity torque comes from the centre of
 // mass passing that edge, so a standing domino rocked gently settles back
-// and one pushed past its balance angle falls. Neighbours touch face to
-// face: when the falling face of one reaches the back face of the next, an
-// impulse splits their contact-point velocities, and leaning contact keeps
-// transmitting force every substep, so the cascade and the final pile come
-// out of the same contact rule. Sliding, spin and side collisions are left
-// out on purpose. Native and web draw the same marks from domScene.
+// and one pushed past its balance angle falls. Contacts are resolved in the
+// floor plane between every pair of nearby dominoes, not just path
+// neighbours: both bodies are projected into the falling domino's vertical
+// plane as hinged boxes, overlaps are clamped positionally and the collision
+// impulse splits their contact-point velocities. Resting contact therefore
+// holds: a toppled run ends as a leaning pile, each domino propped on the
+// next, instead of everyone sinking flat. Sliding, spin and side collisions
+// are left out on purpose. Native and web draw the same marks from domScene.
 
 export const DOM_W = 360;
 export const DOM_H = 440;
@@ -29,7 +31,7 @@ const BALANCE = Math.atan2(DT, DH);
 const FU0 = 30, FU1 = 290, FV0 = 16, FV1 = 270;
 
 export type DomPoint = { x: number; y: number };
-export type Domino = { s: number; th: number; om: number; top: number; bot: number; held: boolean };
+export type Domino = { s: number; th: number; om: number; top: number; bot: number; held: boolean; zz?: number };
 export type Dust = { fu: number; fv: number; h: number; vx: number; vy: number; vh: number; life: number };
 export type DominoSim = {
   path: DomPoint[];
@@ -84,6 +86,13 @@ function rebuild(s: DominoSim) {
   s.len = cum[cum.length - 1] || 0;
 }
 
+/** Replace the path and re-lay the run. */
+export function setPath(s: DominoSim, pts: DomPoint[]) {
+  s.path = pts.slice();
+  rebuild(s);
+  placeDominoes(s);
+}
+
 /** Point and unit tangent at arc length a along the path. */
 export function pathAt(s: DominoSim, a: number): { x: number; y: number; tx: number; ty: number } {
   const n = s.path.length;
@@ -123,7 +132,7 @@ export function placeDominoes(s: DominoSim) {
   if (s.len < SPACING * 1.5) return;
   const count = Math.min(MAX_DOMINOS, Math.floor((s.len - SPACING * 0.4) / SPACING));
   for (let i = 0; i < count; i++) {
-    s.doms.push({ s: SPACING * 0.4 + i * SPACING, th: 0, om: 0, top: 1 + Math.floor(pipRnd() * 6), bot: 1 + Math.floor(pipRnd() * 6), held: false });
+    s.doms.push({ s: SPACING * 0.4 + i * SPACING, th: 0, om: 0, top: 1 + Math.floor(pipRnd() * 6), bot: 1 + Math.floor(pipRnd() * 6), held: false, zz: 0 });
   }
   s.doms.sort((a, b) => a.s - b.s);
 }
@@ -188,6 +197,7 @@ export function domTouch(s: DominoSim, x: number, y: number): 'grab' | 'draw' | 
     s.doms[i].held = true;
     s.doms[i].th = 0;
     s.doms[i].om = 0;
+    s.doms[i].zz = 0;
     return 'grab';
   }
   const p = clampFloor(unproject(x, y));
@@ -221,10 +231,11 @@ export function domMove(s: DominoSim, x: number, y: number) {
 export function domRelease(s: DominoSim) {
   if (s.drawing) {
     s.drawing = false;
-    if (s.draw.length > 1 && s.moved > 40) {
-      s.path = s.draw.slice();
-      rebuild(s);
-      placeDominoes(s);
+    // A deliberate stroke replaces the run; a short accidental drag keeps it.
+    if (s.draw.length > 1 && s.moved > 60) {
+      let len = 0;
+      for (let i = 1; i < s.draw.length; i++) len += Math.hypot(s.draw[i].x - s.draw[i - 1].x, s.draw[i].y - s.draw[i - 1].y);
+      if (len >= SPACING * 2) setPath(s, s.draw);
     }
     s.draw = [];
     return;
@@ -246,12 +257,13 @@ export function pushFirst(s: DominoSim): boolean {
 
 /** Stand every domino back up where it lies. */
 export function standUp(s: DominoSim) {
-  for (const d of s.doms) { d.th = 0; d.om = 0; }
+  for (const d of s.doms) { d.th = 0; d.om = 0; d.zz = 0; }
   s.dust = [];
 }
 
 export function allSettled(s: DominoSim): boolean {
-  return s.doms.every(d => (Math.abs(d.th) < 0.02 && Math.abs(d.om) < 0.05) || (d.th >= TH_MAX - 0.03 && Math.abs(d.om) < 0.08));
+  // Leaning piles rest at intermediate angles, so settled means no motion.
+  return s.doms.every(d => Math.abs(d.om) < 0.06);
 }
 
 export function fallenCount(s: DominoSim): number {
@@ -260,39 +272,68 @@ export function fallenCount(s: DominoSim): number {
 
 // ---- physics -------------------------------------------------------------
 
-// Contact between domino a tipping toward domino b. sign = +1 when a falls
-// toward increasing arc length, -1 the other way. fa is a's tip angle toward
-// b and fb is b's lean away from a (both positive in the falling direction).
-function contact(s: DominoSim, a: Domino, b: Domino, sign: 1 | -1, h: number) {
-  const fa = sign * a.th, fb = sign * b.th;
-  if (fa <= 0.001) return;
-  const gap = Math.abs(b.s - a.s);
-  const sb = Math.sin(fb), cb = Math.cos(fb), sa = Math.sin(fa), ca = Math.cos(fa);
-  const back = gap - DT * cb; // b's back-bottom corner, from a's leading edge
-  let ra = -1, rb = 0;
-  const den = sa - ca * sb;
-  if (den > 1e-6) {
-    const L = back / den;
-    if (L >= 0 && L <= DH && L * ca <= DH) { ra = L; rb = L * ca; }
+// Per-substep pose cache (floor position and heading of each base).
+const PX: number[] = [], PY: number[] = [], TX: number[] = [], TY: number[] = [];
+
+/** Corners of a hinged box in its fall plane: pivot at (0,0), tip angle f. */
+function boxCorners(f: number, out: number[]) {
+  const sf = Math.sin(f), cf = Math.cos(f);
+  // u = (sf, cf) up the face, m = (-cf, sf) backwards; the box spans u x m.
+  out[0] = 0; out[1] = 0;
+  out[2] = DH * sf; out[3] = DH * cf;
+  out[4] = DH * sf - DT * cf; out[5] = DH * cf + DT * sf;
+  out[6] = -DT * cf; out[7] = DT * sf;
+}
+
+const A_CORN: number[] = new Array(8).fill(0), B_CORN: number[] = new Array(8).fill(0);
+
+/**
+ * Overlap of two fall-plane boxes: A pivoting at (0,0) with tip fa, B
+ * pivoting at (g,0) and leaning at fb. Returns null when separate, else the
+ * penetration depth, the separating axis oriented from A toward B, and a
+ * witness point near the contact.
+ */
+function boxContact(fa: number, g: number, fb: number): { dep: number; nx: number; ny: number; wx: number; wy: number } | null {
+  boxCorners(fa, A_CORN);
+  boxCorners(fb, B_CORN);
+  for (let k = 0; k < 8; k += 2) B_CORN[k] += g;
+  const sa = Math.sin(fa), ca = Math.cos(fa), sb = Math.sin(fb), cb = Math.cos(fb);
+  const axes = [sa, ca, -ca, sa, sb, cb, -cb, sb];
+  let dep = Infinity, nx = 0, ny = 0;
+  let hit = true;
+  for (let k = 0; k < 8; k += 2) {
+    let ax = axes[k], ay = axes[k + 1];
+    let minA = Infinity, maxA = -Infinity, minB = Infinity, maxB = -Infinity;
+    for (let i = 0; i < 8; i += 2) {
+      const pa = A_CORN[i] * ax + A_CORN[i + 1] * ay;
+      if (pa < minA) minA = pa;
+      if (pa > maxA) maxA = pa;
+      const pb = B_CORN[i] * ax + B_CORN[i + 1] * ay;
+      if (pb < minB) minB = pb;
+      if (pb > maxB) maxB = pb;
+    }
+    const ov = Math.min(maxA, maxB) - Math.max(minA, minB);
+    if (ov <= 0) { hit = false; break; }
+    if (ov < dep) {
+      dep = ov;
+      if (g * ax < 0) { ax = -ax; ay = -ay; }
+      nx = ax; ny = ay;
+    }
   }
-  let pen = 0;
-  if (ra < 0) {
-    // a's top corner reaches b's back face lower down.
-    const y = DH * ca;
-    pen = DH * sa - (back + y * sb);
-    if (pen <= 0 || y <= 0 || y >= DH) return;
-    ra = DH; rb = y;
+  if (!hit) return null;
+  // Witness: average of the corners of each box inside the other.
+  let wx = 0, wy = 0, n = 0;
+  const inside = (px: number, py: number, sin: number, cos: number, ox: number) => {
+    const qx = px - ox, qy = py;
+    const cu = qx * sin + qy * cos, cm = qx * -cos + qy * sin;
+    return cu >= -0.5 && cu <= DH + 0.5 && cm >= -0.5 && cm <= DT + 0.5;
+  };
+  for (let i = 0; i < 8; i += 2) {
+    if (inside(A_CORN[i], A_CORN[i + 1], sb, cb, g)) { wx += A_CORN[i]; wy += A_CORN[i + 1]; n++; }
+    if (inside(B_CORN[i], B_CORN[i + 1], sa, ca, 0)) { wx += B_CORN[i]; wy += B_CORN[i + 1]; n++; }
   }
-  const closing = ra * sign * a.om - rb * sign * b.om;
-  const bias = pen > 0 ? Math.min(30, 0.2 * pen / h) : 0;
-  if (closing + bias <= 0) return;
-  const j = (closing + bias) / (ra * ra / INERTIA + rb * rb / INERTIA);
-  a.om -= sign * j * ra / INERTIA;
-  b.om += sign * j * rb / INERTIA;
-  if (j * ra > 900 && s.dust.length < 60) {
-    const p = pathAt(s, (a.s + b.s) / 2);
-    spawnDust(s, p.x, p.y, rb, 4);
-  }
+  if (n === 0) return null;
+  return { dep, nx, ny, wx: wx / n, wy: wy / n };
 }
 
 function spawnDust(s: DominoSim, fu: number, fv: number, h: number, n: number) {
@@ -302,11 +343,95 @@ function spawnDust(s: DominoSim, fu: number, fv: number, h: number, n: number) {
   }
 }
 
+/** True when some neighbour still props up domino d (probe past the lean). */
+function supported(s: DominoSim, d: Domino): boolean {
+  const i = s.doms.indexOf(d);
+  if (i < 0) return false;
+  const sign = d.th >= 0 ? 1 : -1;
+  const fa = sign * d.th + 0.04;
+  const tx = sign * TX[i], ty = sign * TY[i];
+  for (let j = 0; j < s.doms.length; j++) {
+    if (j === i) continue;
+    const dx = PX[j] - PX[i], dy = PY[j] - PY[i];
+    if (dx * dx + dy * dy > (DH + DT + 4) * (DH + DT + 4)) continue;
+    const relx = dx * tx + dy * ty;
+    const lat = Math.abs(dx * -ty + dy * tx);
+    if (relx < DT * 0.4 || relx > DH + DT + 4 || lat > DW - 2) continue;
+    const cosphi = TX[i] * TX[j] + TY[i] * TY[j];
+    if (cosphi < 0.5) continue;
+    const fb = sign * s.doms[j].th * cosphi;
+    if (boxContact(fa, relx, fb)) return true;
+  }
+  return false;
+}
+
+/**
+ * Contact of domino i falling toward domino j, in i's vertical fall plane.
+ * j's lean away from i is its tip projected onto i's heading. Overlap is
+ * clamped out positionally and the surviving closing speed is split by an
+ * impulse at the witness point, so a leaning pile keeps transmitting force
+ * instead of every domino sinking flat through the one it rests on.
+ */
+function contact(s: DominoSim, i: number, j: number) {
+  const a = s.doms[i], b = s.doms[j];
+  const sign = a.th >= 0 ? 1 : -1;
+  const fa = sign * a.th;
+  if (fa <= 0.001) return;
+  // j in i's fall plane.
+  const tx = sign * TX[i], ty = sign * TY[i];
+  const relx = (PX[j] - PX[i]) * tx + (PY[j] - PY[i]) * ty;
+  const lat = Math.abs((PX[j] - PX[i]) * -ty + (PY[j] - PY[i]) * tx);
+  if (relx < DT * 0.4 || relx > DH + DT + 4 || lat > DW - 2) return;
+  let cosphi = TX[i] * TX[j] + TY[i] * TY[j];
+  if (cosphi < 0.5) return; // headings too skewed for a face contact
+  const fb = sign * b.th * cosphi;
+  const c = boxContact(fa, relx, fb);
+  if (!c) return;
+  // Positional clamp: rotate a back out of the overlap along the contact axis.
+  const rpa = c.wy * c.nx - c.wx * c.ny;
+  if (Math.abs(rpa) > 4) {
+    let dth = -c.dep / rpa;
+    dth = Math.max(-0.06, Math.min(0.06, dth)) * 0.7;
+    a.th += sign * dth;
+  }
+  // Velocity: split the closing speed at the witness point.
+  const rpb = c.wy * c.nx - (c.wx - relx) * c.ny;
+  const closing = sign * a.om * rpa - sign * b.om * cosphi * rpb;
+  if (closing <= 0) return;
+  let asleep = !b.held && (b.zz ?? 0) >= 30;
+  const ia = rpa * rpa / INERTIA;
+  let ib = b.held || asleep ? 0 : (rpb * rpb) / INERTIA;
+  let jimp = closing / (ia + ib || 1);
+  if (asleep && Math.abs(jimp * rpb / INERTIA) > 0.4) {
+    // A hard knock wakes the sleeper and lands as a normal collision.
+    b.zz = 0; asleep = false;
+    ib = (rpb * rpb) / INERTIA;
+    jimp = closing / (ia + ib || 1);
+  }
+  a.om -= sign * jimp * rpa / INERTIA;
+  if (!b.held && !asleep) b.om += sign * jimp * rpb / (INERTIA * cosphi);
+  if (Math.abs(jimp * rpa) > 900 && s.dust.length < 60) {
+    spawnDust(s, PX[i] + tx * c.wx, PY[i] + ty * c.wx, c.wy, 4);
+  }
+}
+
 function substep(s: DominoSim, h: number, reduce: boolean) {
+  const n = s.doms.length;
+  for (let i = 0; i < n; i++) {
+    const p = pathAt(s, s.doms[i].s);
+    PX[i] = p.x; PY[i] = p.y; TX[i] = p.tx; TY[i] = p.ty;
+  }
   for (const d of s.doms) {
     if (d.held) continue;
     // Static balance: untouched standing dominoes stay exactly still.
     if (Math.abs(d.th) < 0.02 && Math.abs(d.om) < 0.05) { d.th = 0; d.om = 0; continue; }
+    // A domino that has been nearly still for a while sleeps; it wakes when
+    // knocked (contact impulse) or when whatever it leaned on moves away.
+    if ((d.zz ?? 0) >= 30) {
+      d.om = 0;
+      if (Math.abs(d.th) > BALANCE && Math.abs(d.th) < TH_MAX - 0.02 && !supported(s, d)) d.zz = 0;
+      else continue;
+    }
     const prevSign = d.th >= 0 ? 1 : -1;
     const pivot = d.th >= 0 ? 1 : -1;
     // Horizontal distance from the pivot edge to the centre of mass; gravity
@@ -334,15 +459,26 @@ function substep(s: DominoSim, h: number, reduce: boolean) {
       if (d.om < 0) { d.om *= -0.12; if (Math.abs(d.om) < 0.35) d.om = 0; }
     }
   }
-  // Contacts, a few relaxation passes so a leaning pile shares the load.
-  for (let iter = 0; iter < 3; iter++) {
-    for (let i = 0; i < s.doms.length - 1; i++) {
-      contact(s, s.doms[i], s.doms[i + 1], 1, h);
-      contact(s, s.doms[i + 1], s.doms[i], -1, h);
+  // Contacts between every nearby pair, a few relaxation passes so a leaning
+  // pile shares the load down the chain.
+  for (let iter = 0; iter < 4; iter++) {
+    for (let i = 0; i < n; i++) {
+      const a = s.doms[i];
+      if (Math.abs(a.th) < 0.02 && Math.abs(a.om) < 0.05) continue;
+      if ((a.zz ?? 0) >= 30) continue;
+      for (let j = 0; j < n; j++) {
+        if (i === j) continue;
+        const dx = PX[j] - PX[i], dy = PY[j] - PY[i];
+        if (dx * dx + dy * dy > (DH + DT + 4) * (DH + DT + 4)) continue;
+        contact(s, i, j);
+      }
     }
   }
   for (const d of s.doms) {
     if (d.th >= TH_MAX && Math.abs(d.om) < 0.08) d.om = 0;
+    // Only leaning or moving dominoes can sleep; standing ones stay live.
+    if (d.held || Math.abs(d.th) < 0.02 || Math.abs(d.om) >= 0.25) d.zz = 0;
+    else d.zz = Math.min(1000, (d.zz ?? 0) + 1);
   }
   for (let i = s.dust.length - 1; i >= 0; i--) {
     const p = s.dust[i];

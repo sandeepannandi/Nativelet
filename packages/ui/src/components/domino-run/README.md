@@ -8,4 +8,4 @@ Every domino is a rigid box that rotates about the bottom edge it is tipping ove
 
 Props: slowMotion (about 4x slower), reducedMotion (slower, no dust; the system setting is also respected). Buttons push the first domino and stand the run back up, and screen readers get the same two actions.
 
-Honest limits: a simplified rigid-body chain. Dominoes do not slide or spin, contact is checked between path neighbours only, and face contact is modelled at one moving contact point, so glancing hits and sideways shoves are not simulated. No sound or haptics. Web and native share one solver and one drawing list. Device frame rate has not been measured.
+Honest limits: a simplified rigid-body chain. Dominoes do not slide or spin, contact is projected into each falling domino's own vertical plane, and pairs whose paths head in very different directions (steeper than about 60 degrees apart) do not collide, so glancing hits and sideways shoves are not simulated. No sound or haptics. Web and native share one solver and one drawing list. Device frame rate has not been measured.
