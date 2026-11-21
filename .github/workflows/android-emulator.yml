@@ -32,6 +32,11 @@ on:
         type: boolean
         required: false
         default: false
+      domino_validation_only:
+        description: 'Run only Domino Run native rendering and gesture checks.'
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [ci/android-emulator-smoke, "parity/**"]
 permissions:
@@ -83,7 +88,7 @@ jobs:
           name: apk
           path: apps/showcase/android/app/build/outputs/apk/release/*.apk
   emulator:
-    if: ${{ inputs.water_validation_only != true && inputs.zipper_validation_only != true && ( inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true && inputs.gyro_diagnostics_only != true && inputs.macos_gpu_probe_only != true ) }}
+    if: ${{ inputs.domino_validation_only != true && inputs.water_validation_only != true && inputs.zipper_validation_only != true && ( inputs.runtime_qualification_only != true && inputs.gyro_validation_only != true && inputs.gyro_diagnostics_only != true && inputs.macos_gpu_probe_only != true ) }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -142,6 +147,43 @@ jobs:
         with:
           name: android-smoke-results
           path: smoke-out
+  domino-validation:
+    if: ${{ inputs.domino_validation_only == true }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact source
+        run: git rev-parse HEAD
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Run Domino Run checks on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: false
+          script: |
+            adb install -r apk/*.apk
+            bash scripts/android-domino.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: domino-validation-results
+          path: smoke-out/domino
   runtime-qualification:
     if: ${{ inputs.runtime_qualification_only == true && inputs.macos_gpu_probe_only != true && inputs.water_validation_only != true }}
     runs-on: ubuntu-latest
