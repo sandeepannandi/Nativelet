@@ -148,7 +148,7 @@ jobs:
           name: android-smoke-results
           path: smoke-out
   domino-validation:
-    if: ${{ inputs.domino_validation_only == true }}
+    if: ${{ always() && needs.build.result == 'success' && inputs.domino_validation_only == true }}
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
