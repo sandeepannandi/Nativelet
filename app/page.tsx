@@ -3,7 +3,7 @@ import { join } from "node:path";
 import NativeletSite from "./components/nativelet-site";
 
 const components = {
-  domino: { dir: "packages/ui/src/components/domino-run", files: ["DominoRun.tsx", "dominoMath.ts", "Example.tsx", "README.md", "LICENSE"] },
+  slingshot: { dir: "packages/ui/src/components/slingshot", files: ["Slingshot.tsx", "slingMath.ts", "Example.tsx", "README.md", "LICENSE"] },
   pottery: { dir: "packages/ui/src/components/pottery-wheel", files: ["PotteryWheel.tsx", "potteryMath.ts", "Example.tsx", "README.md", "LICENSE"] },
   zipper: { dir: "packages/ui/src/components/zipper-reveal", files: ["ZipperReveal.tsx", "zipperMath.ts", "Example.tsx", "README.md", "LICENSE"] },
   gyro: { dir: "packages/ui/src/components/gyroscope", files: ["Gyroscope.tsx", "gyroMath.ts", "gyroControl.ts", "gyroShader.ts", "Example.tsx", "README.md", "LICENSE"] },
@@ -72,7 +72,7 @@ function read(dir: string, files: readonly string[]) {
 
 export default function Home() {
   const sources = {
-    domino: read(components.domino.dir, components.domino.files),
+    slingshot: read(components.slingshot.dir, components.slingshot.files),
     pottery: read(components.pottery.dir, components.pottery.files),
     zipper: read(components.zipper.dir, components.zipper.files),
     cradle: read(components.cradle.dir, components.cradle.files),
