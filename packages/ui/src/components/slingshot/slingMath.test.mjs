@@ -1,39 +1,60 @@
 import assert from 'node:assert/strict';
 import * as m from './slingMath.ts';
+import {readFileSync} from 'node:fs';
 
 // A harder pull launches higher than a gentle one.
 function peak(pullY) {
   const s = m.createSling();
-  assert.equal(m.slTouch(s, 180, 290), 'grab');
+  assert.equal(m.slTouch(s, m.ANCHOR.x, m.ANCHOR.y), 'grab');
   m.slMove(s, 180, pullY); m.slRelease(s);
   let top = 1e9;
   for (let i = 0; i < 120; i++) { m.stepSl(s, 1 / 60); top = Math.min(top, s.p.y); }
   return top;
 }
-assert(peak(394) < peak(350), 'harder pull flies higher');
+assert(peak(m.ANCHOR.y+104) < peak(m.ANCHOR.y+65), 'harder pull flies higher');
 
 // Pull is clamped and a tiny pull does not fire.
 const c = m.clampPull(180, 900);
 assert(Math.hypot(c.x - m.ANCHOR.x, c.y - m.ANCHOR.y) <= m.MAX_PULL + 1e-9);
-const tiny = m.createSling(); m.slTouch(tiny, 180, 290); m.slMove(tiny, 182, 295); m.slRelease(tiny);
+const tiny = m.createSling(); m.slTouch(tiny, m.ANCHOR.x, m.ANCHOR.y); m.slMove(tiny, m.ANCHOR.x+2, m.ANCHOR.y+5); m.slRelease(tiny);
 assert.equal(tiny.mode, 'ready');
 
 // A shot flies, comes to rest, and is reloaded.
-const s = m.createSling(); m.slTouch(s, 180, 290); m.slMove(s, 130, 385); m.slRelease(s);
+const s = m.createSling(); m.slTouch(s, m.ANCHOR.x, m.ANCHOR.y); m.slMove(s, 130, 385); m.slRelease(s);
 const seen = new Set();
 for (let i = 0; i < 60 * 14; i++) { m.stepSl(s, 1 / 60); seen.add(s.mode); assert(Number.isFinite(s.p.x) && Number.isFinite(s.p.y)); }
 for (const mode of ['pull', 'flight', 'rest', 'ready']) assert(seen.has(mode), 'passes through ' + mode);
 assert.equal(s.mode, 'ready');
 
 // The aim path is predicted only while held.
-const a = m.createSling(); m.slTouch(a, 180, 290); m.slMove(a, 180, 380);
+const a = m.createSling(); m.slTouch(a, m.ANCHOR.x, m.ANCHOR.y); m.slMove(a, 180, m.ANCHOR.y+90);
 assert(m.predict(a).length > 5);
 m.slRelease(a); assert.equal(m.predict(a).length, 0);
 
-// Band thins as it stretches and the scene always draws.
-const r = m.createSling();
-const w0 = m.slScene(r).filter(k => k.stroke && k.color === '#262523')[0].stroke;
-m.slTouch(r, 180, 290); m.slMove(r, 180, 394);
-const w1 = m.slScene(r).filter(k => k.stroke && k.color === '#262523')[0].stroke;
-assert(w1 < w0, 'band thins under tension');
+// Latex width shrinks continuously with elongation. Neither strip pushes.
+const tip=m.TIP_L;
+assert(m.bandMetrics(tip,{x:180,y:m.ANCHOR.y+100}).width < m.bandMetrics(tip,m.ANCHOR).width);
+assert.equal(m.bandMetrics(tip,tip).extension,0);
+const atRest=m.elasticAcceleration(m.ANCHOR);
+assert.equal(atRest.x,0);assert.equal(atRest.y,m.G);
+// The native wrapper must call the initializer it actually imports. The root
+// website typecheck excludes this file, so guard this past native-only defect.
+const native=readFileSync(new URL('./Slingshot.tsx',import.meta.url),'utf8');
+assert(native.includes('useRef(createSling())'));
+assert(!native.includes('createSlingshot('));
+// Symmetric vertical shots can settle on the fork without an artificial shove.
+for(const [x,y] of [[180,341],[180,367],[140,355],[210,355]]) {
+ const a=m.createSling(); m.slTouch(a,m.ANCHOR.x,m.ANCHOR.y);m.slMove(a,x,y);m.slRelease(a);
+ const seen=new Set();for(let i=0;i<1200;i++){m.stepSl(a,1/60);seen.add(a.mode);assert(Number.isFinite(a.p.x+a.p.y));}
+ assert(seen.has('flight'));assert.equal(a.mode,'ready');
+}
 console.log('slingshot ok');
+
+// A full-power shot may leave the top of the stage; it must not bounce off an
+// invisible ceiling. Every airborne step away from contacts follows gravity.
+const full=m.createSling();m.slTouch(full,m.ANCHOR.x,m.ANCHOR.y);m.slMove(full,180,m.ANCHOR.y+104);m.slRelease(full);
+for(let i=0;i<600;i++) {
+ const before={...full.v},mode=full.mode,y=full.p.y;
+ m.stepSl(full,1/240);
+ if(mode==='flight' && full.mode==='flight' && y<150) assert(Math.abs(full.v.y-before.y-m.G/240)<1e-7);
+}
