@@ -1,13 +1,13 @@
 {
-  "slug": "domino-run",
+  "slug": "slingshot",
   "files": [
-    "DominoRun.tsx",
-    "dominoMath.ts",
+    "Slingshot.tsx",
+    "slingMath.ts",
     "Example.tsx",
     "README.md",
     "LICENSE"
   ],
-  "title": "Domino Run",
+  "title": "Slingshot",
   "category": "interaction",
   "dependencies": [
     "react",
