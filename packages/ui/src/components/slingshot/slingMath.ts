@@ -196,7 +196,7 @@ export function stepSl(s: SlSim, dt: number, reduce = false) {
     } else if (s.mode === 'flight') {
       const contact = flightStep(s.p, s.v, k);
       if (contact === 'frame' && len(s.v.x,s.v.y) < 22) s.restT += k; else s.restT = 0;
-      if ((s.p.x < -BALL_R || s.p.x > SL_W+BALL_R) && s.p.y > FLOOR) { s.mode = 'rest'; s.restT = 0; }
+      if ((s.p.x < -BALL_R || s.p.x > SL_W+BALL_R) && s.p.y >= FLOOR-BALL_R-0.5) { s.mode = 'rest'; s.restT = 0; }
       if (s.restT > 0.45) { s.v = {x:0,y:0}; s.mode = 'rest'; s.restT = 0; }
       if (s.p.y >= FLOOR - BALL_R - 0.5 && Math.abs(s.v.y) < 1 && Math.abs(s.v.x) < 14) { s.v.x = 0; s.v.y = 0; s.mode = 'rest'; s.restT = 0; }
     } else if (s.mode === 'rest') {
