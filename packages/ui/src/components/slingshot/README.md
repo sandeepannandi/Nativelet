@@ -1,11 +1,13 @@
 # Slingshot
 
-Original React Native Skia and Gesture Handler component. A wooden Y-frame holds a rubber band and a leather pouch with a ball. Drag the pouch back to stretch the band and aim, then let go to launch.
+Original React Native Skia and Gesture Handler component. Pull a leather pouch back and release a steel pellet from a walnut fork with tapered latex strips.
 
-Copy Slingshot.tsx, slingMath.ts and LICENSE together. Requires react-native-gesture-handler and @shopify/react-native-skia. It wraps its own GestureHandlerRootView and needs no asset or network.
+Copy Slingshot.tsx, slingMath.ts and LICENSE together. Requires react-native-gesture-handler and @shopify/react-native-skia. It wraps its own GestureHandlerRootView and needs no assets or network.
 
-The band is a Hooke spring toward the fork, so the further you pull, the faster the ball leaves. While you hold, a dotted path shows where the ball will go, computed with the same integrator as the shot. On release the ball rides the spring until the pouch passes the fork, then flies under gravity, bounces off the walls, the floor and the frame, and settles. The slack band overshoots and wobbles as a damped spring, and it thins as it stretches. A resting ball is reloaded after a moment.
+Each fork tip exerts tension along its own band. Bands resist extension, never compression, with a cubic strain-stiffening term. A shorter pull can settle back without launching. The aim dots use the same launch integrator. The pellet rides the accelerating pouch to separation, then follows gravity with restitution at the floor, walls and approximate fork. The empty pouch remains attached, recoils, and settles. Band width narrows as stretch increases. Resting pellets reload after a moment.
 
-Props: slowMotion (about 4x slower), reducedMotion (no trail, quicker band settle; the system setting is also respected). Buttons fire a medium shot and reload, and screen readers get the same two actions.
+The renderer uses shaped walnut surfaces, growth lines, end grain, leather wraps and cup, latex ribbons, a reflected steel surface and layered contact shadows. The native and web adapters use the same solver and drawing list.
 
-Honest limits: a point-mass ball in a 2D side view, with a linear band and no band mass or twist. The pull is limited to the region below the fork. The ball does not spin and has no friction model beyond rolling loss on the floor. No targets, sound or haptics. Web and native share one solver and one drawing list. Device frame rate has not been measured.
+Props: slowMotion (about 4x slower), reducedMotion (quicker band settling; system preference respected). Fire, Reload and Slow motion buttons; keyboard and screen-reader actions included.
+
+Limits: layered 2D material rendering, not 3D geometry. The elastic coefficients are tuned, not measured latex data. Bands have no distributed mass or twist; recoil uses a damped midpoint approximation. The pellet is a point mass with a collision radius; fork collisions use capsules rather than the visual silhouette. No spin or full rolling-friction model. The pull is limited to the region below the fork. No targets, sound or haptics. Device behavior and frame rate are unverified.

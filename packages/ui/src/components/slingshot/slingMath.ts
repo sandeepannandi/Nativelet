@@ -1,23 +1,33 @@
-// Pure model for Slingshot. A wooden Y-frame holds a rubber band with a leather
-// pouch and a ball. Drag the pouch back to stretch the band; the band pulls
-// toward the fork with a Hooke spring, so the launch speed grows with the pull.
-// On release the ball rides the spring until the pouch passes the fork line,
-// then flies as a projectile with gravity, bounces off walls, floor and the
-// frame, and settles. The slack band overshoots and wobbles as a damped spring
-// and its width thins as it stretches. A dotted aim path is predicted with the
-// same integrator. Native and web draw the same marks from slScene.
-
+// Shared 2D elastic/projectile model and layered material renderer.
 export const SL_W = 360;
 export const SL_H = 440;
 export const FLOOR = 412;
-export const BALL_R = 13;
-export const ANCHOR = { x: 180, y: 290 };
-export const TIP_L = { x: 138, y: 278 };
-export const TIP_R = { x: 222, y: 278 };
+export const BALL_R = 10;
+export const ANCHOR = { x: 180, y: 263 };
+export const TIP_L = { x: 119, y: 225 };
+export const TIP_R = { x: 239, y: 217 };
 export const MAX_PULL = 104;
 export const MIN_PULL = 10;
 export const G = 1400;
-const OMEGA = 7.6; // band spring: a = -OMEGA^2 * stretch
+// Each tip applies tension along its own strip. The cubic term models strain
+// stiffening qualitatively; coefficients are tuned, not measured latex data.
+export function bandMetrics(tip: Pt, p: Pt) {
+  const rest = Math.hypot(tip.x - ANCHOR.x, tip.y - ANCHOR.y);
+  const length = Math.hypot(tip.x - p.x, tip.y - p.y);
+  const extension = Math.max(0, length - rest);
+  return { rest, length, extension, width: 12 / Math.sqrt(Math.max(1, length / rest)) };
+}
+export function elasticAcceleration(p: Pt, v: Pt = { x: 0, y: 0 }): Pt {
+  let x = 0, y = G;
+  for (const tip of [TIP_L, TIP_R]) {
+    const b = bandMetrics(tip, p);
+    if (!b.extension || b.length < 1e-6) continue;
+    const ux = (tip.x - p.x) / b.length, uy = (tip.y - p.y) / b.length;
+    const tension = Math.max(0, 65 * b.extension + 0.0035 * b.extension ** 3 - 0.5 * (v.x * ux + v.y * uy));
+    x += tension * ux; y += tension * uy;
+  }
+  return { x, y };
+}
 const REST_WALL = 0.6, REST_FLOOR = 0.52, REST_FRAME = 0.4;
 
 export type Pt = { x: number; y: number };
@@ -27,7 +37,7 @@ export type SlMark = {
   stroke?: number;
   cap?: 'round';
   alpha?: number;
-  grad?: { x0: number; y0: number; x1: number; y1: number; stops: [number, string][] };
+  grad?: { radial?: boolean; radius?: number; x0: number; y0: number; x1: number; y1: number; stops: [number, string][] };
 };
 export type SlSim = {
   p: Pt; v: Pt;
@@ -87,7 +97,7 @@ export function slRelease(s: SlSim) {
 export function fireDefault(s: SlSim, pull = 78): boolean {
   if (s.mode !== 'ready' && s.mode !== 'held') return false;
   s.mode = 'held';
-  s.p = { x: ANCHOR.x, y: ANCHOR.y + pull };
+  s.p = { x: ANCHOR.x - 24, y: ANCHOR.y + pull };
   slRelease(s);
   return true;
 }
@@ -99,9 +109,9 @@ export function reload(s: SlSim) {
 
 function frameCapsules(): [Pt, Pt, number][] {
   return [
-    [{ x: 180, y: FLOOR }, { x: 180, y: 336 }, 9],
-    [{ x: 180, y: 336 }, { x: TIP_L.x + 4, y: TIP_L.y + 12 }, 7],
-    [{ x: 180, y: 336 }, { x: TIP_R.x - 4, y: TIP_R.y + 12 }, 7],
+    [{ x: 180, y: FLOOR }, { x: 180, y: 314 }, 9],
+    [{ x: 180, y: 314 }, { x: TIP_L.x + 4, y: TIP_L.y + 12 }, 7],
+    [{ x: 180, y: 314 }, { x: TIP_R.x - 4, y: TIP_R.y + 12 }, 7],
   ];
 }
 
@@ -117,8 +127,7 @@ function collideFrame(p: Pt, v: Pt): boolean {
       p.x = cx + nx * min; p.y = cy + ny * min;
       const vn = v.x * nx + v.y * ny;
       if (vn < 0) { v.x -= (1 + REST_FRAME) * vn * nx; v.y -= (1 + REST_FRAME) * vn * ny; hit = true; }
-      // The fork is a cup, not a shelf: a ball that comes to rest on it is shoved off to the side it leans toward.
-      if (Math.abs(v.x) < 40 && ny < -0.5) v.x += (p.x >= 180 ? 1 : -1) * 55;
+
     }
   }
   return hit;
@@ -147,11 +156,13 @@ export function predict(s: SlSim): Pt[] {
   const p = { ...s.p }, v = { x: 0, y: 0 };
   const ux = (ANCHOR.x - p.x) / d, uy = (ANCHOR.y - p.y) / d;
   const h = 1 / 240;
-  for (let i = 0; i < 400; i++) {
-    const ax = -OMEGA * OMEGA * (p.x - ANCHOR.x), ay = -OMEGA * OMEGA * (p.y - ANCHOR.y) + G;
+  let released = false;
+  for (let i = 0; i < 168; i++) {
+    const { x: ax, y: ay } = elasticAcceleration(p, v);
     v.x += ax * h; v.y += ay * h; p.x += v.x * h; p.y += v.y * h;
-    if ((p.x - ANCHOR.x) * ux + (p.y - ANCHOR.y) * uy >= 0) break;
+    if ((p.x - ANCHOR.x) * ux + (p.y - ANCHOR.y) * uy >= 0) { released = true; break; }
   }
+  if (!released) return [];
   const out: Pt[] = [];
   let tNext = 0;
   for (let i = 0, t = 0; i < 360 && out.length < 16; i++, t += h) {
@@ -170,22 +181,24 @@ export function stepSl(s: SlSim, dt: number, reduce = false) {
     s.t += k;
     // Slack band: damped spring around the fork. Always integrated so it wobbles after a shot.
     if (s.mode !== 'held' && s.mode !== 'pull') {
-      const w = 24, z = reduce ? 0.6 : 0.1;
+      const w = 28, z = reduce ? 0.7 : 0.19;
       const ax = -w * w * (s.q.x - ANCHOR.x) - 2 * z * w * s.qv.x, ay = -w * w * (s.q.y - ANCHOR.y) - 2 * z * w * s.qv.y;
       s.qv.x += ax * k; s.qv.y += ay * k; s.q.x += s.qv.x * k; s.q.y += s.qv.y * k;
     }
     if (s.mode === 'pull') {
-      const ax = -OMEGA * OMEGA * (s.p.x - ANCHOR.x), ay = -OMEGA * OMEGA * (s.p.y - ANCHOR.y) + G;
+      const { x: ax, y: ay } = elasticAcceleration(s.p, s.v);
       s.v.x += ax * k; s.v.y += ay * k; s.p.x += s.v.x * k; s.p.y += s.v.y * k;
       s.restT += k;
       // Too weak to lift the ball past the fork: it just settles back into the pouch.
       if (s.restT > 0.7) { s.mode = 'ready'; s.q = { x: s.p.x, y: s.p.y }; s.qv = { x: s.v.x * 0.3, y: s.v.y * 0.3 }; s.p = { ...ANCHOR }; s.v = { x: 0, y: 0 }; s.restT = 0; continue; }
       if ((s.p.x - ANCHOR.x) * s.dir.x + (s.p.y - ANCHOR.y) * s.dir.y >= 0) {
         s.mode = 'flight';
-        s.q = { x: s.p.x, y: s.p.y }; s.qv = { x: s.v.x * 0.45, y: s.v.y * 0.45 };
+        s.q = { x: s.p.x, y: s.p.y }; s.qv = { x: s.v.x * 0.20, y: s.v.y * 0.20 };
       }
     } else if (s.mode === 'flight') {
-      flightStep(s.p, s.v, k);
+      const contact = flightStep(s.p, s.v, k);
+      if (contact === 'frame' && len(s.v.x,s.v.y) < 22) s.restT += k; else s.restT = 0;
+      if (s.restT > 0.45) { s.v = {x:0,y:0}; s.mode = 'rest'; s.restT = 0; }
       if (s.p.y >= FLOOR - BALL_R - 0.5 && Math.abs(s.v.y) < 1 && Math.abs(s.v.x) < 14) { s.v.x = 0; s.v.y = 0; s.mode = 'rest'; s.restT = 0; }
     } else if (s.mode === 'rest') {
       s.restT += k;
@@ -211,53 +224,76 @@ function bandPoint(s: SlSim): Pt {
 
 export function slScene(s: SlSim): SlMark[] {
   const m: SlMark[] = [];
-  // ground
-  m.push({ path: `M0 ${FLOOR}H${SL_W}V${SL_H}H0z`, grad: { x0: 0, y0: FLOOR, x1: 0, y1: SL_H, stops: [[0, '#d9d1c3'], [1, '#c9bfae']] } });
-  m.push({ path: `M0 ${FLOOR}H${SL_W}`, color: '#b5a994', stroke: 2 });
-  const ballOnGround = s.mode === 'rest' || (s.mode === 'flight' && s.p.y > FLOOR - 120);
-  const bp = bandPoint(s);
-  // wooden frame
-  const wood = { x0: 160, y0: 0, x1: 200, y1: 0, stops: [[0, '#7a4f2e'], [0.45, '#b07a4a'], [1, '#6b4426']] as [number, string][] };
-  m.push({ path: line({ x: 180, y: FLOOR }, { x: 180, y: 336 }), color: '#6b4426', stroke: 20, cap: 'round' });
-  m.push({ path: line({ x: 180, y: FLOOR }, { x: 180, y: 336 }), color: '#b07a4a', stroke: 12, cap: 'round' });
-  m.push({ path: line({ x: 176, y: FLOOR - 4 }, { x: 176, y: 340 }), color: '#d4a574', stroke: 3, cap: 'round', alpha: 0.7 });
-  void wood;
-  for (const tip of [TIP_L, TIP_R]) {
-    m.push({ path: line({ x: 180, y: 336 }, { x: tip.x + (tip.x < 180 ? 4 : -4), y: tip.y + 12 }), color: '#6b4426', stroke: 17, cap: 'round' });
-    m.push({ path: line({ x: 180, y: 336 }, { x: tip.x + (tip.x < 180 ? 4 : -4), y: tip.y + 12 }), color: '#b07a4a', stroke: 10, cap: 'round' });
-    m.push({ path: circle(tip.x, tip.y, 7), color: '#3b2a1c' });
+  const fill = (path: string, color: string, alpha = 1) => m.push({path, color, alpha});
+  const stroke = (path: string, color: string, width: number, alpha = 1) => m.push({path, color, stroke: width, cap: 'round', alpha});
+  const grad = (path: string, x0: number,y0: number,x1: number,y1: number, stops: [number,string][]) => m.push({path,grad:{x0,y0,x1,y1,stops}});
+  const ellipse = (x:number,y:number,rx:number,ry:number) => `M${x-rx} ${y}a${rx} ${ry} 0 1 0 ${rx*2} 0a${rx} ${ry} 0 1 0 ${-rx*2} 0`;
+  // Seamless studio floor, not the old illustrated horizon.
+  grad('M0 0H360V440H0Z',0,0,330,440,[[0,'#f5f3ef'],[0.65,'#e8e5de'],[1,'#d4d0c7']]);
+  for (let i=12;i>0;i--) fill(ellipse(191,416,25+i*3.8,2+i*0.5),'#3c3128',0.012);
+  // Sculpted asymmetrical walnut fork. Offset side face gives real thickness.
+  const shape = 'M167 404 C164 376 168 344 163 319 C158 293 137 282 126 260 C117 243 111 227 110 215 Q119 206 131 214 C137 232 141 248 155 263 C168 280 177 289 183 289 C196 278 207 253 217 230 L224 208 Q235 202 248 213 C245 246 231 276 212 299 C196 320 202 352 200 381 L198 407 Q182 418 167 404Z';
+  fill('M176 410 C176 373 181 339 170 313 L124 225 L130 216 L179 292 L231 209 L250 214 C246 257 227 287 213 305 C203 324 209 363 206 405 Q193 422 176 410Z','#38261c');
+  grad(shape,110,265,224,280,[[0,'#62422b'],[0.12,'#aa8050'],[0.27,'#715034'],[0.48,'#c49c69'],[0.63,'#8b633d'],[0.84,'#b18a59'],[1,'#513822']]);
+  // Long grain follows the forks, with irregular growth lines and a knot.
+  for(let i=0;i<12;i++) {
+    const d=i*1.7;
+    stroke(`M${171+d} 401 C${166+d} 367 ${184+d} 329 ${169+d} 303 C${145+d*.45} 277 ${132+d*.25} 251 ${119+d*.22} 220`,i%3?'#422b1b':'#ead0a0',0.45+(i%3)*0.2,i%3?0.28:0.24);
+    stroke(`M${179+d*.9} 309 C${190+d*.8} 285 ${221+d*.5} 260 ${229+d*.7} 215`,i%3?'#4c301d':'#edcc93',0.65,0.24);
   }
-  // aim dots
-  if (s.mode === 'held') {
-    const pts = predict(s);
-    pts.forEach((p, i) => m.push({ path: circle(p.x, p.y, 3.4 - i * 0.12), color: '#31513b', alpha: 0.75 - i * 0.04 }));
+  stroke('M172 298 C167 285 175 277 181 288 C187 300 179 310 176 301 C170 291 179 289 178 297','#432b1b',0.8,0.6);
+  stroke('M113 217 C121 249 141 286 160 303 C173 319 168 351 170 369','#f2d5a0',1.1,0.48);
+  stroke('M196 406 C199 374 194 335 204 311 C229 280 241 252 245 220','#342215',1.3,0.6);
+  // Rounded end-grain surfaces.
+  grad('M110 215 Q118 205 130 213 Q128 220 118 222Z',112,209,128,223,[[0,'#ccb486'],[0.6,'#947348'],[1,'#59402a']]);
+  grad('M224 209 Q235 202 248 213 Q239 221 226 216Z',228,206,245,220,[[0,'#d5bd92'],[0.5,'#96734b'],[1,'#59402a']]);
+  // Leather grip around the handle, cross-lit with overlapped diagonal seams.
+  grad('M164 336 Q181 344 201 336 L199 394 Q185 407 166 395Z',164,365,201,365,[[0,'#211c18'],[0.2,'#534331'],[0.47,'#78634a'],[0.75,'#3b3025'],[1,'#1d1916']]);
+  for(let i=0;i<7;i++) {
+    const y=340+i*8;
+    stroke(`M166 ${y} Q183 ${y+12} 200 ${y+5}`,'#191612',1.5,0.8);
+    stroke(`M166 ${y-1} Q183 ${y+11} 200 ${y+4}`,'#b29a74',0.6,0.55);
   }
-  // flight trail
-  s.trail.forEach((p, i) => m.push({ path: circle(p.x, p.y, 2 + 3 * i / s.trail.length), color: '#31513b', alpha: 0.08 + 0.3 * i / s.trail.length }));
-  // ball shadow
-  if (ballOnGround || s.mode === 'ready') {
-    const sy = FLOOR + 1, hgt = Math.max(0, FLOOR - s.p.y), a = Math.max(0.05, 0.28 - hgt / 600);
-    if (s.mode !== 'ready') m.push({ path: `M${(s.p.x - BALL_R * 1.1).toFixed(1)} ${sy}a${BALL_R * 1.1} 3.4 0 1 0 ${BALL_R * 2.2} 0a${BALL_R * 1.1} 3.4 0 1 0 ${-BALL_R * 2.2} 0z`, color: '#2b2a28', alpha: a });
+  // Small brass eyelet at the heel.
+  fill(ellipse(183,402,4,2.5),'#32271c'); stroke(ellipse(183,401.5,4,2.5),'#c5a269',1);
+  const bp=bandPoint(s);
+  // Grounded projectile shadow spreads and fades with height.
+  const height=Math.max(0,FLOOR-s.p.y), shadowA=Math.max(0.018,0.20-height/1800);
+  for(let i=5;i>0;i--) fill(ellipse(s.p.x+height*.08,FLOOR+1,9+i*2+height*.025,1+i*.45),'#312d28',shadowA/6);
+  if(s.mode==='held') predict(s).forEach((p,i)=>fill(circle(p.x,p.y,1.6), '#625b4d',0.5-i*.024));
+  // Tapered latex ribbons, not outlined ropes. Width conserves cross-section
+  // approximately; sag and a damped transverse wave return as tension falls.
+  for(const [idx,tip] of [[0,TIP_L],[1,TIP_R]] as [number,Pt][]) {
+    const dx=bp.x-tip.x,dy=bp.y-tip.y,l=Math.max(1,len(dx,dy));
+    const nx=-dy/l,ny=dx/l,b=bandMetrics(tip,bp);
+    const w=b.width, sag=Math.max(0,1-b.extension/22)*6;
+    const wave=(s.mode==='flight'||s.mode==='rest') ? Math.sin(s.t*39+idx)*Math.min(4,len(s.q.x-ANCHOR.x,s.q.y-ANCHOR.y)*0.15) : 0;
+    const cx=(tip.x+bp.x)/2+nx*wave,cy=(tip.y+bp.y)/2+sag+ny*wave;
+    const path=`M${tip.x+nx*w/2} ${tip.y+ny*w/2} Q${cx+nx*w*.43} ${cy+ny*w*.43} ${bp.x+nx*w*.3} ${bp.y+ny*w*.3} L${bp.x-nx*w*.3} ${bp.y-ny*w*.3} Q${cx-nx*w*.43} ${cy-ny*w*.43} ${tip.x-nx*w/2} ${tip.y-ny*w/2}Z`;
+    grad(path,cx-nx*w/2,cy-ny*w/2,cx+nx*w/2,cy+ny*w/2,[[0,'#7d511e'],[0.22,'#c59343'],[0.5,'#e9c270'],[0.74,'#d2a150'],[1,'#906024']]);
+    stroke(`M${tip.x+nx*w*.3} ${tip.y+ny*w*.3} Q${cx+nx*w*.25} ${cy+ny*w*.25} ${bp.x+nx*w*.2} ${bp.y+ny*w*.2}`,'#f8dc94',0.65,0.65);
   }
-  // band: back part sits behind the ball, thickness follows stretch
-  const stretch = Math.max(len(bp.x - ANCHOR.x, bp.y - ANCHOR.y), 0);
-  const width = Math.max(3.2, 10.5 - stretch * 0.075);
-  for (const tip of [TIP_L, TIP_R]) {
-    m.push({ path: line(tip, bp), color: '#262523', stroke: width, cap: 'round' });
-    m.push({ path: line(tip, bp), color: '#6b6a66', stroke: Math.max(1, width * 0.25), cap: 'round', alpha: 0.7 });
+  // Wrapped latex ties sit over the strips at each fork.
+  for(const tip of [TIP_L,TIP_R]) {
+    grad(`M${tip.x-10} ${tip.y-4}L${tip.x+11} ${tip.y-6}L${tip.x+13} ${tip.y+10}Q${tip.x+1} ${tip.y+16} ${tip.x-7} ${tip.y+11}Z`,tip.x-10,tip.y,tip.x+13,tip.y,[[0,'#503b22'],[0.3,'#bc9556'],[0.6,'#dbc18b'],[1,'#71512d']]);
+    for(let i=0;i<4;i++) stroke(`M${tip.x-8+i*.6} ${tip.y+i*3}Q${tip.x+2} ${tip.y+4+i*3} ${tip.x+11} ${tip.y-2+i*3}`,'#6b4e2c',0.7,0.8);
   }
-  // leather pouch and ball
-  if (s.mode !== 'flight' && s.mode !== 'rest') {
-    m.push({ path: circle(bp.x, bp.y, BALL_R + 5), color: '#4a3326' });
-    m.push({ path: circle(bp.x, bp.y, BALL_R + 3), color: '#6d4c37' });
-  }
-  const bx = s.mode === 'ready' || s.mode === 'held' || s.mode === 'pull' ? s.p.x : s.p.x, by = s.p.y;
-  const ba = s.mode === 'ready' ? s.fade : 1;
-  m.push({ path: circle(bx, by, BALL_R), grad: { x0: bx - BALL_R, y0: by - BALL_R, x1: bx + BALL_R, y1: by + BALL_R, stops: [[0, '#d7ece0'], [0.5, '#5d8a6a'], [1, '#27402f']] }, alpha: ba });
-  m.push({ path: circle(bx - 4, by - 5, 3.6), color: '#ffffff', alpha: 0.55 * ba });
-  // front lip of the pouch over the ball
-  if (s.mode === 'held' || s.mode === 'pull' || s.mode === 'ready') {
-    m.push({ path: `M${bx - BALL_R - 3} ${by + 2}a${BALL_R + 3} ${BALL_R + 3} 0 0 0 ${2 * (BALL_R + 3)} 0`, color: '#6d4c37', stroke: 4, cap: 'round' });
+  // The empty leather pouch remains attached and snaps back after release.
+  const loaded=s.mode==='ready'||s.mode==='held'||s.mode==='pull';
+  const px=bp.x,py=bp.y;
+  const cup=`M${px-19} ${py-5} Q${px-13} ${py-13} ${px} ${py-11} Q${px+13} ${py-12} ${px+19} ${py-4} L${px+16} ${py+10} Q${px} ${py+19} ${px-16} ${py+10}Z`;
+  grad(cup,px-18,py-10,px+17,py+14,[[0,'#876047'],[0.25,'#513627'],[0.65,'#36241c'],[1,'#aa7c55']]);
+  for(const off of [-13,13]) fill(ellipse(px+off,py+3,1.3,2.5),'#1b1612');
+  if(loaded) fill(ellipse(px,py+5,11,8),'#160f0b',0.55);
+  // Brushed steel pellet with broad environment reflection and small key light.
+  const bx=s.mode==='ready'?bp.x:s.p.x,by=s.mode==='ready'?bp.y:s.p.y,ba=s.mode==='ready'?s.fade:1;
+  m.push({path:circle(bx,by,BALL_R),grad:{x0:bx-7,y0:by-9,x1:bx+6,y1:by+10,stops:[[0,'#f5f7f6'],[0.19,'#c4cbc8'],[0.40,'#707b78'],[0.49,'#424b48'],[0.55,'#b7b9af'],[0.74,'#81847a'],[1,'#303936']]},alpha:ba});
+  fill(ellipse(bx-3,by-5,4.5,1.8),'#fff',0.6*ba);
+  stroke(`M${bx-6} ${by+5}Q${bx} ${by+10} ${bx+5} ${by+6}`,'#e0dcc9',0.6,0.7*ba);
+  if(loaded) {
+    stroke(`M${px-17} ${py+4}Q${px} ${py+23} ${px+17} ${py+4}`,'#382217',4);
+    stroke(`M${px-16} ${py+5}Q${px} ${py+21} ${px+16} ${py+5}`,'#b28a61',0.9,0.8);
+    for(let i=-10;i<=10;i+=4) stroke(`M${px+i} ${py+12-Math.abs(i)*.28}l1 2`,'#d3b68a',0.6,0.7);
   }
   return m;
 }
