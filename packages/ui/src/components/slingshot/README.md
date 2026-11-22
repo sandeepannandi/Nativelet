@@ -4,7 +4,7 @@ Original React Native Skia and Gesture Handler component. Pull a leather pouch b
 
 Copy Slingshot.tsx, slingMath.ts and LICENSE together. Requires react-native-gesture-handler and @shopify/react-native-skia. It wraps its own GestureHandlerRootView and needs no assets or network.
 
-Each fork tip exerts tension along its own band. Bands resist extension, never compression, with a cubic strain-stiffening term. A shorter pull can settle back without launching. The aim dots use the same launch integrator. The pellet rides the accelerating pouch to separation, then follows gravity with restitution at the floor, walls and approximate fork. The empty pouch remains attached, recoils, and settles. Band width narrows as stretch increases. Resting pellets reload after a moment.
+Each fork tip exerts tension along its own band. Bands resist extension, never compression, with a cubic strain-stiffening term. A shorter pull can settle back without launching. The aim dots use the same launch integrator. The pellet rides the accelerating pouch to separation, then follows gravity with restitution at the floor and approximate fork. The empty pouch remains attached, recoils, and settles. Band width narrows as stretch increases. Resting pellets and shots that leave the stage reload after a moment. There are no invisible side walls or ceiling.
 
 The renderer uses shaped walnut surfaces, growth lines, end grain, leather wraps and cup, latex ribbons, a reflected steel surface and layered contact shadows. The native and web adapters use the same solver and drawing list.
 

@@ -28,7 +28,7 @@ export function elasticAcceleration(p: Pt, v: Pt = { x: 0, y: 0 }): Pt {
   }
   return { x, y };
 }
-const REST_WALL = 0.6, REST_FLOOR = 0.52, REST_FRAME = 0.4;
+const REST_FLOOR = 0.52, REST_FRAME = 0.4;
 
 export type Pt = { x: number; y: number };
 export type SlMark = {
@@ -133,13 +133,11 @@ function collideFrame(p: Pt, v: Pt): boolean {
   return hit;
 }
 
-function flightStep(p: Pt, v: Pt, dt: number): 'floor' | 'wall' | 'frame' | null {
+function flightStep(p: Pt, v: Pt, dt: number): 'floor' | 'frame' | null {
   v.y += G * dt;
   p.x += v.x * dt; p.y += v.y * dt;
-  let ev: 'floor' | 'wall' | 'frame' | null = null;
-  if (p.x < BALL_R) { p.x = BALL_R; if (v.x < 0) v.x *= -REST_WALL; ev = 'wall'; }
-  if (p.x > SL_W - BALL_R) { p.x = SL_W - BALL_R; if (v.x > 0) v.x *= -REST_WALL; ev = 'wall'; }
-  if (p.y < BALL_R) { p.y = BALL_R; if (v.y < 0) v.y *= -REST_WALL; ev = 'wall'; }
+  let ev: 'floor' | 'frame' | null = null;
+  // The stage is not a box: no invisible ceiling or side-wall bounces.
   if (p.y > FLOOR - BALL_R) {
     p.y = FLOOR - BALL_R;
     if (v.y > 0) { v.y *= -REST_FLOOR; if (Math.abs(v.y) < 60) v.y = 0; ev = 'floor'; }
@@ -198,6 +196,7 @@ export function stepSl(s: SlSim, dt: number, reduce = false) {
     } else if (s.mode === 'flight') {
       const contact = flightStep(s.p, s.v, k);
       if (contact === 'frame' && len(s.v.x,s.v.y) < 22) s.restT += k; else s.restT = 0;
+      if ((s.p.x < -BALL_R || s.p.x > SL_W+BALL_R) && s.p.y > FLOOR) { s.mode = 'rest'; s.restT = 0; }
       if (s.restT > 0.45) { s.v = {x:0,y:0}; s.mode = 'rest'; s.restT = 0; }
       if (s.p.y >= FLOOR - BALL_R - 0.5 && Math.abs(s.v.y) < 1 && Math.abs(s.v.x) < 14) { s.v.x = 0; s.v.y = 0; s.mode = 'rest'; s.restT = 0; }
     } else if (s.mode === 'rest') {

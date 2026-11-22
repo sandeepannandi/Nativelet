@@ -49,3 +49,12 @@ for(const [x,y] of [[180,341],[180,367],[140,355],[210,355]]) {
  assert(seen.has('flight'));assert.equal(a.mode,'ready');
 }
 console.log('slingshot ok');
+
+// A full-power shot may leave the top of the stage; it must not bounce off an
+// invisible ceiling. Every airborne step away from contacts follows gravity.
+const full=m.createSling();m.slTouch(full,m.ANCHOR.x,m.ANCHOR.y);m.slMove(full,180,m.ANCHOR.y+104);m.slRelease(full);
+for(let i=0;i<600;i++) {
+ const before={...full.v},mode=full.mode,y=full.p.y;
+ m.stepSl(full,1/240);
+ if(mode==='flight' && full.mode==='flight' && y<150) assert(Math.abs(full.v.y-before.y-m.G/240)<1e-7);
+}
