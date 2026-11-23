@@ -20,6 +20,8 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 
 ## Components
 
+- Cable Patchbay: unplug either end of a weighted cable, let it swing, and reconnect to an empty socket. Gravity, bending, socket capture and a visual signal, with slow motion.
+
 
 - Slingshot: drag the pouch back to stretch the rubber band, aim by the dotted path and release - the ball rides the spring, flies, bounces and the slack band wobbles, slow motion included.
 - Pottery Wheel: drag across a spinning lump of wet clay to press it in or pull it out - every slice keeps its volume, the rim wobbles and settles.
