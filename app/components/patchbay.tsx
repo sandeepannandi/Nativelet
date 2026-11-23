@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { createBay, moveCable, releaseCable, bayScene, grabCable, cycleConnection, stepBay, CH, CW } from '../../packages/ui/src/components/patchbay/cableMath';
 import styles from './patchbay.module.css';
 
 export function CablePatchbayPreview() {
-  const canvas = useRef<HTMLCanvasElement>(null), sim = useRef(createBay());
+  const initial = useMemo(createBay, []);
+  const canvas = useRef<HTMLCanvasElement>(null), sim = useRef(initial);
   const [unavailable, setUnavailable] = useState(false);
   const [slow, setSlow] = useState(false);
   const reduced = !!useReducedMotion();

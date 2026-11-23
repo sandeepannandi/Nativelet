@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, StyleSheet, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { Canvas, Group, Picture, Skia, PaintStyle, StrokeCap, TileMode, type SkPicture } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -10,7 +10,8 @@ export function CablePatchbay({ reducedMotion, slowMotion = false, style }: Cabl
   const windowWidth = useWindowDimensions().width;
   const [available, setAvailable] = useState(windowWidth - 32);
   const scale = Math.max(0.1, Math.min(1, available / CW));
-  const sim = useRef(createBay());
+  const initial = useMemo(createBay, []);
+  const sim = useRef(initial);
   const [picture, setPicture] = useState<SkPicture | null>(null);
   const [systemReduce, setSystemReduce] = useState(false);
   const [slow, setSlow] = useState(false);
