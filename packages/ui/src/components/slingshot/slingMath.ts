@@ -29,6 +29,26 @@ export function elasticAcceleration(p: Pt, v: Pt = { x: 0, y: 0 }): Pt {
   return { x, y };
 }
 const REST_FLOOR = 0.52, REST_FRAME = 0.4;
+const FIXED_STEP = 1 / 480;
+export type RibbonNode = Pt & { px: number; py: number };
+export function makeRibbon(tip: Pt): RibbonNode[] {
+  return Array.from({length: 15}, (_, i) => { const t=i/14; const x=tip.x+(ANCHOR.x-tip.x)*t, y=tip.y+(ANCHOR.y-tip.y)*t+Math.sin(t*Math.PI)*3; return {x,y,px:x,py:y}; });
+}
+/** Distributed ribbon mass, fixed endpoints, inextensible local constraints.
+ * The total rest length follows elastic strain, so a slack band can ripple.
+ * This is a 2D position-based approximation, not a calibrated latex model. */
+export function stepRibbon(nodes: RibbonNode[], tip: Pt, end: Pt, dt: number, reduce=false) {
+  const rest=bandMetrics(tip,end).rest;
+  const total=Math.max(rest,Math.hypot(end.x-tip.x,end.y-tip.y));
+  const link=total/(nodes.length-1);
+  const damping=Math.exp(-(reduce?24:5)*dt);
+  for(let i=1;i<nodes.length-1;i++) {const n=nodes[i],x=n.x,y=n.y;n.x+=(n.x-n.px)*damping;n.y+=(n.y-n.py)*damping+G*dt*dt;n.px=x;n.py=y;}
+  for(let pass=0;pass<12;pass++) {
+    Object.assign(nodes[0],tip);Object.assign(nodes[nodes.length-1],end);
+    for(let i=0;i<nodes.length-1;i++) {const a=nodes[i],b=nodes[i+1],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1;const wa=i===0?0:1,wb=i===nodes.length-2?0:1;const c=(d-link)/d/(wa+wb);a.x+=dx*c*wa;a.y+=dy*c*wa;b.x-=dx*c*wb;b.y-=dy*c*wb;}
+  }
+  Object.assign(nodes[0],tip);Object.assign(nodes[nodes.length-1],end);
+}
 
 export type Pt = { x: number; y: number };
 export type SlMark = {
@@ -49,12 +69,14 @@ export type SlSim = {
   fade: number;       // 0..1 ball opacity for reload
   shots: number;
   t: number;
+  accumulator: number;
+  ribbons: RibbonNode[][];
 };
 
 const len = (x: number, y: number) => Math.hypot(x, y);
 
 export function createSling(): SlSim {
-  return { p: { ...ANCHOR }, v: { x: 0, y: 0 }, mode: 'ready', dir: { x: 0, y: -1 }, q: { ...ANCHOR }, qv: { x: 0, y: 0 }, trail: [], restT: 0, fade: 1, shots: 0, t: 0 };
+  return { p: { ...ANCHOR }, v: { x: 0, y: 0 }, mode: 'ready', dir: { x: 0, y: -1 }, q: { ...ANCHOR }, qv: { x: 0, y: 0 }, trail: [], restT: 0, fade: 1, shots: 0, t: 0, accumulator: 0, ribbons: [makeRibbon(TIP_L),makeRibbon(TIP_R)] };
 }
 
 /** Clamp a finger position to the allowed pull region: a disc below the fork. */
@@ -141,7 +163,10 @@ function flightStep(p: Pt, v: Pt, dt: number): 'floor' | 'frame' | null {
   if (p.y > FLOOR - BALL_R) {
     p.y = FLOOR - BALL_R;
     if (v.y > 0) { v.y *= -REST_FLOOR; if (Math.abs(v.y) < 60) v.y = 0; ev = 'floor'; }
-    v.x *= 0.985;
+    // Coulomb floor friction is an impulse over elapsed physical time,
+    // independent of the number of render frames or solver subdivisions.
+    const friction = 0.24 * G * dt;
+    v.x = Math.sign(v.x) * Math.max(0, Math.abs(v.x) - friction);
   }
   if (collideFrame(p, v)) ev = 'frame';
   return ev;
@@ -153,7 +178,7 @@ export function predict(s: SlSim): Pt[] {
   if (s.mode !== 'held' || d < MIN_PULL) return [];
   const p = { ...s.p }, v = { x: 0, y: 0 };
   const ux = (ANCHOR.x - p.x) / d, uy = (ANCHOR.y - p.y) / d;
-  const h = 1 / 240;
+  const h = FIXED_STEP;
   let released = false;
   for (let i = 0; i < 168; i++) {
     const { x: ax, y: ay } = elasticAcceleration(p, v);
@@ -172,16 +197,19 @@ export function predict(s: SlSim): Pt[] {
 }
 
 export function stepSl(s: SlSim, dt: number, reduce = false) {
-  const h = 1 / 240;
-  let left = Math.min(dt, 0.05);
-  while (left > 1e-9) {
-    const k = Math.min(h, left); left -= k;
+  const h = FIXED_STEP;
+  s.accumulator += Math.min(Math.max(0,dt), 0.05);
+  while (s.accumulator + 1e-10 >= h) {
+    const k = h; s.accumulator -= h;
     s.t += k;
-    // Slack band: damped spring around the fork. Always integrated so it wobbles after a shot.
+    // Empty pouch is still pulled by both tension-only bands. It has less
+    // inertia than the loaded pouch; no artificial spring to the origin.
     if (s.mode !== 'held' && s.mode !== 'pull') {
-      const w = 28, z = reduce ? 0.7 : 0.19;
-      const ax = -w * w * (s.q.x - ANCHOR.x) - 2 * z * w * s.qv.x, ay = -w * w * (s.q.y - ANCHOR.y) - 2 * z * w * s.qv.y;
-      s.qv.x += ax * k; s.qv.y += ay * k; s.q.x += s.qv.x * k; s.q.y += s.qv.y * k;
+      const a=elasticAcceleration(s.q,s.qv);
+      const massRatio=3.2, drag=reduce?18:5.5;
+      s.qv.x+=(a.x*massRatio-drag*s.qv.x)*k;
+      s.qv.y+=((a.y-G)*massRatio+G-drag*s.qv.y)*k;
+      s.q.x+=s.qv.x*k;s.q.y+=s.qv.y*k;
     }
     if (s.mode === 'pull') {
       const { x: ax, y: ay } = elasticAcceleration(s.p, s.v);
@@ -202,6 +230,9 @@ export function stepSl(s: SlSim, dt: number, reduce = false) {
     } else if (s.mode === 'rest') {
       s.restT += k;
     }
+    const end=bandPoint(s);
+    stepRibbon(s.ribbons[0],TIP_L,end,k,reduce);
+    stepRibbon(s.ribbons[1],TIP_R,end,k,reduce);
   }
   if ((s.mode === 'flight') && !reduce) {
     const last = s.trail[s.trail.length - 1];
@@ -234,6 +265,11 @@ export function slScene(s: SlSim): SlMark[] {
   const shape = 'M167 404 C164 376 168 344 163 319 C158 293 137 282 126 260 C117 243 111 227 110 215 Q119 206 131 214 C137 232 141 248 155 263 C168 280 177 289 183 289 C196 278 207 253 217 230 L224 208 Q235 202 248 213 C245 246 231 276 212 299 C196 320 202 352 200 381 L198 407 Q182 418 167 404Z';
   fill('M176 410 C176 373 181 339 170 313 L124 225 L130 216 L179 292 L231 209 L250 214 C246 257 227 287 213 305 C203 324 209 363 206 405 Q193 422 176 410Z','#38261c');
   grad(shape,110,265,224,280,[[0,'#62422b'],[0.12,'#aa8050'],[0.27,'#715034'],[0.48,'#c49c69'],[0.63,'#8b633d'],[0.84,'#b18a59'],[1,'#513822']]);
+  // Fine pores follow the carved fork and remain fixed in object space.
+  for(let i=0;i<95;i++) {
+    const y=324+(i*17.13)%76, x=173+(i*7.71)%20;
+    stroke(`M${x} ${y}l${.5+(i%3)*.3} ${1+(i%4)*.6}`,i%2?'#21180f':'#e5c28a',.38,.15);
+  }
   // Long grain follows the forks, with irregular growth lines and a knot.
   for(let i=0;i<12;i++) {
     const d=i*1.7;
@@ -265,23 +301,28 @@ export function slScene(s: SlSim): SlMark[] {
   for(const [idx,tip] of [[0,TIP_L],[1,TIP_R]] as [number,Pt][]) {
     const dx=bp.x-tip.x,dy=bp.y-tip.y,l=Math.max(1,len(dx,dy));
     const nx=-dy/l,ny=dx/l,b=bandMetrics(tip,bp);
-    const w=b.width, sag=Math.max(0,1-b.extension/22)*6;
-    const wave=(s.mode==='flight'||s.mode==='rest') ? Math.sin(s.t*39+idx)*Math.min(4,len(s.q.x-ANCHOR.x,s.q.y-ANCHOR.y)*0.15) : 0;
-    const cx=(tip.x+bp.x)/2+nx*wave,cy=(tip.y+bp.y)/2+sag+ny*wave;
-    const path=`M${tip.x+nx*w/2} ${tip.y+ny*w/2} Q${cx+nx*w*.43} ${cy+ny*w*.43} ${bp.x+nx*w*.3} ${bp.y+ny*w*.3} L${bp.x-nx*w*.3} ${bp.y-ny*w*.3} Q${cx-nx*w*.43} ${cy-ny*w*.43} ${tip.x-nx*w/2} ${tip.y-ny*w/2}Z`;
-    grad(path,cx-nx*w/2,cy-ny*w/2,cx+nx*w/2,cy+ny*w/2,[[0,'#7d511e'],[0.22,'#c59343'],[0.5,'#e9c270'],[0.74,'#d2a150'],[1,'#906024']]);
-    stroke(`M${tip.x+nx*w*.3} ${tip.y+ny*w*.3} Q${cx+nx*w*.25} ${cy+ny*w*.25} ${bp.x+nx*w*.2} ${bp.y+ny*w*.2}`,'#f8dc94',0.65,0.65);
+    const w=b.width, nodes=s.ribbons[idx];
+    for(let j=0;j<nodes.length-1;j++) {
+      const a=nodes[j],z=nodes[j+1],tx=z.x-a.x,ty=z.y-a.y,dist=Math.max(.01,len(tx,ty)),rx=-ty/dist,ry=tx/dist;
+      const taper=1-.28*j/(nodes.length-1),half=w*taper/2;
+      const path=`M${a.x+rx*half} ${a.y+ry*half}L${z.x+rx*half} ${z.y+ry*half}L${z.x-rx*half} ${z.y-ry*half}L${a.x-rx*half} ${a.y-ry*half}Z`;
+      grad(path,a.x-rx*half,a.y-ry*half,a.x+rx*half,a.y+ry*half,[[0,'#704c22'],[.20,'#b88b46'],[.48,'#e4be70'],[.72,'#c4974c'],[1,'#89612c']]);
+      stroke(line({x:a.x+rx*half*.45,y:a.y+ry*half*.45},{x:z.x+rx*half*.45,y:z.y+ry*half*.45}),'#f3d89d',.55,.55);
+    }
   }
   // Wrapped latex ties sit over the strips at each fork.
   for(const tip of [TIP_L,TIP_R]) {
     grad(`M${tip.x-10} ${tip.y-4}L${tip.x+11} ${tip.y-6}L${tip.x+13} ${tip.y+10}Q${tip.x+1} ${tip.y+16} ${tip.x-7} ${tip.y+11}Z`,tip.x-10,tip.y,tip.x+13,tip.y,[[0,'#503b22'],[0.3,'#bc9556'],[0.6,'#dbc18b'],[1,'#71512d']]);
     for(let i=0;i<4;i++) stroke(`M${tip.x-8+i*.6} ${tip.y+i*3}Q${tip.x+2} ${tip.y+4+i*3} ${tip.x+11} ${tip.y-2+i*3}`,'#6b4e2c',0.7,0.8);
   }
+  // Creased seams and fine pebbled leather, shaded below the pouch.
   // The empty leather pouch remains attached and snaps back after release.
   const loaded=s.mode==='ready'||s.mode==='held'||s.mode==='pull';
   const px=bp.x,py=bp.y;
   const cup=`M${px-19} ${py-5} Q${px-13} ${py-13} ${px} ${py-11} Q${px+13} ${py-12} ${px+19} ${py-4} L${px+16} ${py+10} Q${px} ${py+19} ${px-16} ${py+10}Z`;
   grad(cup,px-18,py-10,px+17,py+14,[[0,'#876047'],[0.25,'#513627'],[0.65,'#36241c'],[1,'#aa7c55']]);
+  for(let i=0;i<27;i++) {const x=px-13+(i*7.13)%26,y=py-6+(i*3.17)%15;fill(ellipse(x,y,.55,.35),i%2?'#b38760':'#170f0b',.27);}
+  stroke(`M${px-15} ${py-4}Q${px} ${py-15} ${px+15} ${py-4}`,'#d3ae85',.65,.7);
   for(const off of [-13,13]) fill(ellipse(px+off,py+3,1.3,2.5),'#1b1612');
   if(loaded) fill(ellipse(px,py+5,11,8),'#160f0b',0.55);
   // Brushed steel pellet with broad environment reflection and small key light.

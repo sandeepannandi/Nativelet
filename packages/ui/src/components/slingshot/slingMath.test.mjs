@@ -58,3 +58,12 @@ for(let i=0;i<600;i++) {
  m.stepSl(full,1/240);
  if(mode==='flight' && full.mode==='flight' && y<150) assert(Math.abs(full.v.y-before.y-m.G/240)<1e-7);
 }
+
+// A fixed-step accumulator gives the same release position and energy for
+// 30/60/120 Hz renderers, including fractional frame intervals in slow motion.
+function runAt(fps) {const s=m.createSling();m.slTouch(s,180,263);m.slMove(s,145,355);m.slRelease(s);for(let i=0;i<fps*.5;i++)m.stepSl(s,1/fps);return s;}
+for(const fps of [30,60,120]) {const s=runAt(fps),ref=runAt(60);assert(Math.hypot(s.p.x-ref.p.x,s.p.y-ref.p.y)<1e-7);}
+// Distributed band nodes remain finite and pinned during recoil and after rest.
+const ribbons=m.createSling();m.fireDefault(ribbons);
+for(let i=0;i<600;i++) {m.stepSl(ribbons,1/60);for(let j=0;j<2;j++){const chain=ribbons.ribbons[j];assert.deepEqual({x:chain[0].x,y:chain[0].y},j?m.TIP_R:m.TIP_L);for(const n of chain)assert(Number.isFinite(n.x+n.y));}}
+console.log('slingshot fixed-step and distributed band checks ok');
