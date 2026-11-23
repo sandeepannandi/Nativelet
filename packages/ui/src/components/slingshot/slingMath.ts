@@ -180,7 +180,7 @@ export function predict(s: SlSim): Pt[] {
   const ux = (ANCHOR.x - p.x) / d, uy = (ANCHOR.y - p.y) / d;
   const h = FIXED_STEP;
   let released = false;
-  for (let i = 0; i < 168; i++) {
+  for (let i = 0; i < Math.ceil(0.7 / h); i++) {
     const { x: ax, y: ay } = elasticAcceleration(p, v);
     v.x += ax * h; v.y += ay * h; p.x += v.x * h; p.y += v.y * h;
     if ((p.x - ANCHOR.x) * ux + (p.y - ANCHOR.y) * uy >= 0) { released = true; break; }
@@ -188,7 +188,7 @@ export function predict(s: SlSim): Pt[] {
   if (!released) return [];
   const out: Pt[] = [];
   let tNext = 0;
-  for (let i = 0, t = 0; i < 360 && out.length < 16; i++, t += h) {
+  for (let i = 0, t = 0; i < Math.ceil(1.5 / h) && out.length < 16; i++, t += h) {
     v.y += G * h; p.x += v.x * h; p.y += v.y * h;
     if (p.y > FLOOR - BALL_R || p.x < 0 || p.x > SL_W) break;
     if (t >= tNext) { out.push({ x: p.x, y: p.y }); tNext += 0.055; }
@@ -230,6 +230,7 @@ export function stepSl(s: SlSim, dt: number, reduce = false) {
     } else if (s.mode === 'rest') {
       s.restT += k;
     }
+    if (s.mode === 'rest' && s.restT > 1.6) reload(s);
     const end=bandPoint(s);
     stepRibbon(s.ribbons[0],TIP_L,end,k,reduce);
     stepRibbon(s.ribbons[1],TIP_R,end,k,reduce);
@@ -238,7 +239,6 @@ export function stepSl(s: SlSim, dt: number, reduce = false) {
     const last = s.trail[s.trail.length - 1];
     if (!last || len(last.x - s.p.x, last.y - s.p.y) > 9) { s.trail.push({ x: s.p.x, y: s.p.y }); if (s.trail.length > 34) s.trail.shift(); }
   }
-  if (s.mode === 'rest' && s.restT > 1.6) reload(s);
   if (s.mode === 'ready' || s.mode === 'held' || s.mode === 'pull') s.fade = Math.min(1, s.fade + dt * 4);
 }
 
