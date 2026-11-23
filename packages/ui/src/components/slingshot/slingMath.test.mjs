@@ -67,3 +67,7 @@ for(const fps of [30,60,120]) {const s=runAt(fps),ref=runAt(60);assert(Math.hypo
 const ribbons=m.createSling();m.fireDefault(ribbons);
 for(let i=0;i<600;i++) {m.stepSl(ribbons,1/60);for(let j=0;j<2;j++){const chain=ribbons.ribbons[j];assert.deepEqual({x:chain[0].x,y:chain[0].y},j?m.TIP_R:m.TIP_L);for(const n of chain)assert(Number.isFinite(n.x+n.y));}}
 console.log('slingshot fixed-step and distributed band checks ok');
+
+// Reload must not depend on how simulation ticks are grouped into frames.
+function acrossReload(fps){const s=m.createSling();s.mode='rest';s.restT=1.59;s.q.x+=12;for(let i=0;i<fps/30;i++)m.stepSl(s,1/fps);return s;}
+for(const fps of [60,120]){const a=acrossReload(30),b=acrossReload(fps);assert.equal(a.mode,b.mode);assert(Math.hypot(a.q.x-b.q.x,a.q.y-b.q.y)<1e-8);assert.deepEqual(a.ribbons,b.ribbons);}
