@@ -335,6 +335,7 @@ export function BurnDismiss({
     let prevImage: SkImage | null = null;
     let prevBurnShader: SkShader | null = null;
     let prev: Frame | null = null;
+    const retired: unknown[][] = [];
     const loop = (now: number) => {
       if (!alive) return;
       let step = "sim";
@@ -372,10 +373,10 @@ export function BurnDismiss({
         const picture = recordParticles(sim, cfg.width, cfg.height);
         step = "publish";
         setFrame({ paint: next, picture });
-        safeDispose(prev?.paint);
-        safeDispose(prev?.picture);
-        safeDispose(prevBurnShader);
-        safeDispose(prevImage);
+        // The renderer can still draw the previous picture for a few frames
+        // after a new one is published, so retire old objects late.
+        if (prev) retired.push([prev.paint, prev.picture, prevBurnShader, prevImage]);
+        while (retired.length > 12) retired.shift()!.forEach(safeDispose);
         prev = { paint: next, picture };
         prevBurnShader = burnShader;
         prevImage = burnImage;
@@ -390,10 +391,8 @@ export function BurnDismiss({
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
-      safeDispose(prev?.paint);
-      safeDispose(prev?.picture);
-      safeDispose(prevBurnShader);
-      safeDispose(prevImage);
+      const rest = [...retired.flat(), prev?.paint, prev?.picture, prevBurnShader, prevImage];
+      setTimeout(() => rest.forEach(safeDispose), 1500);
     };
   }, [effect, sceneShader, cfg, opts, image]);
 
