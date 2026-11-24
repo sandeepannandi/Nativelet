@@ -435,6 +435,7 @@ export function BurnDismiss({
       accessibilityLabel={label}
       accessibilityRole="image"
       {...pan.panHandlers}
+      onTouchStart={(e) => console.warn("[burn] touchstart " + Math.round(e.nativeEvent.locationX) + "," + Math.round(e.nativeEvent.locationY))}
     >
       <Canvas pointerEvents="none" style={{ width, height }}>
         <Group>
