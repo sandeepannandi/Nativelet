@@ -1,18 +1,20 @@
 # Burn Dismiss
 
 A postcard you dismiss by burning it. Touch the card and the paper ignites
-under your finger: a noise-warped front creeps outward with a glowing
-white-yellow-orange-red edge, the paper browns ahead of it, chars black
-behind it, lifts into a lit curling rim and is eaten away to nothing, while
-embers rise on turbulent air and ash flutters down. Hold to keep feeding
-the fire, drag to steer it, and Restore rewinds the exact same front.
+under your finger: a noise-warped front creeps outward in tongues and bites
+with a glowing white-yellow-orange-red edge, heat shimmers warm just ahead
+of the flame, the paper browns, chars black behind it, lifts into a lit
+curling rim and is eaten away to nothing, while soft smoke rises, embers
+burst off the front and the cracking char, cool as they climb, and ash
+flutters down. Hold to keep feeding the fire, drag to steer it, and
+Restore rewinds the exact same front.
 
 - React Native Skia: one runtime shader composites the card texture with a
   per-frame burn field (burn level, glow flicker, ember-crack pulse) that
   the combustion simulation packs every frame at 96x128. The glow band,
   scorch, char streaks, paper fibre and the curling rim are all shaded in
   SkSL from fractal value noise. Embers and ash are drawn into one Skia
-  picture per frame, additively for the embers.
+  picture per frame, additively for the embers, blurred for the smoke.
 - Real spread model on a fixed timestep: cells heat from burning neighbours
   (fire climbs faster than it descends), ignite past a threshold and burn
   through at a rate set by low-frequency paper-grain fuel, so the front
@@ -58,5 +60,5 @@ file. `burnDesign.ts` is only needed if you want the Example's artwork.
 The component is a single Skia canvas; the burn texture is re-uploaded each
 frame at 96x128 and the simulation runs on the JS thread, which also keeps
 the render pipeline awake on a quiet screen. Honest limits: the curl is a
-shading illusion on the charred rim, not a mesh bend; smoke is not drawn;
-physical-device frame rate unverified.
+shading illusion on the charred rim, not a mesh bend; the smoke is a soft
+particle puff, not a fluid sim; physical-device frame rate unverified.

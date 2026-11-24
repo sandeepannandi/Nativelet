@@ -8,6 +8,7 @@ import {
 import {
   AlphaType,
   BlendMode,
+  BlurStyle,
   Canvas,
   ColorType,
   FilterMode,
@@ -27,6 +28,7 @@ import {
   ASH_STRIDE,
   BURN_DEFAULTS,
   EMBER_STRIDE,
+  SMOKE_STRIDE,
   burnPointerDown,
   burnPointerUp,
   createBurn,
@@ -104,8 +106,9 @@ half4 main(float2 xy) {
 
   // Noise-warped front: the edge eats in bites, not a circle.
   float warp = fbm(uv * float2(7.0, 9.0) + float2(0.0, time * 0.05));
+  float warp2 = fbm(uv * float2(23.0, 29.0) - float2(time * 0.03, 0.0));
   float warpAmp = 0.22 * smoothstep(-0.06, 0.3, burn) * (1.0 - smoothstep(0.7, 0.92, burn));
-  float bw = burn + (warp - 0.5) * warpAmp;
+  float bw = burn + (warp - 0.5) * warpAmp + (warp2 - 0.5) * warpAmp * 0.35;
 
   half3 scene = sceneSharp.eval(uv * sceneSize).rgb;
 
@@ -114,9 +117,13 @@ half4 main(float2 xy) {
   scene *= 0.965 + 0.07 * fibre;
 
   if (bw > 0.001) {
+    // Heat glow: air shimmers warm just ahead of the flame band.
+    float heatTint = smoothstep(0.001, 0.012, bw) * (1.0 - smoothstep(0.012, 0.045, bw));
+    scene = mix(scene, half3(0.66, 0.30, 0.09), heatTint * (0.22 + 0.35 * gflick));
+
     // Scorch: paper browns ahead of the char.
     float scorch = smoothstep(0.001, 0.10, bw) * (1.0 - smoothstep(0.10, 0.30, bw));
-    scene = mix(scene, half3(0.45, 0.28, 0.12), scorch * 0.55);
+    scene = mix(scene, half3(0.42, 0.24, 0.10), scorch * 0.7);
 
     // Glow band: white -> yellow -> orange -> red across the burning edge.
     float gb = smoothstep(0.02, 0.06, bw) * (1.0 - smoothstep(0.16, 0.34, bw));
@@ -140,9 +147,13 @@ half4 main(float2 xy) {
     float bx = burnTex.eval(tuv + float2(e.x, 0.0)).r - burnTex.eval(tuv - float2(e.x, 0.0)).r;
     float by = burnTex.eval(tuv + float2(0.0, e.y)).r - burnTex.eval(tuv - float2(0.0, e.y)).r;
     float crest = smoothstep(0.80, 0.90, bw) * (1.0 - smoothstep(0.90, 0.965, bw));
-    float litEdge = clamp((bx * -0.55 + by * -0.83) * 6.0, -1.0, 1.0);
+    float litEdge = clamp((bx * -0.55 + by * -0.83) * 8.0, -1.0, 1.0);
     scene += half3(0.5, 0.34, 0.18) * crest * max(litEdge, 0.0);
-    scene *= 1.0 - 0.55 * crest * max(-litEdge, 0.0);
+    scene *= 1.0 - 0.6 * crest * max(-litEdge, 0.0);
+
+    // Lifted curl: the peeling paper catches a warm highlight on its crest.
+    float lift = smoothstep(0.55, 0.68, bw) * (1.0 - smoothstep(0.68, 0.85, bw));
+    scene += half3(0.85, 0.62, 0.38) * lift * max(litEdge, 0.0) * 0.5;
 
     // Ash-grey dusting at the consumed rim.
     float rim = smoothstep(0.92, 0.97, bw);
@@ -190,6 +201,19 @@ function recordParticles(sim: BurnState, width: number, height: number): SkPictu
   core.setBlendMode(BlendMode.Plus);
   const ash = Skia.Paint();
   ash.setAntiAlias(true);
+  const smoke = Skia.Paint();
+  smoke.setAntiAlias(true);
+  const smokeBlur = Skia.MaskFilter.MakeBlur(BlurStyle.Normal, 6, true);
+  smoke.setMaskFilter(smokeBlur);
+  for (let s = 0; s < sim.smokeCount; s++) {
+    const i = s * SMOKE_STRIDE;
+    const t = sim.smoke[i + 4] / sim.smoke[i + 5];
+    const fadeIn = Math.min(1, t / 0.15);
+    const fade = t > 0.45 ? (1 - t) / 0.55 : 1;
+    const rad = sim.smoke[i + 6] * (0.7 + t * 2.6);
+    smoke.setColor(Skia.Color(`rgba(148,138,126,${(0.07 * fadeIn * fade).toFixed(3)})`));
+    canvas.drawCircle(sim.smoke[i], sim.smoke[i + 1], rad, smoke);
+  }
   for (let s = 0; s < sim.emberCount; s++) {
     const i = s * EMBER_STRIDE;
     const t = sim.embers[i + 4] / sim.embers[i + 5];
@@ -208,7 +232,7 @@ function recordParticles(sim: BurnState, width: number, height: number): SkPictu
     const i = s * ASH_STRIDE;
     const t = sim.ash[i + 4] / sim.ash[i + 5];
     const fade = t > 0.72 ? (1 - t) / 0.28 : 1;
-    ash.setColor(Skia.Color(`rgba(74,60,46,${(0.85 * fade).toFixed(3)})`));
+    ash.setColor(Skia.Color(`rgba(74,60,46,${(0.7 * fade).toFixed(3)})`));
     canvas.save();
     canvas.translate(sim.ash[i], sim.ash[i + 1]);
     canvas.rotate((sim.ash[i + 7] * 180) / 3.1416, 0, 0);
@@ -220,6 +244,8 @@ function recordParticles(sim: BurnState, width: number, height: number): SkPictu
   glow.dispose();
   core.dispose();
   ash.dispose();
+  smoke.dispose();
+  smokeBlur.dispose();
   return picture;
 }
 

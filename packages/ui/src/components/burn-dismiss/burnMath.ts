@@ -41,8 +41,13 @@ export const BURN_DEFAULTS = {
   emberRate: 0.09,
   /** Ash spawn probability per freshly charred cell per second. */
   ashRate: 0.10,
+  /** Smoke puff spawn probability per burning-front cell per second. */
+  smokeRate: 0.018,
+  /** Small secondary embers off the cracking char, per cell per second. */
+  crackEmberRate: 0.02,
   maxEmbers: 170,
-  maxAsh: 90,
+  maxAsh: 60,
+  maxSmoke: 22,
   /** Fixed timestep ceiling for the sim. */
   fixedDt: 1 / 90,
 };
@@ -53,6 +58,8 @@ export type BurnOptions = typeof BURN_DEFAULTS;
 export const EMBER_STRIDE = 8;
 /** Ash slot stride: x, y, vx, vy, life, maxLife, size, rot, spin, seed. */
 export const ASH_STRIDE = 10;
+/** Smoke slot stride: x, y, vx, vy, life, maxLife, size, seed. */
+export const SMOKE_STRIDE = 8;
 
 export type BurnState = {
   /** Clock the whole burn is a function of, seconds. */
@@ -71,6 +78,9 @@ export type BurnState = {
   /** Ash slots, ASH_STRIDE floats each. */
   ash: Float32Array;
   ashCount: number;
+  /** Smoke slots, SMOKE_STRIDE floats each. */
+  smoke: Float32Array;
+  smokeCount: number;
   /** 0 idle, 1 burning, 2 restoring. */
   mode: number;
   /** Seeded PRNG state. */
@@ -138,7 +148,11 @@ export function createBurn(cfg: BurnConfig, opts: BurnOptions, seed = 20261124):
   for (let r = 0; r < cfg.rows; r++) {
     for (let c = 0; c < cfg.cols; c++) {
       // Low-frequency paper grain: some patches burn faster than others.
-      fuel[r * cfg.cols + c] = 0.82 + 0.55 * fbm2(c * 0.09, r * 0.09, seed);
+      // Broad bulges plus fine bites: two paper-grain scales.
+      fuel[r * cfg.cols + c] =
+        0.80 +
+        0.36 * fbm2(c * 0.09, r * 0.09, seed) +
+        0.26 * fbm2(c * 0.33 + 5.7, r * 0.33 + 2.9, seed ^ 55);
     }
   }
   const igniteT = new Float32Array(n);
@@ -153,6 +167,8 @@ export function createBurn(cfg: BurnConfig, opts: BurnOptions, seed = 20261124):
     emberCount: 0,
     ash: new Float32Array(opts.maxAsh * ASH_STRIDE),
     ashCount: 0,
+    smoke: new Float32Array(opts.maxSmoke * SMOKE_STRIDE),
+    smokeCount: 0,
     mode: 0,
     seed: seed ^ 0x5bd1e995,
     px: 0,
@@ -253,7 +269,7 @@ export function burntFraction(sim: BurnState): number {
   return sim.burnt / sim.igniteT.length;
 }
 
-function spawnEmber(sim: BurnState, x: number, y: number, opts: BurnOptions) {
+function spawnEmber(sim: BurnState, x: number, y: number, opts: BurnOptions, scale = 1) {
   'worklet';
   if (sim.emberCount >= opts.maxEmbers) return;
   const i = sim.emberCount * EMBER_STRIDE;
@@ -262,11 +278,27 @@ function spawnEmber(sim: BurnState, x: number, y: number, opts: BurnOptions) {
   e[i] = x;
   e[i + 1] = y;
   e[i + 2] = (rand(sim) - 0.5) * 14;
-  e[i + 3] = -18 - rand(sim) * 42;
+  e[i + 3] = (-18 - rand(sim) * 42) * scale;
   e[i + 4] = 0;
-  e[i + 5] = 1.1 + rand(sim) * 1.2;
-  e[i + 6] = 1.1 + rand(sim) * 1.6;
+  e[i + 5] = (1.1 + rand(sim) * 1.2) * (0.6 + 0.4 * scale);
+  e[i + 6] = (1.1 + rand(sim) * 1.6) * scale;
   e[i + 7] = rand(sim) * 100;
+}
+
+function spawnSmoke(sim: BurnState, x: number, y: number, opts: BurnOptions) {
+  'worklet';
+  if (sim.smokeCount >= opts.maxSmoke) return;
+  const i = sim.smokeCount * SMOKE_STRIDE;
+  sim.smokeCount += 1;
+  const m = sim.smoke;
+  m[i] = x;
+  m[i + 1] = y;
+  m[i + 2] = (rand(sim) - 0.5) * 7;
+  m[i + 3] = -27 - rand(sim) * 14;
+  m[i + 4] = 0;
+  m[i + 5] = 1.9 + rand(sim) * 1.4;
+  m[i + 6] = 4 + rand(sim) * 5;
+  m[i + 7] = rand(sim) * 100;
 }
 
 function spawnAsh(sim: BurnState, x: number, y: number, opts: BurnOptions) {
@@ -305,6 +337,15 @@ function killAsh(sim: BurnState, slot: number) {
   sim.ashCount = last;
 }
 
+function killSmoke(sim: BurnState, slot: number) {
+  'worklet';
+  const last = sim.smokeCount - 1;
+  if (slot !== last) {
+    sim.smoke.copyWithin(slot * SMOKE_STRIDE, last * SMOKE_STRIDE, (last + 1) * SMOKE_STRIDE);
+  }
+  sim.smokeCount = last;
+}
+
 function stepParticles(sim: BurnState, cfg: BurnConfig, dt: number) {
   'worklet';
   const e = sim.embers;
@@ -317,18 +358,37 @@ function stepParticles(sim: BurnState, cfg: BurnConfig, dt: number) {
       continue;
     }
     // Turbulence: curl-ish drift from noise, buoyant rise, light drag.
+    // A cooling ember wobbles and climbs less than a fresh one.
+    const heat01 = 1 - 0.65 * (e[i + 4] / e[i + 5]);
     const t = sim.clock * 1.6 + e[i + 7];
-    e[i + 2] += (vnoise(e[i] * 0.045 + t, e[i + 1] * 0.045, 911) - 0.5) * 130 * dt;
-    e[i + 3] += (vnoise(e[i] * 0.045, e[i + 1] * 0.045 - t, 912) - 0.62) * 60 * dt;
+    e[i + 2] += (vnoise(e[i] * 0.045 + t, e[i + 1] * 0.045, 911) - 0.5) * 130 * heat01 * dt;
+    e[i + 3] += (vnoise(e[i] * 0.045, e[i + 1] * 0.045 - t, 912) - 0.62) * 60 * heat01 * dt;
     e[i + 2] *= 1 - 0.7 * dt;
     e[i + 3] *= 1 - 0.25 * dt;
-    if (e[i + 3] < -70) e[i + 3] = -70;
+    if (e[i + 3] < -70 * heat01 - 8) e[i + 3] = -70 * heat01 - 8;
     e[i] += e[i + 2] * dt;
     e[i + 1] += e[i + 3] * dt;
     if (e[i + 1] < -20) {
       killEmber(sim, s);
       s -= 1;
     }
+  }
+  const m = sim.smoke;
+  for (let s = 0; s < sim.smokeCount; s++) {
+    const i = s * SMOKE_STRIDE;
+    m[i + 4] += dt;
+    if (m[i + 4] >= m[i + 5] || m[i + 1] < -60) {
+      killSmoke(sim, s);
+      s -= 1;
+      continue;
+    }
+    // Lazy rise with a soft sideways sway that calms as the puff cools.
+    const cool = m[i + 4] / m[i + 5];
+    m[i + 2] += (vnoise(m[i] * 0.02 + m[i + 7], m[i + 1] * 0.02, 917) - 0.5) * 26 * (1 - cool * 0.5) * dt;
+    m[i + 3] *= 1 - 0.4 * dt;
+    if (m[i + 3] < -22) m[i + 3] = -22;
+    m[i] += m[i + 2] * dt;
+    m[i + 1] += m[i + 3] * dt;
   }
   const a = sim.ash;
   for (let s = 0; s < sim.ashCount; s++) {
@@ -413,14 +473,16 @@ function step(sim: BurnState, cfg: BurnConfig, dt: number, opts: BurnOptions) {
       if (sim.igniteT[i] < 0 || b < opts.spreadAfter) continue;
       const feed = opts.spreadRate * (b - opts.spreadAfter) * dt;
       const diag = feed * opts.diagSpread;
-      if (c > 0) add[i - 1] += feed;
-      if (c < cfg.cols - 1) add[i + 1] += feed;
-      if (r > 0) add[i - cfg.cols] += feed * opts.upDraft;
-      if (r < cfg.rows - 1) add[i + cfg.cols] += feed * opts.downDraft;
-      if (c > 0 && r > 0) add[i - cfg.cols - 1] += diag * opts.upDraft;
-      if (c < cfg.cols - 1 && r > 0) add[i - cfg.cols + 1] += diag * opts.upDraft;
-      if (c > 0 && r < cfg.rows - 1) add[i + cfg.cols - 1] += diag * opts.downDraft;
-      if (c < cfg.cols - 1 && r < cfg.rows - 1) add[i + cfg.cols + 1] += diag * opts.downDraft;
+      // Persistent per-edge bias: the front advances in tongues, not a ring.
+      const dirJ = (k: number) => 0.7 + 0.6 * hash01(i * 8 + k, 331);
+      if (c > 0) add[i - 1] += feed * dirJ(1);
+      if (c < cfg.cols - 1) add[i + 1] += feed * dirJ(2);
+      if (r > 0) add[i - cfg.cols] += feed * opts.upDraft * dirJ(3);
+      if (r < cfg.rows - 1) add[i + cfg.cols] += feed * opts.downDraft * dirJ(4);
+      if (c > 0 && r > 0) add[i - cfg.cols - 1] += diag * opts.upDraft * dirJ(5);
+      if (c < cfg.cols - 1 && r > 0) add[i - cfg.cols + 1] += diag * opts.upDraft * dirJ(6);
+      if (c > 0 && r < cfg.rows - 1) add[i + cfg.cols - 1] += diag * opts.downDraft * dirJ(7);
+      if (c < cfg.cols - 1 && r < cfg.rows - 1) add[i + cfg.cols + 1] += diag * opts.downDraft * dirJ(8);
     }
   }
   for (let i = 0; i < n; i++) {
@@ -437,9 +499,13 @@ function step(sim: BurnState, cfg: BurnConfig, dt: number, opts: BurnOptions) {
     for (let c = 0; c < cfg.cols; c++) {
       const i = r * cfg.cols + c;
       const b = burnAt(sim, i);
-      if (b > 0.06 && b < 0.62 && rand(sim) < opts.emberRate * dt) {
-        spawnEmber(sim, (c + 0.5) * cw, (r + 0.5) * ch, opts);
-      } else if (b >= 0.7 && b < 1 && rand(sim) < opts.ashRate * dt) {
+      if (b > 0.06 && b < 0.62) {
+        if (rand(sim) < opts.emberRate * dt) spawnEmber(sim, (c + 0.5) * cw, (r + 0.5) * ch, opts);
+        if (rand(sim) < opts.smokeRate * dt) spawnSmoke(sim, (c + 0.5) * cw, (r + 0.5) * ch - 3, opts);
+      } else if (b >= 0.5 && b < 0.98 && rand(sim) < opts.crackEmberRate * dt) {
+        spawnEmber(sim, (c + 0.5) * cw, (r + 0.5) * ch, opts, 0.5);
+      }
+      if (b >= 0.7 && b < 1 && rand(sim) < opts.ashRate * dt) {
         spawnAsh(sim, (c + 0.5) * cw, (r + 0.5) * ch, opts);
       }
     }
@@ -475,8 +541,8 @@ export function packBurn(sim: BurnState, cfg: BurnConfig, bytes: Uint8Array): Ui
     const o = i * 4;
     bytes[o] = Math.round(b * 255);
     let g = 0;
-    if (b > 0.02 && b < 0.5) {
-      g = Math.round(255 * flickerAt(sim, cfg, i) * Math.min(1, (b - 0.02) / 0.08));
+    if (b > 0.004 && b < 0.5) {
+      g = Math.round(255 * flickerAt(sim, cfg, i) * Math.min(1, (b - 0.004) / 0.03));
     }
     bytes[o + 1] = g;
     let crack = 0;
