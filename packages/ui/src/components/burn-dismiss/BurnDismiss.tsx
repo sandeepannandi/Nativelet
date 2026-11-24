@@ -342,14 +342,21 @@ export function BurnDismiss({
       let step = "sim";
       try {
       const sim = simRef.current!;
-      const dt = last ? Math.min(48, now - last) / 1000 : 1 / 60;
+      // Follow wall-clock time up to half a second per frame, so a slow device
+      // (software-rendered emulator) burns at the same pace instead of in slow motion.
+      const dt = last ? Math.min(500, now - last) / 1000 : 1 / 60;
       last = now;
       if (now - lastLog > 1000) {
         lastLog = now;
         console.warn("[burn] hb reduce=" + latest.current.reduce + " holding=" + sim.holding + " mode=" + sim.mode + " burnt=" + sim.burnt + " clock=" + sim.clock.toFixed(2));
       }
       if (!latest.current.reduce) {
-        stepBurn(sim, cfg, dt * (latest.current.slowMotion ? 0.22 : 1), opts);
+        let rem = dt * (latest.current.slowMotion ? 0.22 : 1);
+        while (rem > 0) {
+          const chunk = Math.min(rem, 0.1);
+          stepBurn(sim, cfg, chunk, opts);
+          rem -= chunk;
+        }
       }
       if (!dismissed && sim.burnt >= cfg.cols * cfg.rows) {
         dismissed = true;
