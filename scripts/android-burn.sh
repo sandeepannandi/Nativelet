@@ -62,7 +62,8 @@ print((x+r)//2,(y+b)//2)
 PY
 )
 # Touch and hold to ignite, keep feeding the fire for 4s.
-adb shell input swipe "$X" "$Y" "$X" "$Y" 4000 &
+# A real finger drifts a few pixels while held; a zero-length swipe may be dropped.
+adb shell input swipe "$X" "$Y" "$((X + 6))" "$((Y + 6))" 4000 &
 SWP=$!
 for t in 1 2 3; do
   sleep 1
