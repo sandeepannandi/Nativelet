@@ -5,6 +5,11 @@ dump_diag() {
   adb logcat -b all -d > "$OUT/exit-logcat.txt" 2>&1 || true
   echo "=== app lifecycle diagnostics ==="
   grep -E "am_proc_died|am_proc_start|am_kill|am_crash|am_anr|wm_proc_died|wm_destroy_activity|wm_finish_activity|wm_pause_activity|Fatal signal|FATAL EXCEPTION|F DEBUG|tombstone|Process .*nativeletshowcase|ReactNativeJS|ReactNative:|Skia|RNSkia|SkSL|AndroidRuntime: Shutting down VM|lowmemorykiller|lmkd.*(kill|Kill)|has died|Force finishing|nativeletshowcase.*(crash|died|killed)" "$OUT/exit-logcat.txt" | grep -vE "uiautomator|dvm_lock_sample|chatty" | head -120 || true
+  echo "=== burn logs (non-heartbeat) ==="
+  grep -F "[burn]" "$OUT/exit-logcat.txt" | grep -vF "[burn] hb" | head -40 | cut -c1-220 || true
+  echo "=== burn heartbeats (last 12) ==="
+  grep -F "[burn] hb" "$OUT/exit-logcat.txt" | tail -12 | cut -c1-220 || true
+  echo "=== end burn logs ==="
   echo "--- app pid now: $(adb shell pidof com.anonymous.nativeletshowcase 2>&1 | head -1)"
   echo "--- last 40 lines mentioning the app package:"
   grep -F "com.anonymous.nativeletshowcase" "$OUT/exit-logcat.txt" | grep -v dvm_lock_sample | tail -40 | cut -c1-260 || true
