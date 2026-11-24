@@ -6,10 +6,23 @@ PKG=com.anonymous.nativeletshowcase
 adb install -r "$1"
 adb logcat -c
 adb shell am start -W -a android.intent.action.VIEW -d 'nativelet-showcase:///burn-dismiss' "$PKG"
-sleep 18
-adb shell rm -f /sdcard/burn.xml
-adb shell uiautomator dump /sdcard/burn.xml
-adb pull /sdcard/burn.xml "$OUT/ui.xml"
+# The card mounts only after the JS bundle and the Geist typeface decode, which
+# can take a while on a cold emulator. Poll the UI tree until it appears.
+FOUND=""
+for i in $(seq 1 24); do
+  sleep 5
+  adb shell rm -f /sdcard/burn.xml
+  adb shell uiautomator dump /sdcard/burn.xml >/dev/null
+  adb pull /sdcard/burn.xml "$OUT/ui.xml" >/dev/null
+  if grep -q "A postcard you can burn away" "$OUT/ui.xml"; then FOUND=1; break; fi
+done
+if [ -z "$FOUND" ]; then
+  echo "Burn card never mounted. Visible content-desc values:"
+  grep -o 'content-desc="[^"]*"' "$OUT/ui.xml" | sort -u | head -20 || true
+  echo "Visible text values:"
+  grep -o 'text="[^"]*"' "$OUT/ui.xml" | sort -u | head -20 || true
+  adb exec-out screencap -p > "$OUT/stuck.png"
+fi
 adb exec-out screencap -p > "$OUT/initial.png"
 python3 -m pip install -q pillow numpy
 python3 - <<'PY'
