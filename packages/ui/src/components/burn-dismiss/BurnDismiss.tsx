@@ -331,7 +331,6 @@ export function BurnDismiss({
     if (!effect || !sceneShader) return;
     let alive = true;
     let last = 0;
-    let lastLog = 0;
     let dismissed = false;
     let prevImage: SkImage | null = null;
     let prevBurnShader: SkShader | null = null;
@@ -346,10 +345,6 @@ export function BurnDismiss({
       // (software-rendered emulator) burns at the same pace instead of in slow motion.
       const dt = last ? Math.min(500, now - last) / 1000 : 1 / 60;
       last = now;
-      if (now - lastLog > 1000) {
-        lastLog = now;
-        console.warn("[burn] hb reduce=" + latest.current.reduce + " holding=" + sim.holding + " mode=" + sim.mode + " burnt=" + sim.burnt + " clock=" + sim.clock.toFixed(2));
-      }
       if (!latest.current.reduce) {
         let rem = dt * (latest.current.slowMotion ? 0.22 : 1);
         while (rem > 0) {
@@ -414,7 +409,6 @@ export function BurnDismiss({
         onStartShouldSetPanResponder: () => !latest.current.reduce,
         onPanResponderGrant: (evt) => {
           const sim = simRef.current;
-          console.warn("[burn] grant x=" + Math.round(evt.nativeEvent.locationX) + " y=" + Math.round(evt.nativeEvent.locationY) + " sim=" + (sim ? "yes" : "no"));
           if (sim) burnPointerDown(sim, cfg, evt.nativeEvent.locationX, evt.nativeEvent.locationY, opts);
           latest.current.onFeedback?.("ignite");
         },
@@ -442,7 +436,6 @@ export function BurnDismiss({
       accessibilityLabel={label}
       accessibilityRole="image"
       {...pan.panHandlers}
-      onTouchStart={(e) => console.warn("[burn] touchstart " + Math.round(e.nativeEvent.locationX) + "," + Math.round(e.nativeEvent.locationY))}
     >
       <Canvas pointerEvents="none" style={{ width, height }}>
         <Group>
