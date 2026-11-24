@@ -2,9 +2,10 @@
 set -euo pipefail
 OUT=burn-out; rm -rf "$OUT"; mkdir -p "$OUT"
 dump_diag() {
-  adb logcat -d > "$OUT/exit-logcat.txt" 2>&1 || true
-  echo "=== logcat crash diagnostics ==="
-  grep -E "FATAL EXCEPTION|AndroidRuntime|Fatal signal|SIGSEGV|SIGABRT|ReactNativeJS|Skia|SkSL|shader|RuntimeEffect|burn|Burn|Process .* has died|am_crash|am_proc_died|ANR in" "$OUT/exit-logcat.txt" | grep -v "chatty" | tail -80 || true
+  adb logcat -b all -d > "$OUT/exit-logcat.txt" 2>&1 || true
+  echo "=== logcat app lifecycle diagnostics ==="
+  grep -E "nativeletshowcase|ActivityTaskManager|ActivityManager|lmkd|libc  |DEBUG  |tombstone|Fatal signal|FATAL EXCEPTION|ReactNativeJS|ReactNative|SkiaView|RNSkia|Skia" "$OUT/exit-logcat.txt" | grep -vE "uiautomator|chatty" | head -150 || true
+  echo "=== end lifecycle ==="
   echo "=== foreground activity ==="
   adb shell dumpsys activity activities 2>/dev/null | grep -E "mResumedActivity|topResumedActivity" | head -3 || true
   echo "=== end diagnostics ==="
