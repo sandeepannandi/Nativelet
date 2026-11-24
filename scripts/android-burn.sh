@@ -69,9 +69,9 @@ PY
 )
 # Touch and hold to ignite, keep feeding the fire for 4s.
 # A real finger drifts a few pixels while held; a zero-length swipe may be dropped.
-adb shell input swipe "$X" "$Y" "$((X + 6))" "$((Y + 6))" 4000 &
+adb shell input swipe "$X" "$Y" "$((X + 6))" "$((Y + 6))" 8000 &
 SWP=$!
-for t in 1 2 3; do
+for t in 1 2 3 4 5 6 7; do
   sleep 1
   adb exec-out screencap -p > "$OUT/burning_t$t.png"
 done
@@ -83,7 +83,7 @@ python3 - <<'PY'
 from PIL import Image
 import numpy as np,json
 x,y,r,b=json.load(open('burn-out/geometry.json'))
-for n in ['initial','burning_t1','burning_t2','burning_t3','burning']:
+for n in ['initial','burning_t2','burning_t4','burning_t7','burning']:
     try: im=np.array(Image.open('burn-out/'+n+'.png').convert('L'))[y:b,x:r].astype(float)
     except Exception as e: print(n,'missing',e); continue
     h,w=im.shape;gh,gw=16,10
