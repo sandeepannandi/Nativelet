@@ -93,7 +93,8 @@ for n in ['initial','burning_t2','burning_t4','burning_t7','burning']:
 PY
 # Restore and let the front rewind fully.
 adb shell input tap "$RX" "$RY"
-sleep 6
+# The restore rewinds the whole burn at wall-clock pace; on the ~1 fps emulator an 8s burn needs about 7s to rewind.
+sleep 14
 adb exec-out screencap -p > "$OUT/restored.png"
 adb logcat -d > "$OUT/logcat.txt"
 python3 - <<'PY'
