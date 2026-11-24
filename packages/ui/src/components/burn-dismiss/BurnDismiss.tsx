@@ -352,7 +352,7 @@ export function BurnDismiss({
         const next = Skia.Paint();
         next.setShader(
           effect.makeShaderWithChildren(
-            [0, 0, cfg.width, cfg.height, cfg.cols, cfg.rows, image.width(), image.height(), sim.clock],
+            [cfg.width, cfg.height, cfg.cols, cfg.rows, image.width(), image.height(), sim.clock],
             [sceneShader, burnShader],
           ),
         );
