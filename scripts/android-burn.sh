@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 OUT=burn-out; rm -rf "$OUT"; mkdir -p "$OUT"
-trap 'adb logcat -d > "$OUT/exit-logcat.txt" 2>&1 || true' EXIT
+dump_diag() {
+  adb logcat -d > "$OUT/exit-logcat.txt" 2>&1 || true
+  echo "=== logcat crash diagnostics ==="
+  grep -E "FATAL EXCEPTION|AndroidRuntime|Fatal signal|SIGSEGV|SIGABRT|ReactNativeJS|Skia|SkSL|shader|RuntimeEffect|burn|Burn|Process .* has died|am_crash|am_proc_died|ANR in" "$OUT/exit-logcat.txt" | grep -v "chatty" | tail -80 || true
+  echo "=== foreground activity ==="
+  adb shell dumpsys activity activities 2>/dev/null | grep -E "mResumedActivity|topResumedActivity" | head -3 || true
+  echo "=== end diagnostics ==="
+}
+trap dump_diag EXIT
 PKG=com.anonymous.nativeletshowcase
 adb install -r "$1"
 adb logcat -c
