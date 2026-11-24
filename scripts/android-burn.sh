@@ -62,9 +62,28 @@ print((x+r)//2,(y+b)//2)
 PY
 )
 # Touch and hold to ignite, keep feeding the fire for 4s.
-adb shell input swipe "$X" "$Y" "$X" "$Y" 4000
-sleep 4
+adb shell input swipe "$X" "$Y" "$X" "$Y" 4000 &
+SWP=$!
+for t in 1 2 3; do
+  sleep 1
+  adb exec-out screencap -p > "$OUT/burning_t$t.png"
+done
+wait $SWP
+sleep 0.5
 adb exec-out screencap -p > "$OUT/burning.png"
+# Diagnostics: coarse luminance grid of the card over time (rows top to bottom).
+python3 - <<'PY'
+from PIL import Image
+import numpy as np,json
+x,y,r,b=json.load(open('burn-out/geometry.json'))
+for n in ['initial','burning_t1','burning_t2','burning_t3','burning']:
+    try: im=np.array(Image.open('burn-out/'+n+'.png').convert('L'))[y:b,x:r].astype(float)
+    except Exception as e: print(n,'missing',e); continue
+    h,w=im.shape;gh,gw=16,10
+    print('== grid',n,'card',w,'x',h,'mean',round(im.mean(),1))
+    for i in range(gh):
+        print(' '.join('%3d'%int(im[i*h//gh:(i+1)*h//gh,j*w//gw:(j+1)*w//gw].mean()) for j in range(gw)))
+PY
 # Restore and let the front rewind fully.
 adb shell input tap "$RX" "$RY"
 sleep 6
