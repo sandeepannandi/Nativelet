@@ -190,6 +190,12 @@ function emberColor(t: number): [number, number, number] {
 }
 
 /** Draw the ember and ash layers into one picture for this frame. */
+// Not every Skia host object exposes dispose on every platform; skip the ones that do not.
+function safeDispose(o: unknown): void {
+  const d = (o as { dispose?: () => void } | null | undefined)?.dispose;
+  if (typeof d === "function") d.call(o);
+}
+
 function recordParticles(sim: BurnState, width: number, height: number): SkPicture {
   const recorder = Skia.PictureRecorder();
   const canvas = recorder.beginRecording(Skia.XYWHRect(0, 0, width, height));
@@ -241,11 +247,11 @@ function recordParticles(sim: BurnState, width: number, height: number): SkPictu
     canvas.restore();
   }
   const picture = recorder.finishRecordingAsPicture();
-  glow.dispose();
-  core.dispose();
-  ash.dispose();
-  smoke.dispose();
-  smokeBlur.dispose();
+  safeDispose(glow);
+  safeDispose(core);
+  safeDispose(ash);
+  safeDispose(smoke);
+  safeDispose(smokeBlur);
   return picture;
 }
 
@@ -331,6 +337,8 @@ export function BurnDismiss({
     let prev: Frame | null = null;
     const loop = (now: number) => {
       if (!alive) return;
+      let step = "sim";
+      try {
       const sim = simRef.current!;
       const dt = last ? Math.min(48, now - last) / 1000 : 1 / 60;
       last = now;
@@ -341,14 +349,18 @@ export function BurnDismiss({
         dismissed = true;
         latest.current.onDismissed?.();
       }
+      step = "pack";
       const bytes = packBurn(sim, cfg, bytesRef.current!);
+      step = "makeImage";
       const burnImage = Skia.Image.MakeImage(
         { width: cfg.cols, height: cfg.rows, colorType: ColorType.RGBA_8888, alphaType: AlphaType.Unpremul },
         Skia.Data.fromBytes(bytes),
         cfg.cols * 4,
       );
       if (burnImage) {
+        step = "imageShader";
         const burnShader = burnImage.makeShaderOptions(TileMode.Clamp, TileMode.Clamp, FilterMode.Linear, MipmapMode.None);
+        step = "runtimeShader";
         const next = Skia.Paint();
         next.setShader(
           effect.makeShaderWithChildren(
@@ -356,26 +368,32 @@ export function BurnDismiss({
             [sceneShader, burnShader],
           ),
         );
+        step = "particles";
         const picture = recordParticles(sim, cfg.width, cfg.height);
+        step = "publish";
         setFrame({ paint: next, picture });
-        prev?.paint.dispose();
-        prev?.picture.dispose();
-        prevBurnShader?.dispose();
-        prevImage?.dispose();
+        safeDispose(prev?.paint);
+        safeDispose(prev?.picture);
+        safeDispose(prevBurnShader);
+        safeDispose(prevImage);
         prev = { paint: next, picture };
         prevBurnShader = burnShader;
         prevImage = burnImage;
       }
       requestAnimationFrame(loop);
+      } catch (e) {
+        console.error("[burn] frame failed at " + step + ": " + String((e as Error)?.message));
+        throw e;
+      }
     };
     const raf = requestAnimationFrame(loop);
     return () => {
       alive = false;
       cancelAnimationFrame(raf);
-      prev?.paint.dispose();
-      prev?.picture.dispose();
-      prevBurnShader?.dispose();
-      prevImage?.dispose();
+      safeDispose(prev?.paint);
+      safeDispose(prev?.picture);
+      safeDispose(prevBurnShader);
+      safeDispose(prevImage);
     };
   }, [effect, sceneShader, cfg, opts, image]);
 
