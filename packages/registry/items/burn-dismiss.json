@@ -1,0 +1,18 @@
+{
+  "slug": "burn-dismiss",
+  "files": [
+    "BurnDismiss.tsx",
+    "burnMath.ts",
+    "burnDesign.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "title": "Burn Dismiss",
+  "category": "interaction",
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia"
+  ]
+}
