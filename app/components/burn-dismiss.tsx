@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import {
-  ASH_STRIDE, BURN_DEFAULTS, EMBER_STRIDE, burnPointerDown, burnPointerUp,
+  ASH_STRIDE, BURN_DEFAULTS, EMBER_STRIDE, SMOKE_STRIDE, burnPointerDown, burnPointerUp,
   createBurn, fbm2, packBurn, startRestore, stepBurn, burnAt,
 } from '../../packages/ui/src/components/burn-dismiss/burnMath';
 import { CARD_H, CARD_W, cardScene, type SceneItem } from '../../packages/ui/src/components/burn-dismiss/burnDesign';
@@ -43,14 +43,14 @@ function paintScene(ctx: CanvasRenderingContext2D) {
   }
 }
 
-function makeSprite(inner: string, outer: string) {
+function makeSprite(inner: string, outer: string, end = 'rgba(255,60,0,0)') {
   const c = document.createElement('canvas');
   c.width = 32; c.height = 32;
   const g = c.getContext('2d')!;
   const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
   grad.addColorStop(0, inner);
   grad.addColorStop(0.35, outer);
-  grad.addColorStop(1, 'rgba(255,60,0,0)');
+  grad.addColorStop(1, end);
   g.fillStyle = grad;
   g.fillRect(0, 0, 32, 32);
   return c;
@@ -106,6 +106,7 @@ export function BurnDismissPreview() {
 
     const spriteHot = makeSprite('rgba(255,246,214,1)', 'rgba(255,150,40,0.55)');
     const spriteRed = makeSprite('rgba(255,120,50,1)', 'rgba(200,40,5,0.5)');
+    const spriteSmoke = makeSprite('rgba(150,140,128,0.16)', 'rgba(140,130,118,0.06)', 'rgba(140,130,118,0)');
 
     const cw = CARD_W / COLS, ch = CARD_H / ROWS;
     let restoreSeen = latest.current.restoreTick;
@@ -139,14 +140,17 @@ export function BurnDismissPreview() {
             continue;
           }
           const warp = fbm2(u * 7, v * 9 + time * 0.05, 41);
+          const warp2 = fbm2(u * 23 - time * 0.03, v * 29, 44);
           const warpAmp = 0.22 * smooth(-0.06, 0.3, burn) * (1 - smooth(0.7, 0.92, burn));
-          const bw = burn + (warp - 0.5) * warpAmp;
+          const bw = burn + (warp - 0.5) * warpAmp + (warp2 - 0.5) * warpAmp * 0.35;
           let col = [sr, sg, sb];
           const fibre = fbm2(u * 46, v * 7, 42);
           col = mix3(col, [col[0] * (0.965 + 0.07 * fibre), col[1] * (0.965 + 0.07 * fibre), col[2] * (0.965 + 0.07 * fibre)], 1);
           if (bw > 0.001) {
+            const heatTint = smooth(0.001, 0.012, bw) * (1 - smooth(0.012, 0.045, bw));
+            col = mix3(col, [168, 77, 23], heatTint * (0.22 + 0.35 * gflick));
             const scorch = smooth(0.001, 0.10, bw) * (1 - smooth(0.10, 0.30, bw));
-            col = mix3(col, [115, 71, 31], scorch * 0.55);
+            col = mix3(col, [107, 61, 26], scorch * 0.7);
             const gb = smooth(0.02, 0.06, bw) * (1 - smooth(0.16, 0.34, bw));
             let glowCol = [255, 247, 220];
             glowCol = mix3(glowCol, [255, 209, 61], smooth(0.02, 0.10, bw));
@@ -163,9 +167,11 @@ export function BurnDismissPreview() {
             const bx = burnAt(s, i + 1 < COLS * ROWS && c < COLS - 1 ? i + 1 : i) - burnAt(s, c > 0 ? i - 1 : i);
             const by = burnAt(s, r < ROWS - 1 ? i + COLS : i) - burnAt(s, r > 0 ? i - COLS : i);
             const crest = smooth(0.80, 0.90, bw) * (1 - smooth(0.90, 0.965, bw));
-            const lit = Math.max(-1, Math.min(1, (bx * -0.55 + by * -0.83) * 6));
+            const lit = Math.max(-1, Math.min(1, (bx * -0.55 + by * -0.83) * 8));
             col = [col[0] + 128 * crest * Math.max(lit, 0), col[1] + 87 * crest * Math.max(lit, 0), col[2] + 46 * crest * Math.max(lit, 0)];
-            col = col.map((x) => x * (1 - 0.55 * crest * Math.max(-lit, 0)));
+            col = col.map((x) => x * (1 - 0.6 * crest * Math.max(-lit, 0)));
+            const lift = smooth(0.55, 0.68, bw) * (1 - smooth(0.68, 0.85, bw));
+            col = [col[0] + 217 * lift * Math.max(lit, 0) * 0.5, col[1] + 158 * lift * Math.max(lit, 0) * 0.5, col[2] + 97 * lift * Math.max(lit, 0) * 0.5];
             const rim = smooth(0.92, 0.97, bw);
             col = mix3(col, [82, 77, 71], rim * 0.45 * (1 - smooth(0.97, 0.99, bw)));
           }
@@ -193,6 +199,17 @@ export function BurnDismissPreview() {
       ctx.clearRect(0, 0, CARD_W, CARD_H);
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(stage, 0, 0);
+      // Soft smoke, behind the sparks.
+      for (let k = 0; k < s.smokeCount; k++) {
+        const q = k * SMOKE_STRIDE;
+        const t = s.smoke[q + 4] / s.smoke[q + 5];
+        const fadeIn = Math.min(1, t / 0.15);
+        const fade = t > 0.45 ? (1 - t) / 0.55 : 1;
+        const rad = s.smoke[q + 6] * (0.7 + t * 2.6);
+        ctx.globalAlpha = Math.min(0.7, fadeIn * fade);
+        ctx.drawImage(spriteSmoke, s.smoke[q] - rad, s.smoke[q + 1] - rad, rad * 2, rad * 2);
+      }
+      ctx.globalAlpha = 1;
       // Embers, additive.
       ctx.globalCompositeOperation = 'lighter';
       for (let k = 0; k < s.emberCount; k++) {
@@ -211,7 +228,7 @@ export function BurnDismissPreview() {
         const q = k * ASH_STRIDE;
         const t = s.ash[q + 4] / s.ash[q + 5];
         const fade = t > 0.72 ? (1 - t) / 0.28 : 1;
-        ctx.globalAlpha = 0.85 * fade;
+        ctx.globalAlpha = 0.7 * fade;
         ctx.fillStyle = '#4a3c2e';
         ctx.save();
         ctx.translate(s.ash[q], s.ash[q + 1]);
