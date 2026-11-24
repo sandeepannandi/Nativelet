@@ -29,8 +29,9 @@ FOUND=""
 for i in $(seq 1 24); do
   sleep 5
   adb shell rm -f /sdcard/burn.xml
-  adb shell uiautomator dump /sdcard/burn.xml >/dev/null
-  adb pull /sdcard/burn.xml "$OUT/ui.xml" >/dev/null
+  # uiautomator sometimes returns a null root node while the app is busy; retry on the next poll.
+  adb shell uiautomator dump /sdcard/burn.xml >/dev/null 2>&1 || continue
+  adb pull /sdcard/burn.xml "$OUT/ui.xml" >/dev/null 2>&1 || continue
   if grep -q "A postcard you can burn away" "$OUT/ui.xml"; then FOUND=1; break; fi
 done
 if [ -z "$FOUND" ]; then
