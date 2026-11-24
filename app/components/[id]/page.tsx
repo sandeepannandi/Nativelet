@@ -8,6 +8,7 @@ const REPO = "https://github.com/sandeepannandi/Nativelet";
 const SITE = "https://nativelet.netlify.app";
 
 const COVERS: Partial<Record<ComponentId, string>> = {
+  burn: "/burn-cover.svg",
   patchbay: "/patchbay-cover.svg",
   slingshot: "/slingshot-cover.svg",
   pottery: "/pottery-cover.svg",
