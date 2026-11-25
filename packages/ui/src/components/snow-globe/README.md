@@ -38,7 +38,7 @@ LICENSE file. `Example.tsx` is optional.
 
 | Prop | Default | Notes |
 | --- | --- | --- |
-| `flakes` | `480` | Number of flakes. Use fewer on slow phones. |
+| `flakes` | `720` | Number of flakes. Use fewer on slow phones. |
 | `width` | `340` | Layout width; the scene keeps its proportions. |
 | `slowMotion` | `false` | About 4x slower physics. |
 | `reducedMotion` | system | Freezes the snow. |
@@ -46,8 +46,4 @@ LICENSE file. `Example.tsx` is optional.
 | `onSettled` | - | Called once the water is calm and every flake is at rest. |
 | `onFeedback` | - | `'grab'`, `'shake'`, `'settle'`. |
 
-Honest limits: the water is a closed-form flow field, not a fluid solver, so it
-does not react to the flakes or to the cottage. Flakes pass through the trees
-and roofs instead of landing on them. The scene is a 2.5D projection, not a 3D
-render. The physics runs on the JS thread. Native rendering and physical-device
-frame rate unverified.
+Honest limits: the water is a coarse 14 x 14 x 14 grid solver, so eddies smaller than about a tenth of the globe come from a sub-grid noise term, and the water does not flow around the cottage or trees (flakes collide with them, the water passes through). Collision uses signed distance fields of the pines, cottage and lamp; flakes do not collide with each other. The scene is drawn from the same 3D solids with a lens pass for the glass, but it is still a 2D painting, not a real 3D render. The physics runs on the JS thread. Native rendering was checked on an Android emulator only; physical-device frame rate is unverified.

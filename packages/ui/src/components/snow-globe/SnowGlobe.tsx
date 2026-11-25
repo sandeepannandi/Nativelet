@@ -24,10 +24,10 @@ import {
   stepSnow,
   type SnowWorld,
 } from "./snowMath";
-import { GLOBE_H, GLOBE_W, RP, buildFrame, staticScene, type Item } from "./snowDesign";
+import { GLOBE_H, GLOBE_W, RP, buildFrame, staticScene, type Item, type Layer } from "./snowDesign";
 
 export type SnowGlobeProps = {
-  /** Number of flakes. 480 is the default; fewer is lighter on slow phones. */
+  /** Number of flakes. 720 is the default; fewer is lighter on slow phones. */
   flakes?: number;
   /** Width in layout points; the scene keeps its 340 x 460 proportions. */
   width?: number;
@@ -124,10 +124,10 @@ function record(items: Item[]): SkPicture {
   return rec.finishRecordingAsPicture();
 }
 
-type Still = { shadow: SkPicture; s0: SkPicture; s1: SkPicture; s2: SkPicture; s3: SkPicture };
+type Still = { shadow: SkPicture; layers: Layer[]; pics: SkPicture[]; glass: SkPicture };
 
 export function SnowGlobe({
-  flakes = 480,
+  flakes = 720,
   width = GLOBE_W,
   slowMotion = false,
   reducedMotion,
@@ -173,14 +173,13 @@ export function SnowGlobe({
     const st = staticScene();
     const pics: Still = {
       shadow: record(st.shadow),
-      s0: record(st.s0),
-      s1: record(st.s1),
-      s2: record(st.s2),
-      s3: record(st.s3),
+      layers: st.layers,
+      pics: st.layers.map((l) => record(l.items)),
+      glass: record(st.glass),
     };
     setStill(pics);
     return () => {
-      setTimeout(() => Object.values(pics).forEach(safeDispose), 1500);
+      setTimeout(() => [pics.shadow, pics.glass, ...pics.pics].forEach(safeDispose), 1500);
     };
   }, []);
 
@@ -228,22 +227,20 @@ export function SnowGlobe({
         latest.current.onFeedback?.("settle", 0.5);
         latest.current.onSettled?.();
       }
-      const f = buildFrame(w);
+      const st = stillRef.current;
       const rec = Skia.PictureRecorder();
       const canvas = rec.beginRecording(Skia.XYWHRect(-GLOBE_W, -GLOBE_H, GLOBE_W * 3, GLOBE_H * 3));
-      canvas.save();
-      canvas.translate(f.dx, f.dy);
-      const st = stillRef.current;
       if (st) {
-        canvas.drawPicture(st.s0);
-        paintItems(canvas, f.f1);
-        canvas.drawPicture(st.s1);
-        paintItems(canvas, f.f2);
-        canvas.drawPicture(st.s2);
-        paintItems(canvas, f.f3);
-        canvas.drawPicture(st.s3);
+        const f = buildFrame(w, st.layers);
+        canvas.save();
+        canvas.translate(f.dx, f.dy);
+        for (let i = 0; i < st.pics.length; i++) {
+          canvas.drawPicture(st.pics[i]);
+          if (f.slots[i].length) paintItems(canvas, f.slots[i]);
+        }
+        canvas.drawPicture(st.glass);
+        canvas.restore();
       }
-      canvas.restore();
       const pic = rec.finishRecordingAsPicture();
       setFrame(pic);
       if (prev) retired.push(prev);
