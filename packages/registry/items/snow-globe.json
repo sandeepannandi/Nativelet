@@ -1,0 +1,18 @@
+{
+  "slug": "snow-globe",
+  "files": [
+    "SnowGlobe.tsx",
+    "snowMath.ts",
+    "snowDesign.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "title": "Snow Globe",
+  "category": "interaction",
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia"
+  ]
+}
