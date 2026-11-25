@@ -1,12 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
-import { STEP_COUNT } from '../../packages/ui/src/components/origami-fold/foldMath';
-import { FOLD_H, FOLD_W, buildFrame, staticScene, type Item } from '../../packages/ui/src/components/origami-fold/foldDesign';
+import { FoldController } from '../../packages/ui/src/components/origami-fold/foldController';
+import { FOLD_H, FOLD_W, staticScene, type Item } from '../../packages/ui/src/components/origami-fold/foldDesign';
 import styles from './origami-fold.module.css';
 
-const NAMES = ['Flat sheet', 'Corner to corner', 'Tip tucked down', 'Left half over', 'Base folded up'];
-const PX_PER_STEP = 150;
 
 /* Paint a draw list with Canvas2D. Blur uses the shadow trick so it works in every browser. */
 function paintItems(ctx: CanvasRenderingContext2D, items: Item[], dpr: number) {
@@ -59,17 +57,14 @@ function paintItems(ctx: CanvasRenderingContext2D, items: Item[], dpr: number) {
 export function OrigamiFoldPreview() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [slow, setSlow] = useState(false);
-  const [at, setAt] = useState(0);
-  const [targetUi, setTargetUi] = useState(0);
+  const [folds, setFolds] = useState(0);
   const reduced = !!useReducedMotion();
-  const latest = useRef({ slow, reduced, targetUi });
-  latest.current = { slow, reduced, targetUi };
-  const sim = useRef({ u: 0, v: 0, target: 0, held: false, lastStep: 0 });
-
-  useEffect(() => {
-    const s = sim.current;
-    if (!s.held) s.target = targetUi;
-  }, [targetUi]);
+  const ctl = useRef<FoldController | null>(null);
+  if (!ctl.current) ctl.current = new FoldController();
+  const c = ctl.current;
+  c.slowMotion = slow;
+  c.reduced = reduced;
+  c.onChange = setFolds;
 
   useEffect(() => {
     const el = canvas.current, ctx = el?.getContext('2d');
@@ -81,57 +76,31 @@ export function OrigamiFoldPreview() {
     const bx = bg.getContext('2d')!;
     bx.setTransform(dpr, 0, 0, dpr, 0, 0);
     paintItems(bx, staticScene().back, dpr);
-    let raf = 0, last = 0, lastU = -1;
-    const s = sim.current;
+    let raf = 0, last = 0, first = true;
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60; last = now;
-      if (!s.held) {
-        if (latest.current.reduced) { s.u = s.target; s.v = 0; }
-        else {
-          const k = 70, c = 2 * Math.sqrt(k) * 0.8, h = dt * (latest.current.slow ? 0.25 : 1);
-          const n = Math.max(1, Math.ceil(h / 0.004));
-          for (let i = 0; i < n; i++) { s.v += ((k * (s.target - s.u) - c * s.v) * h) / n; s.u += (s.v * h) / n; }
-          s.u = Math.max(0, Math.min(STEP_COUNT, s.u));
-          if (Math.abs(s.target - s.u) < 0.0008 && Math.abs(s.v) < 0.01) { s.u = s.target; s.v = 0; }
-        }
-        const nearest = Math.round(s.u);
-        if (Math.abs(s.u - nearest) < 0.0001 && nearest !== s.lastStep) { s.lastStep = nearest; setAt(nearest); setTargetUi(nearest); }
-      }
-      if (Math.abs(s.u - lastU) < 1e-5) return;
-      lastU = s.u;
+      if (!c.update(dt) && !first) return;
+      first = false;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, el.width, el.height);
       ctx.drawImage(bg, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      paintItems(ctx, buildFrame(s.u), dpr);
+      paintItems(ctx, c.frame(), dpr);
     };
     raf = requestAnimationFrame(tick);
-
-    let px = 0, pt = 0, pv = 0;
+    const pos = (e: PointerEvent): [number, number] => {
+      const r = el.getBoundingClientRect();
+      return [((e.clientX - r.left) / r.width) * FOLD_W, ((e.clientY - r.top) / r.height) * FOLD_H];
+    };
     const down = (e: PointerEvent) => {
-      if (latest.current.reduced) return;
+      const [x, y] = pos(e);
+      if (!c.down(x, y)) return;
       el.setPointerCapture(e.pointerId);
-      s.held = true; s.v = 0; px = e.clientX; pt = performance.now(); pv = 0;
       el.style.cursor = 'grabbing';
     };
-    const move = (e: PointerEvent) => {
-      if (!s.held) return;
-      const r = el.getBoundingClientRect();
-      const scale = r.width / FOLD_W;
-      const du = ((e.clientX - px) / scale) / PX_PER_STEP;
-      const now = performance.now();
-      s.u = Math.max(0, Math.min(STEP_COUNT, s.u + du));
-      pv = pv * 0.6 + (du / Math.max(0.001, (now - pt) / 1000)) * 0.4;
-      px = e.clientX; pt = now;
-    };
-    const up = () => {
-      if (!s.held) return;
-      s.held = false;
-      s.target = Math.max(0, Math.min(STEP_COUNT, Math.round(s.u + Math.max(-1, Math.min(1, pv * 0.22)))));
-      s.v = Math.max(-6, Math.min(6, pv));
-      el.style.cursor = 'grab';
-    };
+    const move = (e: PointerEvent) => { const [x, y] = pos(e); c.move(x, y); };
+    const up = () => { c.up(); el.style.cursor = 'grab'; };
     el.addEventListener('pointerdown', down);
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
@@ -143,15 +112,15 @@ export function OrigamiFoldPreview() {
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
     };
-  }, []);
+  }, [c]);
 
   return (
     <div className={styles.stage}>
-      <canvas ref={canvas} className={styles.canvas} role="img" aria-label="A sheet of origami paper on a desk. Drag sideways to fold it step by step, drag back to unfold." />
-      <div className={styles.readout} aria-live="polite">Step {at} of {STEP_COUNT}: {NAMES[at]}</div>
+      <canvas ref={canvas} className={styles.canvas} role="img" aria-label="A sheet of origami paper on a desk. Press anywhere on the paper and drag in any direction to fold it." />
+      <div className={styles.readout} aria-live="polite">{folds === 0 ? 'Press the paper and drag any way to fold it' : `${folds} fold${folds === 1 ? '' : 's'}`}</div>
       <div className={styles.controls}>
-        <button type="button" disabled={targetUi <= 0} onClick={() => setTargetUi((t) => Math.max(0, t - 1))}>Unfold</button>
-        <button type="button" disabled={targetUi >= STEP_COUNT} onClick={() => setTargetUi((t) => Math.min(STEP_COUNT, t + 1))}>Fold</button>
+        <button type="button" disabled={folds === 0} onClick={() => c.undo()}>Undo</button>
+        <button type="button" disabled={folds === 0} onClick={() => c.reset()}>Reset</button>
         <button type="button" aria-pressed={slow} onClick={() => setSlow((v) => !v)}>Slow motion: {slow ? 'on' : 'off'}</button>
       </div>
     </div>

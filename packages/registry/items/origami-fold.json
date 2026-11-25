@@ -3,6 +3,7 @@
   "files": [
     "OrigamiFold.tsx",
     "foldMath.ts",
+    "foldController.ts",
     "foldDesign.ts",
     "Example.tsx",
     "README.md",
