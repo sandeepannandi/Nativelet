@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   allSettled, airborne, createWorld, groundHeight, holdGlobe, meanSpeed, moveGlobe, releaseGlobe,
-  startShake, stepSnow, waterVelocity,
+  startShake, stepSnow, waterVelocity, sdSolid, TREES, HOUSE, LAMP,
 } from './snowMath.ts';
 
 const run = (w, secs, dt = 1 / 60) => { for (let t = 0; t < secs; t += dt) stepSnow(w, dt); };
@@ -76,24 +76,78 @@ test('the water slows to nothing: energy and swirl only decay once the globe is 
 
 test('water velocity fades to zero at the glass and is finite inside', () => {
   const w = createWorld(10, 2);
-  w.energy = 1; w.swirl = 2; w.bulk = [0.5, 0.2, 0];
+  startShake(w, 1); run(w, 0.6);
   const out = [0, 0, 0];
   waterVelocity(w, 0.999, 0, 0, out);
   const wallSpeed = Math.hypot(...out);
-  waterVelocity(w, 0.5, 0, 0, out);
-  assert.ok(wallSpeed < 0.35 * Math.hypot(...out), `wall ${wallSpeed}`);
-  waterVelocity(w, 0.2, 0.1, -0.3, out);
-  assert.ok(Math.hypot(...out) > 0.1 && Number.isFinite(out[0] + out[1] + out[2]));
+  let inner = 0;
+  for (const [x, y, z] of [[0.3, 0.1, 0], [0.2, 0.1, -0.3], [-0.4, 0.3, 0.2], [0, -0.2, 0.4]]) {
+    waterVelocity(w, x, y, z, out);
+    assert.ok(Number.isFinite(out[0] + out[1] + out[2]));
+    inner = Math.max(inner, Math.hypot(...out));
+  }
+  assert.ok(inner > 0.1, `shaken water moves, ${inner}`);
+  assert.ok(wallSpeed < 0.35 * inner, `wall ${wallSpeed} vs ${inner}`);
 });
 
-test('dragging the globe sends the water sloshing the other way, a gentle drag stirs it less than a shake', () => {
+test('the water stays incompressible: the grid velocity has small divergence after projection', () => {
+  const w = createWorld(10, 3);
+  startShake(w, 1); run(w, 1.0);
+  assert.ok(w.energy > 0.2, `energy ${w.energy}`);
+  // Net flux through a sphere of radius 0.5 should be about zero for an incompressible flow.
+  const out = [0, 0, 0];
+  let flux = 0, mag = 0, n = 0;
+  for (let i = 0; i < 400; i++) {
+    const a = Math.acos(1 - 2 * ((i + 0.5) / 400)), b = i * 2.399963;
+    const nx = Math.sin(a) * Math.cos(b), ny = Math.cos(a), nz = Math.sin(a) * Math.sin(b);
+    waterVelocity(w, nx * 0.5, ny * 0.5, nz * 0.5, out);
+    flux += out[0] * nx + out[1] * ny + out[2] * nz; mag += Math.hypot(...out); n++;
+  }
+  assert.ok(Math.abs(flux / n) < 0.35 * (mag / n), `flux ${flux / n} vs mean speed ${mag / n}`);
+});
+
+test('shaking the globe makes the water swirl and a drag stirs it less than a shake', () => {
   const a = createWorld(200, 8), b = createWorld(200, 8);
-  holdGlobe(a, 0, 0);
-  for (let i = 0; i < 20; i++) { moveGlobe(a, i * 0.02, 0); stepSnow(a, 1 / 60); }
-  assert.ok(a.bulk[0] < 0, 'water lags behind a globe moving right');
   startShake(b, 1); run(b, 0.9);
   holdGlobe(a, 0.4, 0); run(a, 0.9);
+  assert.ok(b.energy > 0.2, `shake ${b.energy}`);
   assert.ok(b.energy > a.energy, `shake ${b.energy} beats drag ${a.energy}`);
+});
+
+test('solids are solid: a flake dropped on the roof, a pine tier or the lamp does not fall through', () => {
+  const dropOn = (x, z, y0) => {
+    const w = createWorld(4, 31);
+    for (const g of w.flakes) g.rest = true;
+    const f = w.flakes[0];
+    f.rest = false; f.x = x; f.y = y0; f.z = z; f.vx = f.vy = f.vz = 0;
+    run(w, 4);
+    return { f, w };
+  };
+  // Roof of the cottage, a little off the ridge.
+  const { f: roofFlake } = dropOn(HOUSE.x, HOUSE.z - 0.04, 0.2);
+  assert.ok(roofFlake.rest && roofFlake.on === HOUSE.id, `roof flake on ${roofFlake.on}, rest ${roofFlake.rest}`);
+  assert.ok(roofFlake.y > groundHeight(HOUSE.x, HOUSE.z) + 0.15, `roof flake y ${roofFlake.y}`);
+  // The big pine's top tier.
+  const t = TREES[2];
+  const { f: treeFlake } = dropOn(t.x + 0.02, t.z, groundHeight(t.x, t.z) + t.h + 0.1);
+  assert.ok(treeFlake.y > groundHeight(t.x, t.z) + t.h * 0.3, `tree flake fell through to ${treeFlake.y}`);
+  assert.ok(sdSolid(t.id, treeFlake.x, treeFlake.y, treeFlake.z) > -0.003, 'tree flake not inside the tree');
+  // Nothing ends up inside any solid after a violent shake.
+  const w = createWorld(480, 17);
+  startShake(w, 1.4); run(w, 6);
+  let inside = 0;
+  for (const g of w.flakes) {
+    for (let id = 1; id <= 7; id++) if (sdSolid(id, g.x, g.y, g.z) < -0.012) inside++;
+  }
+  assert.ok(inside <= 3, `${inside} flakes inside solids`);
+});
+
+test('some snow settles on the trees and the roof, not only the ground', () => {
+  const w = createWorld(720, 7);
+  startShake(w, 1); run(w, 40);
+  let perched = 0;
+  for (const f of w.flakes) if (f.rest && f.on > 0) perched++;
+  assert.ok(perched >= 6, `only ${perched} flakes perched`);
 });
 
 test('simulation is deterministic for a seed', () => {

@@ -65,7 +65,7 @@ export function SnowGlobePreview() {
     if (!el || !ctx) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     el.width = GLOBE_W * dpr; el.height = GLOBE_H * dpr;
-    const w: SnowWorld = createWorld(480, 7);
+    const w: SnowWorld = createWorld(720, 7);
     (el as unknown as { __world: SnowWorld }).__world = w;
     const st = staticScene();
     const mk = (items: Item[]) => {
@@ -76,7 +76,9 @@ export function SnowGlobePreview() {
       paintItems(x, items, dpr);
       return c;
     };
-    const layers = { shadow: mk(st.shadow), s0: mk(st.s0), s1: mk(st.s1), s2: mk(st.s2), s3: mk(st.s3) };
+    const layers = st.layers.map((l) => mk(l.items));
+    const glass = mk(st.glass);
+    const shadowC = mk(st.shadow);
     let shakeSeen = latest.current.shakeTick;
     let raf = 0, last = 0;
     const tick = (now: number) => {
@@ -87,24 +89,20 @@ export function SnowGlobePreview() {
         if (!latest.current.reduced) startShake(w, 1);
       }
       if (!latest.current.reduced) stepSnow(w, dt * (latest.current.slow ? 0.25 : 1));
-      const f = buildFrame(w);
+      const f = buildFrame(w, st.layers);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, el.width, el.height);
-      ctx.drawImage(layers.shadow, 0, 0);
+      ctx.drawImage(shadowC, 0, 0);
       const ox = f.dx * dpr, oy = f.dy * dpr;
-      ctx.drawImage(layers.s0, ox, oy);
-      ctx.save(); ctx.translate(ox, oy); ctx.scale(dpr, dpr);
-      paintItems(ctx, f.f1, dpr);
-      ctx.restore();
-      ctx.drawImage(layers.s1, ox, oy);
-      ctx.save(); ctx.translate(ox, oy); ctx.scale(dpr, dpr);
-      paintItems(ctx, f.f2, dpr);
-      ctx.restore();
-      ctx.drawImage(layers.s2, ox, oy);
-      ctx.save(); ctx.translate(ox, oy); ctx.scale(dpr, dpr);
-      paintItems(ctx, f.f3, dpr);
-      ctx.restore();
-      ctx.drawImage(layers.s3, ox, oy);
+      for (let i = 0; i < layers.length; i++) {
+        ctx.drawImage(layers[i], ox, oy);
+        if (f.slots[i].length) {
+          ctx.save(); ctx.translate(ox, oy); ctx.scale(dpr, dpr);
+          paintItems(ctx, f.slots[i], dpr);
+          ctx.restore();
+        }
+      }
+      ctx.drawImage(glass, ox, oy);
     };
     raf = requestAnimationFrame(tick);
 
