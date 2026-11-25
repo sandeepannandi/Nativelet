@@ -1,0 +1,18 @@
+{
+  "slug": "origami-fold",
+  "files": [
+    "OrigamiFold.tsx",
+    "foldMath.ts",
+    "foldDesign.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "title": "Origami Fold",
+  "category": "interaction",
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia"
+  ]
+}

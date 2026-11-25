@@ -3,6 +3,7 @@ import { join } from "node:path";
 import NativeletSite from "./components/nativelet-site";
 
 const components = {
+  origami: { dir: "packages/ui/src/components/origami-fold", files: ["OrigamiFold.tsx", "foldMath.ts", "foldDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   snow: { dir: "packages/ui/src/components/snow-globe", files: ["SnowGlobe.tsx", "snowMath.ts", "snowDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   dice: { dir: "packages/ui/src/components/dice-tray", files: ["DiceTray.tsx", "diceMath.ts", "diceDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   burn: { dir: "packages/ui/src/components/burn-dismiss", files: ["BurnDismiss.tsx", "burnMath.ts", "burnDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
@@ -76,6 +77,7 @@ function read(dir: string, files: readonly string[]) {
 
 export default function Home() {
   const sources = {
+    origami: read(components.origami.dir, components.origami.files),
     snow: read(components.snow.dir, components.snow.files),
     dice: read(components.dice.dir, components.dice.files),
     burn: read(components.burn.dir, components.burn.files),
