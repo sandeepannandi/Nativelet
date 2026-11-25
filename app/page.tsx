@@ -3,6 +3,7 @@ import { join } from "node:path";
 import NativeletSite from "./components/nativelet-site";
 
 const components = {
+  dice: { dir: "packages/ui/src/components/dice-tray", files: ["DiceTray.tsx", "diceMath.ts", "diceDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   burn: { dir: "packages/ui/src/components/burn-dismiss", files: ["BurnDismiss.tsx", "burnMath.ts", "burnDesign.ts", "Example.tsx", "README.md", "LICENSE"] },
   patchbay: {dir: "packages/ui/src/components/patchbay", files: ["CablePatchbay.tsx", "cableMath.ts", "Example.tsx", "README.md", "LICENSE"]},
   slingshot: { dir: "packages/ui/src/components/slingshot", files: ["Slingshot.tsx", "slingMath.ts", "Example.tsx", "README.md", "LICENSE"] },
@@ -74,6 +75,7 @@ function read(dir: string, files: readonly string[]) {
 
 export default function Home() {
   const sources = {
+    dice: read(components.dice.dir, components.dice.files),
     burn: read(components.burn.dir, components.burn.files),
     patchbay: read(components.patchbay.dir, components.patchbay.files),
     slingshot: read(components.slingshot.dir, components.slingshot.files),

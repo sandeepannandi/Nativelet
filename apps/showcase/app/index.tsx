@@ -21,6 +21,7 @@ export default function ShowcaseHome() {
   const holdPage = (hold: boolean) => { if (orientation === 'vertical') (pageRef.current as any)?.setNativeProps?.({ scrollEnabled: !hold }); };
   return <SafeAreaView style={styles.page}><ScrollView ref={pageRef} contentContainerStyle={styles.content}>
     <View style={styles.header}><Text style={styles.brand}>nativelet</Text><Text style={styles.badge}>NATIVE STUDY / 01</Text></View>
+    <Link href="/dice-tray" style={styles.note}>New: 3D Dice Tray →</Link>
     <Link href="/burn-dismiss" style={styles.note}>New: Burn Dismiss →</Link>
     <Link href="/patchbay" style={styles.note}>New: Cable Patchbay →</Link>
     <Link href="/slingshot" style={styles.note}>New: Slingshot →</Link>

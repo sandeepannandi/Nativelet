@@ -1,0 +1,18 @@
+{
+  "slug": "dice-tray",
+  "files": [
+    "DiceTray.tsx",
+    "diceMath.ts",
+    "diceDesign.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "title": "3D Dice Tray",
+  "category": "interaction",
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia"
+  ]
+}

@@ -20,6 +20,7 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 
 ## Components
 
+- 3D Dice Tray: pick up casino dice, flick them across a felt tray and watch real rigid-body physics tumble, bounce off the rails, knock into each other and settle on a face.
 - Burn Dismiss: touch a postcard to ignite it - a noise-warped burn front with a glowing edge eats the paper, embers rise, ash flutters down; hold to feed the fire, restore to rewind it.
 - Cable Patchbay: unplug either end of a weighted cable, let it swing, and reconnect to an empty socket. Gravity, bending, socket capture and a visual signal, with slow motion.
 
