@@ -23,7 +23,6 @@ export default function ShowcaseHome() {
     <View style={styles.header}><Text style={styles.brand}>nativelet</Text><Text style={styles.badge}>NATIVE STUDY / 01</Text></View>
     <Link href="/roulette-wheel" style={styles.note}>New: Roulette Wheel →</Link>
     <Link href="/origami-fold" style={styles.note}>New: Origami Fold →</Link>
-    <Link href="/snow-globe" style={styles.note}>New: Snow Globe →</Link>
     <Link href="/dice-tray" style={styles.note}>New: 3D Dice Tray →</Link>
     <Link href="/burn-dismiss" style={styles.note}>New: Burn Dismiss →</Link>
     <Link href="/patchbay" style={styles.note}>New: Cable Patchbay →</Link>
