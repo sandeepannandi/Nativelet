@@ -22,18 +22,18 @@ export type PocketColor = "red" | "black" | "green";
 export const colorOf = (n: number): PocketColor => (n === 0 ? "green" : RED.has(n) ? "red" : "black");
 
 /* ---------- geometry ---------- */
-export const BALL_R = 0.024;
+export const BALL_R = 0.029;
 export const WALL_R = 0.985;
-export const TRACK_IN = 0.7;
-export const SHELF_IN = 0.6;
-export const POCKET_OUT = 0.475;
-export const POCKET_IN = 0.315;
+export const TRACK_IN = 0.84;
+export const SHELF_IN = 0.74;
+export const POCKET_OUT = 0.62;
+export const POCKET_IN = 0.39;
 export const FRET_H = 0.02;
 export const FRET_T = 0.004;
 export const DEFLECTOR_COUNT = 8;
-export const DEFLECTOR_R = 0.645;
+export const DEFLECTOR_R = 0.79;
 export const DEFLECTOR_H = 0.045;
-const DEFL_RADIAL = 0.056;
+const DEFL_RADIAL = 0.06;
 const DEFL_TANG = 0.034;
 
 const G = 24.5;
@@ -45,15 +45,28 @@ const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** dH/dr: how steeply the surface rises going outwards. */
-export function slope(r: number): number {
-  if (r >= TRACK_IN) {
-    const s = Math.min(1, (r - TRACK_IN) / 0.28);
+/* The height profile was tuned on an older, smaller pocket ring. Stretch it onto the current
+   radii so the track, shelf and pockets keep their feel while the pockets and ball get bigger. */
+const MAP_NEW = [0, 0.39, 0.62, 0.74, 0.84, 0.985, 1.1];
+const MAP_OLD = [0, 0.315, 0.475, 0.6, 0.7, 0.985, 1.1];
+function oldR(r: number): number {
+  for (let i = 1; i < MAP_NEW.length; i++) {
+    if (r <= MAP_NEW[i]) return MAP_OLD[i - 1] + ((r - MAP_NEW[i - 1]) / (MAP_NEW[i] - MAP_NEW[i - 1])) * (MAP_OLD[i] - MAP_OLD[i - 1]);
+  }
+  return r - 1.1 + 1.1;
+}
+function slopeOld(r: number): number {
+  if (r >= 0.7) {
+    const s = Math.min(1, (r - 0.7) / 0.28);
     return 0.18 + 2.4 * s * s + (r > 0.98 ? (r - 0.98) * 40 : 0);
   }
   if (r >= 0.58) return 0.18 + 0.12 * smooth(0.64, 0.58, r);
   if (r >= 0.37) return 0.3;
   return 0.3 - 2.7 * smooth(0.37, 0.32, r);
+}
+/** dH/dr: how steeply the surface rises going outwards. */
+export function slope(r: number): number {
+  return slopeOld(oldR(r));
 }
 
 const H_STEP = 0.005;
@@ -119,9 +132,9 @@ export function createWorld(seed = 7): RouletteWorld {
   };
 }
 
-export const MIN_SPEED = 4.8;
+export const MIN_SPEED = 5.6;
 export const MAX_SPEED = 8;
-export const DEFAULT_SPEED = 6.4;
+export const DEFAULT_SPEED = 6.6;
 
 /** Spin the wheel and send the ball clockwise round the track. speed is the ball's rim speed in bowl radii per second. */
 export function launch(w: RouletteWorld, speed = DEFAULT_SPEED, seed?: number): void {
@@ -203,7 +216,7 @@ export function step(w: RouletteWorld, dt: number): void {
   // The wheel: bearing friction plus viscous drag. It never reverses.
   if (w.omega !== 0) {
     const s = Math.sign(w.omega);
-    const mag = Math.abs(w.omega) - (0.06 + 0.07 * Math.abs(w.omega)) * dt;
+    const mag = Math.abs(w.omega) - (0.035 + 0.045 * Math.abs(w.omega)) * dt;
     w.omega = mag <= 0.002 ? 0 : s * mag;
   }
   w.theta += w.omega * dt;
@@ -226,8 +239,8 @@ export function step(w: RouletteWorld, dt: number): void {
     const pull = -G * slope(r);
     ax += (pull * b.x) / r; ay += (pull * b.y) / r;
     // rolling resistance and air drag
-    const roll = 0.1 / Math.max(sp, 0.08);
-    ax -= b.vx * (0.1 + roll); ay -= b.vy * (0.1 + roll);
+    const roll = 0.07 / Math.max(sp, 0.08);
+    ax -= b.vx * (0.045 + roll); ay -= b.vy * (0.045 + roll);
     if (r < SHELF_IN) {
       const k = 1.0 * smooth(SHELF_IN, SHELF_IN - 0.05, r);
       ax -= k * (b.vx - ux); ay -= k * (b.vy - uy);
@@ -273,7 +286,7 @@ export function step(w: RouletteWorld, dt: number): void {
   }
 
   // deflectors (fixed to the bowl)
-  if (r > 0.55 && r < 0.75 && b.z < DEFLECTOR_H) {
+  if (r > DEFLECTOR_R - 0.1 && r < DEFLECTOR_R + 0.1 && b.z < DEFLECTOR_H) {
     for (const poly of DEFLECTORS) {
       const n = poly.length;
       let bestD = 1e9, qx = 0, qy = 0;

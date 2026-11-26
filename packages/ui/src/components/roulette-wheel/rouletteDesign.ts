@@ -10,7 +10,7 @@
   behind it), and the launch-power overlay.
 */
 import {
-  BALL_R, DEFLECTOR_H, DELTA, FRET_H, ORDER, POCKETS, POCKET_IN, POCKET_OUT, SHELF_IN, TRACK_IN,
+  BALL_R, DEFLECTOR_H, DEFLECTOR_R, DELTA, FRET_H, ORDER, POCKETS, POCKET_IN, POCKET_OUT, SHELF_IN, TRACK_IN,
   ballHeight, colorOf, deflectorPolys, height, slope, type RouletteWorld,
 } from "./rouletteMath";
 
@@ -156,12 +156,12 @@ export function staticScene(): { back: Item[]; front: Item[] } {
   ring(back, SHELF_IN + 0.01, TRACK_IN - 0.012, 144, height, WALNUT, { bands: 3, tintAt: () => 1.0 });
 
   // deflectors: brass diamonds standing on the shelf
-  const polys = deflectorPolys().map((poly) => ({ poly, depth: project(P3(poly[0][0] * 0.5 + poly[2][0] * 0.5, poly[0][1] * 0.5 + poly[2][1] * 0.5, height(0.645)))[2] }));
+  const polys = deflectorPolys().map((poly) => ({ poly, depth: project(P3(poly[0][0] * 0.5 + poly[2][0] * 0.5, poly[0][1] * 0.5 + poly[2][1] * 0.5, height(DEFLECTOR_R)))[2] }));
   polys.sort((a, b) => b.depth - a.depth);
   for (const { poly } of polys) {
     const cxm = (poly[0][0] + poly[2][0]) / 2, cym = (poly[0][1] + poly[2][1]) / 2;
-    back.push({ k: "poly", pts: ellipse3D(cxm - 0.04, cym + 0.015, height(0.645), 0.05, 12), color: "#000", alpha: 0.45, blur: 3 });
-    const h0 = height(0.645);
+    back.push({ k: "poly", pts: ellipse3D(cxm - 0.04, cym + 0.015, height(DEFLECTOR_R), 0.05, 12), color: "#000", alpha: 0.45, blur: 3 });
+    const h0 = height(DEFLECTOR_R);
     for (let i = 0; i < 4; i++) {
       const p = poly[i], q = poly[(i + 1) % 4];
       const ex = q[0] - p[0], ey = q[1] - p[1];
@@ -235,7 +235,7 @@ export function buildFrame(w: RouletteWorld, opts: FrameOpts = {}): { dyn: Item[
   // rotor studs turn with the wheel
   for (let i = 0; i < POCKETS; i++) {
     const a = w.theta + (i + 0.5) * DELTA;
-    const r = 0.53;
+    const r = (POCKET_OUT + SHELF_IN) / 2;
     const s = scr(r * Math.cos(a), r * Math.sin(a), rotorH(r) + 0.004);
     const nrm = surfNormal(slope(r), a);
     dyn.push({ k: "circ", x: s[0], y: s[1], r: 1.55, color: shade(BRASS, nrm, P3(r * Math.cos(a), r * Math.sin(a), rotorH(r))) });
