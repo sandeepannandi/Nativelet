@@ -144,3 +144,30 @@ test("folds stack: fold, fold again, then undo and reset restore the sheet", () 
 
 test("facet area helper", () => assert.ok(Math.abs(facetArea(flatSheet()[0]) - 4) < 1e-9));
 void THICK;
+
+test("the camera holds still while a finger is down, so the paper never slides under it", () => {
+  const c = new FoldController();
+  assert.ok(c.down(200, 300));
+  const v0 = { ...c.view };
+  for (let i = 0; i <= 90; i++) {
+    const u = i / 90;
+    c.move(200 - 110 * u, 300 - 130 * u);
+    c.update(1 / 60);
+  }
+  assert.deepEqual(c.view, v0);
+});
+
+test("frame colours do not depend on which vertex of a facet comes first", async () => {
+  const { buildFrame, flatView } = await import("./foldDesign.ts");
+  const crease = { nx: 0.6, ny: 0.8, d: 0.1 };
+  const cuts = cutSheet(flatSheet(), crease);
+  const colours = (rot) => {
+    const posed = poseCuts(cuts, crease, 1.3).map((f) => {
+      const r = (a) => a.slice(rot).concat(a.slice(0, rot));
+      return { ...f, pts: r(f.pts), normals: r(f.normals), dist: r(f.dist) };
+    });
+    return buildFrame(posed, flatView()).filter((it) => it.k === "poly" && !it.blur && !it.alpha).map((it) => it.color).sort();
+  };
+  assert.deepEqual(colours(0), colours(1));
+  assert.deepEqual(colours(0), colours(2));
+});

@@ -65,8 +65,18 @@ export class FoldController {
     const dy = f[1] - g.p[1];
     const dist = Math.hypot(dx, dy);
     if (dist < DEAD) { if (this.act?.held) { this.act.phi = 0; this.dirty = true; } return; }
-    const nx = dx / dist;
-    const ny = dy / dist;
+    let nx = dx / dist;
+    let ny = dy / dist;
+    // a finger a hair from where it grabbed has a noisy direction; ease the crease angle
+    // towards it so a tiny wobble can't spin the whole fold
+    const prev = this.act?.held ? this.act.crease : null;
+    if (prev) {
+      const w = Math.min(1, 0.2 + dist * 2.5);
+      const bx = prev.nx + (nx - prev.nx) * w;
+      const by = prev.ny + (ny - prev.ny) * w;
+      const bl = Math.hypot(bx, by);
+      if (bl > 1e-3) { nx = bx / bl; ny = by / bl; }
+    }
     const a = Math.max(dist / 2, LIFT_REACH);
     const crease: Crease = { nx, ny, d: nx * g.p[0] + ny * g.p[1] + a };
     const phi = dist >= 2 * LIFT_REACH ? PI : Math.acos(Math.max(-1, 1 - dist / LIFT_REACH));
@@ -169,9 +179,15 @@ export class FoldController {
         if (this.pendingUndo > 0) { this.pendingUndo--; this.undo(); }
       }
     }
-    // the camera glides to frame whatever is on the table
-    const tv = viewFor(this.posed());
-    const k = this.reduced ? 1 : 1 - Math.exp(-dt * 7);
+    // The camera frames where the paper will end up, not the flap in mid-air, and it
+    // holds still while a finger is down so the paper never slides under it.
+    let tv = this.view;
+    if (!this.grab) {
+      const a2 = this.act;
+      const end = a2 && !a2.undo && a2.target === PI ? applyCut(a2.cuts, a2.crease) : this.sheet;
+      tv = viewFor(poseFlat(end));
+    }
+    const k = this.reduced ? 1 : 1 - Math.exp(-dt * 4);
     const dv = Math.abs(tv.cx - this.view.cx) + Math.abs(tv.cy - this.view.cy) + Math.abs(tv.zoom - this.view.zoom);
     if (dv > 1e-4) {
       this.view = { cx: this.view.cx + (tv.cx - this.view.cx) * k, cy: this.view.cy + (tv.cy - this.view.cy) * k, zoom: this.view.zoom + (tv.zoom - this.view.zoom) * k };
