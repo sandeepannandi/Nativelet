@@ -17,6 +17,8 @@ export type Crease = { nx: number; ny: number; d: number };
 
 /** Layer spacing in sheet units, so stacked paper never z-fights. */
 export const THICK = 0.012;
+/** Paper thickness per layer, shrunk for tall piles so a many-fold stack never towers over the sheet. */
+export const thickFor = (maxLayer: number) => Math.min(THICK, 0.28 / Math.max(1, maxLayer));
 /** How far a freely swinging flap lags then leads its crease (radians). */
 const BEND = 0.2;
 
@@ -53,6 +55,37 @@ function reflect(p: P2, c: Crease): P2 {
   return [p[0] - 2 * s * c.nx, p[1] - 2 * s * c.ny];
 }
 
+
+/** True when two convex polygons share real area (touching edges do not count). */
+function overlaps(a: P2[], b: P2[]): boolean {
+  for (const poly of [a, b]) {
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length];
+      const ex = q[0] - p[0], ey = q[1] - p[1];
+      const len = Math.hypot(ex, ey);
+      if (len < 1e-12) continue;
+      const nx = -ey / len, ny = ex / len;
+      let aMin = Infinity, aMax = -Infinity, bMin = Infinity, bMax = -Infinity;
+      for (const v of a) { const d = nx * v[0] + ny * v[1]; if (d < aMin) aMin = d; if (d > aMax) aMax = d; }
+      for (const v of b) { const d = nx * v[0] + ny * v[1]; if (d < bMin) bMin = d; if (d > bMax) bMax = d; }
+      if (aMax <= bMin + 1e-6 || bMax <= aMin + 1e-6) return false;
+    }
+  }
+  return true;
+}
+
+/** Stack height of each item: one above the highest earlier item it actually overlaps, so
+ *  paper never floats above a pile it does not touch. Items must come in bottom-to-top order. */
+function localLayers(pts: P2[][]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    let h = 0;
+    for (let j = 0; j < i; j++) if (out[j] + 1 > h && overlaps(pts[i], pts[j])) h = out[j] + 1;
+    out.push(h);
+  }
+  return out;
+}
+
 export type Sheet = Facet[];
 export const flatSheet = (): Sheet => [{ pts: [[-1, -1], [1, -1], [1, 1], [-1, 1]], layer: 0, flipped: false }];
 /** Facets beyond this and further folds are refused, to keep frames cheap. */
@@ -69,11 +102,13 @@ export function cutSheet(sheet: Sheet, c: Crease): CutFacet[] | null {
     if (b.length >= 3 && Math.abs(area(b)) > 1e-7) move.push({ pts: b, layer: f.layer, flipped: f.flipped });
   }
   if (!stay.length || !move.length || stay.length + move.length > MAX_FACETS) return null;
-  const top = Math.max(...stay.map((f) => f.layer), ...move.map((f) => f.layer));
-  const maxMove = Math.max(...move.map((f) => f.layer));
+  // bottom-to-top order of the sheet after the fold: what stays, then the flap in reverse
+  const stayS = [...stay].sort((x, y) => x.layer - y.layer);
+  const moveS = [...move].sort((x, y) => y.layer - x.layer);
+  const after = localLayers([...stayS.map((f) => f.pts), ...moveS.map((f) => f.pts.map((p) => reflect(p, c)))]);
   return [
-    ...stay.map((f) => ({ ...f, move: false, layerAfter: f.layer })),
-    ...move.map((f) => ({ ...f, move: true, layerAfter: top + 1 + (maxMove - f.layer) })),
+    ...stayS.map((f, i) => ({ ...f, layer: after[i], move: false, layerAfter: after[i] })),
+    ...moveS.map((f, i) => ({ ...f, move: true, layerAfter: after[stayS.length + i] })),
   ];
 }
 
@@ -112,9 +147,10 @@ export type PosedFacet = {
 export function poseCuts(cuts: CutFacet[], c: Crease, phiIn: number): PosedFacet[] {
   const phi = Math.max(0, Math.min(Math.PI, phiIn));
   const out: PosedFacet[] = [];
+  const th = thickFor(Math.max(0, ...cuts.map((f) => Math.max(f.layer, f.layerAfter))));
   for (const f of cuts) {
-    const zb = f.layer * THICK;
-    const za = f.layerAfter * THICK;
+    const zb = f.layer * th;
+    const za = f.layerAfter * th;
     const sz = f.flipped ? -1 : 1;
     if (!f.move) {
       out.push({
@@ -158,15 +194,16 @@ export const facetArea = (f: Facet) => Math.abs(area(f.pts));
 
 /** The sheet lying flat, nothing moving. */
 export function poseFlat(sheet: Sheet): PosedFacet[] {
+  const th = thickFor(Math.max(0, ...sheet.map((f) => f.layer)));
   return sheet.map((f) => ({
-    pts: f.pts.map((p) => [p[0], p[1], f.layer * THICK] as V3),
+    pts: f.pts.map((p) => [p[0], p[1], f.layer * th] as V3),
     normals: f.pts.map(() => [0, 0, f.flipped ? -1 : 1] as V3),
     flipped: f.flipped,
     moving: false,
     layer: f.layer,
     phi: 0,
     dist: f.pts.map(() => 1.2),
-    floor: f.layer * THICK,
+    floor: f.layer * th,
   }));
 }
 
@@ -183,3 +220,4 @@ export function pointInFacet(p: P2, pts: P2[]): boolean {
   }
   return true;
 }
+
