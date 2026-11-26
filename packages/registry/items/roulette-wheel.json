@@ -1,0 +1,19 @@
+{
+  "slug": "roulette-wheel",
+  "files": [
+    "RouletteWheel.tsx",
+    "rouletteMath.ts",
+    "rouletteDesign.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "title": "Roulette Wheel",
+  "category": "interaction",
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-gesture-handler"
+  ]
+}

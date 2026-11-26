@@ -20,6 +20,7 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 
 ## Components
 
+- Roulette Wheel: a lit 3D roulette wheel with a chrome ball; tap to spin or drag to set the launch speed, and the ball circles the lacquered track, spirals in, drops past the brass deflectors onto the turning rotor, hops between the frets and settles in a pocket.
 - Snow Globe: shake or drag a glass globe and a blizzard swirls through the water, then settles flake by flake onto a snowy cottage scene; the water lags the glass, flakes sink at Stokes speeds and the loosest lift first.
 - Origami Fold: a sheet of two-sided paper you fold freely. Press anywhere and drag in any direction; the crease sits halfway between your grab point and your finger, the flap lifts and swings over in 3D, and folds stack, undo and reset.
 - 3D Dice Tray: pick up casino dice, flick them across a felt tray and watch real rigid-body physics tumble, bounce off the rails, knock into each other and settle on a face.
