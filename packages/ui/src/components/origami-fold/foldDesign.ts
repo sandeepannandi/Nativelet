@@ -134,20 +134,12 @@ export function buildFrame(facets: PosedFacet[], view: View): Item[] {
     if (f.pts.length < 3 || f.moving) continue;
     items.push({ k: "poly", pts: castPts(f, 0), color: "#000000", alpha: 0.26, blur: 3 });
   }
-  // Painter's order: farther from the camera first.
+  // Draw order is fixed by the paper itself, never by a per-frame depth guess that can
+  // flip between frames: pieces that stay go first by layer, then the flap on top.
+  // A flap that has swung past upright stacks in reverse, as it lands upside down.
   const order = facets
-    .map((f) => {
-      const c = f.pts.reduce((a, v) => [a[0] + v[0] / f.pts.length, a[1] + v[1] / f.pts.length, a[2] + v[2] / f.pts.length] as V3, [0, 0, 0] as V3);
-      return { f, depth: screen(c)[2] - c[2] * 0.0 + 0 };
-    })
-    .sort((a, b) => b.depth - a.depth);
-  // Piles read by height, so when two facets sit near the same depth, lower layers come first.
-  order.sort((a, b) => {
-    const za = a.f.pts.reduce((m, v) => m + v[2], 0) / a.f.pts.length;
-    const zb = b.f.pts.reduce((m, v) => m + v[2], 0) / b.f.pts.length;
-    if (Math.abs(a.depth - b.depth) < 0.35) return za - zb;
-    return b.depth - a.depth;
-  });
+    .map((f) => ({ f, key: f.moving ? 1e6 + (f.phi < Math.PI / 2 ? f.layer : -f.layer) : f.layer }))
+    .sort((a, b) => a.key - b.key);
   for (const { f } of order) {
     if (f.pts.length < 3) continue;
     const sp: number[] = [];
@@ -171,9 +163,13 @@ export function buildFrame(facets: PosedFacet[], view: View): Item[] {
       if (d < f.dist[lo]) lo = i;
       if (d > f.dist[hi]) hi = i;
     });
-    // when the visible side changes across the facet, keep the dominant one flat
-    const mid = shade(f.normals[0], f.moving ? 0 : f.pts[0][2], f.dist[0]);
-    const flat = !f.moving || cols.some((c) => c.side !== cols[0].side) || hi === lo;
+    // one side for the whole facet, taken from its mean normal, so the colour never
+    // depends on which vertex happens to come first after a re-cut
+    const mn: V3 = [0, 0, 0];
+    for (const n of f.normals) { mn[0] += n[0]; mn[1] += n[1]; mn[2] += n[2]; }
+    const ml = Math.hypot(mn[0], mn[1], mn[2]) || 1;
+    const mid = shade([mn[0] / ml, mn[1] / ml, mn[2] / ml] as V3, f.moving ? 0 : f.pts.reduce((m, v) => m + v[2], 0) / f.pts.length, f.dist.reduce((m, d) => m + d, 0) / f.dist.length);
+    const flat = !f.moving || cols.some((c) => c.side !== mid.side) || hi === lo;
     const item: Item = { k: "poly", pts: sp, color: flat ? mid.col : cols[lo].col };
     if (flat) {
       // a faint sheen across a flat piece keeps big areas of paper from looking printed
