@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, PanResponder, View, type ViewStyle } from "react-native";
 import {
   BlurStyle,
@@ -13,20 +13,25 @@ import {
   type SkCanvas,
   type SkPicture,
 } from "@shopify/react-native-skia";
-import { STEP_COUNT } from "./foldMath";
-import { FOLD_H, FOLD_W, buildFrame, staticScene, type Item } from "./foldDesign";
+import { FOLD_H, FOLD_W, staticScene, type Item } from "./foldDesign";
+import { FoldController, type FoldEvent } from "./foldController";
+
+export type OrigamiFoldHandle = {
+  /** Play the last fold backwards. */
+  undo: () => void;
+  /** Unfold everything, one fold after another. */
+  reset: () => void;
+};
 
 export type OrigamiFoldProps = {
-  /** Fold step to rest at, 0 (flat sheet) to 4 (finished). Change it to fold or unfold with an animation. */
-  step?: number;
   /** Width in layout points; the sheet keeps its 340 x 420 proportions. */
   width?: number;
   slowMotion?: boolean;
   reducedMotion?: boolean;
-  /** Called when the paper comes to rest on a fold step. */
-  onStepChange?: (step: number) => void;
-  /** Hook haptics here: 'grab', 'crease' (a fold lands, strength 0 to 1) and 'release'. */
-  onFeedback?: (event: "grab" | "crease" | "release", strength?: number) => void;
+  /** Called when a fold lands or is undone, with the number of folds now on the paper. */
+  onFoldsChange?: (folds: number) => void;
+  /** Hook haptics here: 'grab', 'crease' (a fold lands, strength 0 to 1), 'release' and 'undo'. */
+  onFeedback?: (event: FoldEvent, strength?: number) => void;
   label?: string;
   style?: ViewStyle;
 };
@@ -113,30 +118,33 @@ function record(items: Item[]): SkPicture {
   return rec.finishRecordingAsPicture();
 }
 
-/** Pixels of finger travel for one full fold. */
-const PX_PER_STEP = 150;
-
-export function OrigamiFold({
-  step = 0,
-  width = FOLD_W,
-  slowMotion = false,
-  reducedMotion,
-  onStepChange,
-  onFeedback,
-  label = "A sheet of origami paper on a desk. Drag sideways to fold it step by step, drag back to unfold",
-  style,
-}: OrigamiFoldProps) {
+export const OrigamiFold = forwardRef<OrigamiFoldHandle, OrigamiFoldProps>(function OrigamiFold(
+  {
+    width = FOLD_W,
+    slowMotion = false,
+    reducedMotion,
+    onFoldsChange,
+    onFeedback,
+    label = "A sheet of origami paper on a desk. Press anywhere on the paper and drag in any direction to fold it",
+    style,
+  },
+  ref,
+) {
   const scale = width / FOLD_W;
   const height = FOLD_H * scale;
   const [systemReduce, setSystemReduce] = useState(false);
   const reduce = reducedMotion ?? systemReduce;
-  const target0 = Math.max(0, Math.min(STEP_COUNT, Math.round(step)));
-  const sim = useRef({ u: target0, v: 0, target: target0, held: false, lastStep: target0 });
-  const latest = useRef({ slowMotion, reduce, onStepChange, onFeedback });
-  latest.current = { slowMotion, reduce, onStepChange, onFeedback };
+  const ctl = useRef<FoldController | null>(null);
+  if (!ctl.current) ctl.current = new FoldController();
+  const c = ctl.current;
+  c.slowMotion = slowMotion;
+  c.reduced = reduce;
+  c.onChange = onFoldsChange;
+  c.onFeedback = onFeedback;
   const [back, setBack] = useState<SkPicture | null>(null);
   const [frame, setFrame] = useState<SkPicture | null>(null);
-  const drag = useRef({ x: 0, t: 0, v: 0 });
+
+  useImperativeHandle(ref, () => ({ undo: () => c.undo(), reset: () => c.reset() }), [c]);
 
   useEffect(() => {
     let alive = true;
@@ -160,54 +168,17 @@ export function OrigamiFold({
     };
   }, []);
 
-  // A new step prop sends the paper there.
-  useEffect(() => {
-    const s = sim.current;
-    if (!s.held) s.target = Math.max(0, Math.min(STEP_COUNT, Math.round(step)));
-  }, [step]);
-
   useEffect(() => {
     let alive = true;
     let last = 0;
     let prev: SkPicture | null = null;
-    let lastU = -1;
     const retired: unknown[] = [];
     const loop = (now: number) => {
       if (!alive) return;
-      const s = sim.current;
       const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
       last = now;
-      if (!s.held) {
-        if (latest.current.reduce) {
-          s.u = s.target;
-          s.v = 0;
-        } else {
-          // a lightly under-damped spring: the paper settles with a small, soft overshoot
-          const k = 70;
-          const c = 2 * Math.sqrt(k) * 0.8;
-          const h = dt * (latest.current.slowMotion ? 0.25 : 1);
-          const n = Math.max(1, Math.ceil(h / 0.004));
-          for (let i = 0; i < n; i++) {
-            const a = k * (s.target - s.u) - c * s.v;
-            s.v += (a * h) / n;
-            s.u += (s.v * h) / n;
-          }
-          s.u = Math.max(0, Math.min(STEP_COUNT, s.u));
-          if (Math.abs(s.target - s.u) < 0.0008 && Math.abs(s.v) < 0.01) {
-            s.u = s.target;
-            s.v = 0;
-          }
-        }
-        const nearest = Math.round(s.u);
-        if (Math.abs(s.u - nearest) < 0.0001 && nearest !== s.lastStep) {
-          latest.current.onFeedback?.("crease", Math.min(1, 0.4 + Math.abs(s.v) * 0.2));
-          s.lastStep = nearest;
-          latest.current.onStepChange?.(nearest);
-        }
-      }
-      if (Math.abs(s.u - lastU) > 1e-5 || !prev) {
-        lastU = s.u;
-        const pic = record(buildFrame(s.u));
+      if (c.update(dt) || !prev) {
+        const pic = record(c.frame());
         setFrame(pic);
         if (prev) retired.push(prev);
         while (retired.length > 8) safeDispose(retired.shift());
@@ -222,48 +193,19 @@ export function OrigamiFold({
       const rest = [...retired, prev];
       setTimeout(() => rest.forEach(safeDispose), 1500);
     };
-  }, []);
+  }, [c]);
 
   const pan = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => !latest.current.reduce,
-        onPanResponderGrant: (evt) => {
-          const s = sim.current;
-          s.held = true;
-          s.v = 0;
-          drag.current = { x: evt.nativeEvent.locationX / scale, t: Date.now(), v: 0 };
-          latest.current.onFeedback?.("grab", 0.3);
-        },
-        onPanResponderMove: (evt) => {
-          const s = sim.current;
-          const d = drag.current;
-          const x = evt.nativeEvent.locationX / scale;
-          const now = Date.now();
-          const du = (x - d.x) / PX_PER_STEP;
-          s.u = Math.max(0, Math.min(STEP_COUNT, s.u + du));
-          const dtm = Math.max(1, now - d.t) / 1000;
-          d.v = d.v * 0.6 + (du / dtm) * 0.4;
-          d.x = x;
-          d.t = now;
-        },
-        onPanResponderRelease: () => {
-          const s = sim.current;
-          s.held = false;
-          const v = drag.current.v;
-          // a flick carries on to the next step; a slow release settles on the nearest
-          s.target = Math.max(0, Math.min(STEP_COUNT, Math.round(s.u + Math.max(-1, Math.min(1, v * 0.22)))));
-          s.v = Math.max(-6, Math.min(6, v));
-          latest.current.onFeedback?.("release", Math.min(1, Math.abs(v) / 4));
-        },
-        onPanResponderTerminate: () => {
-          const s = sim.current;
-          s.held = false;
-          s.target = Math.max(0, Math.min(STEP_COUNT, Math.round(s.u)));
-        },
+        // only a press that lands on the paper starts a fold
+        onStartShouldSetPanResponder: (evt) => c.down(evt.nativeEvent.locationX / scale, evt.nativeEvent.locationY / scale),
+        onPanResponderMove: (evt) => c.move(evt.nativeEvent.locationX / scale, evt.nativeEvent.locationY / scale),
+        onPanResponderRelease: () => c.up(),
+        onPanResponderTerminate: () => c.up(),
         onPanResponderTerminationRequest: () => false,
       }),
-    [scale],
+    [scale, c],
   );
 
   return (
@@ -281,4 +223,4 @@ export function OrigamiFold({
       </Canvas>
     </View>
   );
-}
+});

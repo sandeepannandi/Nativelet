@@ -595,9 +595,9 @@ export default function NativeletSite({
                 <div className={gallery.study} aria-hidden="true"><div className={gallery.miniCradle}><i /><i /><i /><i /><i /></div></div>
                 <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 47</span><strong>Newton&apos;s Cradle</strong><small>Pull back and release · momentum clicks through, same count swings out</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
-              <button className={gallery.tile} hidden={!matches("Origami Fold", "Fold a sheet of paper crease by crease · drag to fold, drag back to unfold")} onClick={(event) => openComponent(event, "origami")} aria-haspopup="dialog" aria-label="Open Origami Fold web preview">
+              <button className={gallery.tile} hidden={!matches("Origami Fold", "Fold a sheet of paper any way you like · press and drag in any direction")} onClick={(event) => openComponent(event, "origami")} aria-haspopup="dialog" aria-label="Open Origami Fold web preview">
                 <div className={gallery.study} aria-hidden="true"><img src="/origami-cover.svg" alt="" style={{height:"150px",width:"auto",maxWidth:"94%",objectFit:"contain"}} /></div>
-                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 57</span><strong>Origami Fold</strong><small>Fold a sheet of paper crease by crease · drag to fold, drag back to unfold</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
+                <div className={gallery.caption}><div><span className={gallery.label}>WEB PREVIEW · 57</span><strong>Origami Fold</strong><small>Fold a sheet of paper any way you like · press and drag in any direction</small></div><ArrowUpRight size={20} aria-hidden="true" /></div>
               </button>
               <button className={gallery.tile} hidden={!matches("Snow Globe", "Shake or drag a glass snow globe · the blizzard swirls, then settles")} onClick={(event) => openComponent(event, "snow")} aria-haspopup="dialog" aria-label="Open Snow Globe web preview">
                 <div className={gallery.study} aria-hidden="true"><img src="/snow-cover.svg" alt="" style={{height:"150px",width:"auto",maxWidth:"94%",objectFit:"contain"}} /></div>

@@ -1,9 +1,9 @@
 /* Origami fold geometry. Pure TypeScript, no dependencies.
 
-   The sheet is a list of flat convex facets stacked in layers. Each fold step
-   is a crease line; every facet the crease crosses is cut in two and the side
-   behind the crease swings over it by pi, ending reflected, flipped and on top
-   of the pile. Posing the sheet at a fractional step rotates just those
+   The sheet is a list of flat convex facets stacked in layers. A fold is a
+   crease line anywhere on the sheet: every facet it crosses is cut in two and
+   the side behind the crease swings over by pi, ending reflected, flipped and
+   on top of the pile. Posing a cut at a fractional angle rotates just those
    facets about the crease, so the same data folds forward and unfolds back. */
 
 export type P2 = [number, number];
@@ -15,16 +15,6 @@ export type CutFacet = Facet & { move: boolean; layerAfter: number };
 /** Fold the side where n.p < d over onto the side where n.p > d. */
 export type Crease = { nx: number; ny: number; d: number };
 
-const R = Math.SQRT1_2;
-/* Unit sheet, half-size 1. Four folds: corner to corner, the tip down to the
-   middle of the long edge, the left half over, then the bottom edge up. */
-export const CREASES: Crease[] = [
-  { nx: R, ny: R, d: 0 },
-  { nx: -R, ny: -R, d: -R },
-  { nx: 1, ny: 0, d: 0 },
-  { nx: 0, ny: 1, d: -0.42 },
-];
-export const STEP_NAMES = ["Fold corner to corner", "Tuck the tip down", "Fold the left half over", "Fold the base up"];
 /** Layer spacing in sheet units, so stacked paper never z-fights. */
 export const THICK = 0.012;
 /** How far a freely swinging flap lags then leads its crease (radians). */
@@ -63,46 +53,42 @@ function reflect(p: P2, c: Crease): P2 {
   return [p[0] - 2 * s * c.nx, p[1] - 2 * s * c.ny];
 }
 
-export type FoldModel = {
-  /** states[i] is the flat sheet before step i; states[CREASES.length] is the finished fold. */
-  states: Facet[][];
-  /** cuts[i] is states[i] split along crease i, with the moving pieces flagged. */
-  cuts: CutFacet[][];
-};
+export type Sheet = Facet[];
+export const flatSheet = (): Sheet => [{ pts: [[-1, -1], [1, -1], [1, 1], [-1, 1]], layer: 0, flipped: false }];
+/** Facets beyond this and further folds are refused, to keep frames cheap. */
+export const MAX_FACETS = 260;
 
-export function buildModel(): FoldModel {
-  const states: Facet[][] = [[{ pts: [[-1, -1], [1, -1], [1, 1], [-1, 1]], layer: 0, flipped: false }]];
-  const cuts: CutFacet[][] = [];
-  for (const c of CREASES) {
-    const cur = states[states.length - 1];
-    const stay: Facet[] = [];
-    const move: Facet[] = [];
-    for (const f of cur) {
-      const a = clip(f.pts, c, 1);
-      const b = clip(f.pts, c, -1);
-      if (a.length >= 3 && Math.abs(area(a)) > 1e-6) stay.push({ pts: a, layer: f.layer, flipped: f.flipped });
-      if (b.length >= 3 && Math.abs(area(b)) > 1e-6) move.push({ pts: b, layer: f.layer, flipped: f.flipped });
-    }
-    const top = Math.max(0, ...stay.map((f) => f.layer), ...move.map((f) => f.layer));
-    const maxMove = Math.max(0, ...move.map((f) => f.layer));
-    const moved: Facet[] = move.map((f) => ({
-      // reflecting reverses the winding, so reverse the points to keep them counter-clockwise
-      pts: f.pts.map((p) => reflect(p, c)).reverse(),
-      layer: top + 1 + (maxMove - f.layer),
-      flipped: !f.flipped,
-    }));
-    const cut: CutFacet[] = [
-      ...stay.map((f) => ({ ...f, move: false, layerAfter: f.layer })),
-      ...move.map((f, i) => ({ ...f, move: true, layerAfter: moved[i].layer })),
-    ];
-    cuts.push(cut);
-    states.push([...stay, ...moved]);
+/** Split the sheet along the crease. Returns null when the crease misses the paper (nothing to fold). */
+export function cutSheet(sheet: Sheet, c: Crease): CutFacet[] | null {
+  const stay: Facet[] = [];
+  const move: Facet[] = [];
+  for (const f of sheet) {
+    const a = clip(f.pts, c, 1);
+    const b = clip(f.pts, c, -1);
+    if (a.length >= 3 && Math.abs(area(a)) > 1e-7) stay.push({ pts: a, layer: f.layer, flipped: f.flipped });
+    if (b.length >= 3 && Math.abs(area(b)) > 1e-7) move.push({ pts: b, layer: f.layer, flipped: f.flipped });
   }
-  return { states, cuts };
+  if (!stay.length || !move.length || stay.length + move.length > MAX_FACETS) return null;
+  const top = Math.max(...stay.map((f) => f.layer), ...move.map((f) => f.layer));
+  const maxMove = Math.max(...move.map((f) => f.layer));
+  return [
+    ...stay.map((f) => ({ ...f, move: false, layerAfter: f.layer })),
+    ...move.map((f) => ({ ...f, move: true, layerAfter: top + 1 + (maxMove - f.layer) })),
+  ];
 }
 
-export const MODEL = buildModel();
-export const STEP_COUNT = CREASES.length;
+/** The flat sheet after the cut has been folded all the way over. */
+export function applyCut(cuts: CutFacet[], c: Crease): Sheet {
+  const out: Facet[] = cuts.map((f) =>
+    f.move
+      ? // reflecting reverses the winding, so reverse the points to keep them counter-clockwise
+        { pts: f.pts.map((p) => reflect(p, c)).reverse(), layer: f.layerAfter, flipped: !f.flipped }
+      : { pts: f.pts, layer: f.layer, flipped: f.flipped },
+  );
+  // keep layer numbers dense so a long session never stacks the paper up into the sky
+  const ranks = Array.from(new Set(out.map((f) => f.layer))).sort((x, y) => x - y);
+  return out.map((f) => ({ ...f, layer: ranks.indexOf(f.layer) }));
+}
 
 export const ease = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * t * (t * (t * 6 - 15) + 10));
 
@@ -122,17 +108,11 @@ export type PosedFacet = {
   floor: number;
 };
 
-/** Pose the sheet at fold progress u in [0, STEP_COUNT]. */
-export function pose(u: number): PosedFacet[] {
-  const uu = Math.max(0, Math.min(STEP_COUNT, u));
-  const s = Math.min(STEP_COUNT - 1, Math.floor(uu));
-  const e = uu - s;
-  const c = CREASES[s];
-  const phi = Math.PI * ease(e);
-  const cp = Math.cos(phi);
-  const sp = Math.sin(phi);
+/** Pose a cut sheet with its flap swung to angle phi (0 flat, pi folded over). */
+export function poseCuts(cuts: CutFacet[], c: Crease, phiIn: number): PosedFacet[] {
+  const phi = Math.max(0, Math.min(Math.PI, phiIn));
   const out: PosedFacet[] = [];
-  for (const f of MODEL.cuts[s]) {
+  for (const f of cuts) {
     const zb = f.layer * THICK;
     const za = f.layerAfter * THICK;
     const sz = f.flipped ? -1 : 1;
@@ -168,8 +148,6 @@ export function pose(u: number): PosedFacet[] {
     }
     out.push({ pts, normals, flipped: f.flipped, moving: true, layer: f.layer, phi, dist, floor: 0 });
   }
-  void cp;
-  void sp;
   // the flap lands on whatever stays: record the pile height under it
   const stayTop = Math.max(0, ...out.filter((f) => !f.moving).map((f) => f.floor));
   for (const f of out) if (f.moving) f.floor = stayTop;
@@ -177,3 +155,31 @@ export function pose(u: number): PosedFacet[] {
 }
 
 export const facetArea = (f: Facet) => Math.abs(area(f.pts));
+
+/** The sheet lying flat, nothing moving. */
+export function poseFlat(sheet: Sheet): PosedFacet[] {
+  return sheet.map((f) => ({
+    pts: f.pts.map((p) => [p[0], p[1], f.layer * THICK] as V3),
+    normals: f.pts.map(() => [0, 0, f.flipped ? -1 : 1] as V3),
+    flipped: f.flipped,
+    moving: false,
+    layer: f.layer,
+    phi: 0,
+    dist: f.pts.map(() => 1.2),
+    floor: f.layer * THICK,
+  }));
+}
+
+export const sheetArea = (sheet: Sheet) => sheet.reduce((t, f) => t + facetArea(f), 0);
+
+export function pointInFacet(p: P2, pts: P2[]): boolean {
+  let sg = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const cr = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    if (Math.abs(cr) < 1e-12) continue;
+    if (sg === 0) sg = Math.sign(cr);
+    else if (Math.sign(cr) !== sg) return false;
+  }
+  return true;
+}

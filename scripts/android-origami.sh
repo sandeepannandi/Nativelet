@@ -17,28 +17,30 @@ FOUND=""
 for i in $(seq 1 24); do
   sleep 5
   dump_ui || continue
-  if grep -q 'text="Fold"' "$OUT/ui.xml"; then FOUND=1; break; fi
+  if grep -q 'text="Undo"' "$OUT/ui.xml"; then FOUND=1; break; fi
 done
 adb exec-out screencap -p > "$OUT/initial.png"
 if [ -z "$FOUND" ]; then echo "Origami Fold never mounted"; grep -o 'text="[^"]*"' "$OUT/ui.xml" | sort -u | head -20 || true; exit 1; fi
 python3 -m pip install -q pillow numpy
-read -r RX RY < <(python3 - <<'PY'
+read -r X0 Y0 X1 Y1 < <(python3 - <<'PY'
 import xml.etree.ElementTree as E,re
-n=next(n for n in E.parse('fold-out/ui.xml').iter('node') if n.get('text')=='Fold')
-x,y,r,b=map(int,re.findall(r'\d+',n.get('bounds')));print((x+r)//2,(y+b)//2)
+n=next(n for n in E.parse('fold-out/ui.xml').iter('node') if (n.get('content-desc') or '').startswith('A sheet of origami paper'))
+x,y,r,b=map(int,re.findall(r'\d+',n.get('bounds')));w=r-x;h=b-y
+# grab near the top-right of the sheet and drag across and down, then grab bottom-left and drag up and right
+print(x+int(w*0.68),y+int(h*0.36),x+int(w*0.32),y+int(h*0.62))
 PY
 )
-# Fold once, watch it settle, then fold a second time.
-adb shell input tap "$RX" "$RY"
+# Free-form fold: swipe from one corner of the paper across it, watch it settle, then fold a second, different way.
+adb shell input swipe "$X0" "$Y0" "$X1" "$Y1" 700
 for t in 1 2 3 4 5 6; do sleep 1; adb exec-out screencap -p > "$OUT/fold_t$t.png"; done
 SETTLED=""
 for i in $(seq 1 15); do
   sleep 2
   dump_ui || continue
-  if grep -q 'Step 1 of 4' "$OUT/ui.xml"; then SETTLED=1; break; fi
+  if grep -q '1 fold' "$OUT/ui.xml"; then SETTLED=1; break; fi
 done
 adb exec-out screencap -p > "$OUT/step1.png"
-adb shell input tap "$RX" "$RY"
+adb shell input swipe "$X1" "$Y0" "$X0" "$Y1" 700
 sleep 8
 adb exec-out screencap -p > "$OUT/step2.png"
 grep -o 'text="[^"]*"' "$OUT/ui.xml" | sort -u | head -20 || true
@@ -60,4 +62,4 @@ log=open('fold-out/logcat.txt').read();assert log.strip(),'Missing native logs'
 assert not re.search(r'ANR in com\.anonymous\.nativeletshowcase|Cmdline: com\.anonymous\.nativeletshowcase|>>> com\.anonymous\.nativeletshowcase <<<|Shader compilation failed|FATAL EXCEPTION',log),'Native crash or shader failure'
 open('fold-out/summary.txt','w').write('PASS native origami render, fold turned the sheet over to its back, no detected crash on tested path\n')
 PY
-[ -n "$SETTLED" ] || echo "note: step readout not detected in UI tree"
+[ -n "$SETTLED" ] || echo "note: fold counter not detected in UI tree"

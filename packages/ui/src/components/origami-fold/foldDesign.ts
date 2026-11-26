@@ -1,6 +1,6 @@
 /* Camera, lighting and the draw list for Origami Fold. Pure TypeScript: the
    same list is painted by the Skia component and by the web Canvas2D preview. */
-import { MODEL, STEP_COUNT, ease, pose, type PosedFacet, type V3 } from "./foldMath";
+import type { PosedFacet, V3 } from "./foldMath";
 
 export const FOLD_W = 340;
 export const FOLD_H = 420;
@@ -32,21 +32,25 @@ const UPV = cross(RIGHT, FWD);
 const TO_CAM = unit(sub(EYE, [0, 0, 0])); // world space
 
 /* The camera follows the folded shape: it recentres and zooms as the sheet shrinks. */
-const VIEW = { cx: 0, cy: 0, zoom: 1 };
-function setView(u: number) {
-  const uu = Math.max(0, Math.min(STEP_COUNT, u));
-  const i = Math.min(STEP_COUNT - 1, Math.floor(uu));
-  const t = ease(uu - i);
-  const box = (k: number) => {
-    let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
-    for (const f of MODEL.states[k]) for (const p of f.pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
-    return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, e: Math.max(x1 - x0, y1 - y0) / 2 };
-  };
-  const a = box(i);
-  const b = box(i + 1);
-  VIEW.cx = a.cx + (b.cx - a.cx) * t;
-  VIEW.cy = a.cy + (b.cy - a.cy) * t;
-  VIEW.zoom = Math.min(1.5, 1 / (a.e + (b.e - a.e) * t));
+export type View = { cx: number; cy: number; zoom: number };
+const VIEW: View = { cx: 0, cy: 0, zoom: 1 };
+export const flatView = (): View => ({ cx: 0, cy: 0, zoom: 1 });
+/** The view that frames a posed sheet. */
+export function viewFor(facets: PosedFacet[]): View {
+  let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+  for (const f of facets) for (const p of f.pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  if (x1 < x0) return flatView();
+  const e = Math.max(x1 - x0, y1 - y0) / 2;
+  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, zoom: Math.max(0.55, Math.min(1.5, 1 / e)) };
+}
+/** Sheet-plane point under a screen point (the sheet lies on the table, z = 0). */
+export function screenToSheet(x: number, y: number, v: View): [number, number] {
+  const k = (x - CX) / FOCAL;
+  const m = (y - CY) / FOCAL;
+  const dir: V3 = [FWD[0] + k * RIGHT[0] - m * UPV[0], FWD[1] + k * RIGHT[1] - m * UPV[1], FWD[2] + k * RIGHT[2] - m * UPV[2]];
+  const t = -EYE[1] / dir[1];
+  const w: V3 = [EYE[0] + dir[0] * t, 0, EYE[2] + dir[2] * t];
+  return [w[0] / (v.zoom * S) + v.cx, -w[2] / (v.zoom * S) + v.cy];
 }
 const world = (p: V3): V3 => [(p[0] - VIEW.cx) * VIEW.zoom * S, p[2] * VIEW.zoom * S, -(p[1] - VIEW.cy) * VIEW.zoom * S];
 function proj(w: V3): [number, number, number] {
@@ -116,10 +120,9 @@ export function staticScene(): { back: Item[] } {
 
 const dir2 = (a: number[], i: number, j: number) => [a[j] - a[i], a[j + 1] - a[i + 1]];
 
-/** One frame of the folded sheet at fold progress u. */
-export function buildFrame(u: number): Item[] {
-  setView(u);
-  const facets = pose(u);
+/** One frame of the posed sheet. */
+export function buildFrame(facets: PosedFacet[], view: View): Item[] {
+  VIEW.cx = view.cx; VIEW.cy = view.cy; VIEW.zoom = view.zoom;
   const items: Item[] = [];
   // Cast shadow on the desk: a wide soft one and a tight contact one.
   for (const f of facets) {
