@@ -20,6 +20,7 @@ Nativelet is a growing collection of gesture- and physics-driven components for 
 
 ## Components
 
+- Tear-off Ticket: a perforated event ticket; press the stub and pull and the paper tears bridge by bridge along the perforation, the stub bends away from the ticket, and once the last bridge goes it follows your finger and falls like paper. A short pull tears part of the way and leaves the stub bent; a long one takes it off.
 - Roulette Wheel: a lit 3D roulette wheel with a chrome ball; tap to spin or drag to set the launch speed, and the ball circles the lacquered track, spirals in, drops past the brass deflectors onto the turning rotor, hops between the frets and settles in a pocket.
 - Origami Fold: a sheet of two-sided paper you fold freely. Press anywhere and drag in any direction; the crease sits halfway between your grab point and your finger, the flap lifts and swings over in 3D, and folds stack, undo and reset.
 - 3D Dice Tray: pick up casino dice, flick them across a felt tray and watch real rigid-body physics tumble, bounce off the rails, knock into each other and settle on a face.

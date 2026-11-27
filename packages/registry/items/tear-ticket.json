@@ -1,0 +1,19 @@
+{
+  "slug": "tear-ticket",
+  "files": [
+    "TearTicket.tsx",
+    "tearMath.ts",
+    "tearDesign.ts",
+    "Example.tsx",
+    "README.md",
+    "LICENSE"
+  ],
+  "title": "Tear-off Ticket",
+  "category": "interaction",
+  "dependencies": [
+    "react",
+    "react-native",
+    "@shopify/react-native-skia",
+    "react-native-gesture-handler"
+  ]
+}
